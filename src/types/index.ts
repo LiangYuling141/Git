@@ -57,13 +57,15 @@ export interface Customer {
 export interface Order {
   id: string;
   customerId: string;
-  customerName: string;
+  customerName?: string;
+  orderNo: string;
   items: OrderItem[];
   totalAmount: number;
   discount?: number;
   remark?: string;
   status: OrderStatus;
   createdAt: Date;
+  updatedAt: Date;
 }
 
 export type OrderStatus = 'pending' | 'confirmed' | 'shipped' | 'completed' | 'cancelled';
