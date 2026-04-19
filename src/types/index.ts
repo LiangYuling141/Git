@@ -51,6 +51,7 @@ export interface Customer {
   monthlyTransaction: number;
   lastTransactionDate?: Date;
   createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface Order {
