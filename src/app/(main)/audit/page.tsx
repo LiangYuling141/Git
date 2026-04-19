@@ -111,19 +111,19 @@ export default function AuditPage() {
               fontSize: '13px',
             }}>
               <h4 style={{ marginBottom: '12px' }}>详情</h4>
-              {logs.find(l => l.id === expandedId)?.before && (
+              {logs.find(l => l.id === expandedId)?.before != null && (
                 <div style={{ marginBottom: '8px' }}>
                   <strong>变更前：</strong>
                   <pre style={{ background: '#fff', padding: '8px', borderRadius: '4px', overflow: 'auto', maxHeight: '200px' }}>
-                    {JSON.stringify((logs.find(l => l.id === expandedId) as AuditLog).before, null, 2)}
+                    {JSON.stringify(logs.find(l => l.id === expandedId)?.before as Record<string, unknown>, null, 2)}
                   </pre>
                 </div>
               )}
-              {logs.find(l => l.id === expandedId)?.after && (
+              {logs.find(l => l.id === expandedId)?.after != null && (
                 <div>
                   <strong>变更后：</strong>
                   <pre style={{ background: '#fff', padding: '8px', borderRadius: '4px', overflow: 'auto', maxHeight: '200px' }}>
-                    {JSON.stringify((logs.find(l => l.id === expandedId) as AuditLog).after, null, 2)}
+                    {JSON.stringify(logs.find(l => l.id === expandedId)?.after as Record<string, unknown>, null, 2)}
                   </pre>
                 </div>
               )}

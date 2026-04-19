@@ -36,7 +36,7 @@ export default function NewOrderPage() {
 
   const updateItem = (index: number, field: keyof OrderItem, value: string | number) => {
     const newItems = [...items];
-    (newItems[index] as Record<string, unknown>)[field] = value;
+    (newItems[index] as unknown as Record<string, unknown>)[field] = value;
     if (field === 'quantity' || field === 'price') {
       newItems[index].subtotal = Number(newItems[index].quantity) * Number(newItems[index].price);
     }

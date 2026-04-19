@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { $Enums } from '@/generated/prisma';
 
 // GET: list pending confirmation requests for a user
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const userId = searchParams.get('userId');
-  const status = searchParams.get('status') || 'pending';
+  const statusParam = searchParams.get('status') || 'pending';
 
   if (!userId) {
     return NextResponse.json({ error: 'userId is required' }, { status: 400 });
   }
 
   const confirmations = await prisma.confirmationRequest.findMany({
-    where: { userId, status },
+    where: { userId, status: statusParam as $Enums.ConfirmationStatus },
     orderBy: { createdAt: 'desc' },
     take: 10,
   });
