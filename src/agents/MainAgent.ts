@@ -44,7 +44,7 @@ export class MainAgent {
     const riskResult = riskAssessmentEngine.evaluateRiskLevel(operation, undefined, session);
 
     // 4. Check whitelist fast track
-    const skipVotes = whitelistManager.getFastTrackSkipCount(session.userId);
+    const skipVotes = await whitelistManager.getFastTrackSkipCount(session.userId);
     if (skipVotes > 0 && riskResult.riskLevel !== 'L0') {
       // Fast track - skip some voting
     }
