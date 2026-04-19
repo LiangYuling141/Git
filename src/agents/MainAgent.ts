@@ -142,57 +142,53 @@ export class MainAgent {
   }
 
   private parseIntent(userInput: string): Operation {
-    // Simplified intent parsing
-    // In production, this would use AI to parse the intent
-
     const lowerInput = userInput.toLowerCase();
 
-    if (lowerInput.includes('查') || lowerInput.includes('query') || lowerInput.includes('search')) {
-      return {
-        id: crypto.randomUUID(),
-        type: 'query',
-        entity: 'unknown',
-        action: 'query',
-        description: userInput,
-      };
-    }
+    // Determine operation type
+    let type: 'query' | 'create' | 'update' | 'delete' = 'query';
+    if (lowerInput.includes('创建') || lowerInput.includes('新增') || lowerInput.includes('create')) type = 'create';
+    else if (lowerInput.includes('修改') || lowerInput.includes('更新') || lowerInput.includes('update')) type = 'update';
+    else if (lowerInput.includes('删除') || lowerInput.includes('delete')) type = 'delete';
 
-    if (lowerInput.includes('创建') || lowerInput.includes('新增') || lowerInput.includes('create')) {
-      return {
-        id: crypto.randomUUID(),
-        type: 'create',
-        entity: 'unknown',
-        action: 'create',
-        description: userInput,
-      };
-    }
+    // Determine entity
+    let entity = 'unknown';
+    if (lowerInput.includes('客户') || lowerInput.includes('customer')) entity = 'customer';
+    else if (lowerInput.includes('订单') || lowerInput.includes('order')) entity = 'order';
+    else if (lowerInput.includes('支付') || lowerInput.includes('payment')) entity = 'payment';
 
-    if (lowerInput.includes('修改') || lowerInput.includes('更新') || lowerInput.includes('update')) {
-      return {
-        id: crypto.randomUUID(),
-        type: 'update',
-        entity: 'unknown',
-        action: 'update',
-        description: userInput,
-      };
-    }
+    // Extract id from patterns like "ID是xxx" or "id:xxx"
+    const idMatch = userInput.match(/ID[是为：:]\s*([^\s,，]+)/i)
+                || userInput.match(/id[是为：:]\s*([^\s,，]+)/i)
+                || userInput.match(/编号[是为：:]\s*([^\s,，]+)/i);
+    const id = idMatch ? idMatch[1] : undefined;
 
-    if (lowerInput.includes('删除') || lowerInput.includes('delete')) {
-      return {
-        id: crypto.randomUUID(),
-        type: 'delete',
-        entity: 'unknown',
-        action: 'delete',
-        description: userInput,
-      };
-    }
+    // Extract name for customers
+    const nameMatch = userInput.match(/名称[是为：:]\s*([^\s,，]+)/i)
+                  || userInput.match(/叫\s*([^\s,，]+)/i)
+                  || userInput.match(/name[是为：:]\s*([^\s,，]+)/i);
+    const name = nameMatch ? nameMatch[1] : undefined;
+
+    // Extract phone
+    const phoneMatch = userInput.match(/电话[是为：:]\s*([^\s,，]+)/i)
+                   || userInput.match(/手机[是为：:]\s*([^\s,，]+)/i)
+                   || userInput.match(/1[3-9]\d{9}/);
+    const phone = phoneMatch ? phoneMatch[1] : undefined;
+
+    // Build data object
+    const data: Record<string, unknown> = {};
+    if (name) data.name = name;
+    if (phone) data.phone = phone;
+
+    // For query by name
+    if (type === 'query' && name) data.name = name;
 
     return {
-      id: crypto.randomUUID(),
-      type: 'query',
-      entity: 'unknown',
-      action: 'query',
+      id: id || crypto.randomUUID(),
+      type,
+      entity,
+      action: type,
       description: userInput,
+      data: Object.keys(data).length > 0 ? data : undefined,
     };
   }
 }
