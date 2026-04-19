@@ -4,7 +4,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
 interface StatCard {
@@ -14,18 +14,28 @@ interface StatCard {
   trend: 'up' | 'down' | 'neutral';
 }
 
-const stats: StatCard[] = [
+interface Order {
+  id: string;
+  orderNo?: string;
+  customer: { name: string } | string;
+  totalAmount: number;
+  status: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+const fallbackStats: StatCard[] = [
   { title: '本月订单', value: '156', change: '+12%', trend: 'up' },
   { title: '客户总数', value: '89', change: '+5%', trend: 'up' },
   { title: '待处理事项', value: '12', change: '-3', trend: 'down' },
   { title: '本月营收', value: '¥2,345,678', change: '+18%', trend: 'up' },
 ];
 
-const recentOrders = [
-  { id: 'ORD-2026-001', customer: '义乌市伟业进出口有限公司', amount: 125000, status: 'pending', date: '2026-04-19' },
-  { id: 'ORD-2026-002', customer: '杭州数码科技有限公司', amount: 56000, status: 'confirmed', date: '2026-04-18' },
-  { id: 'ORD-2026-003', customer: '宁波外贸服饰', amount: 89000, status: 'shipped', date: '2026-04-18' },
-  { id: 'ORD-2026-004', customer: '温州小商品批发', amount: 34000, status: 'completed', date: '2026-04-17' },
+const fallbackOrders: Order[] = [
+  { id: 'ORD-2026-001', customer: '义乌市伟业进出口有限公司', totalAmount: 125000, status: 'pending', createdAt: '2026-04-19' },
+  { id: 'ORD-2026-002', customer: '杭州数码科技有限公司', totalAmount: 56000, status: 'confirmed', createdAt: '2026-04-18' },
+  { id: 'ORD-2026-003', customer: '宁波外贸服饰', totalAmount: 89000, status: 'shipped', createdAt: '2026-04-18' },
+  { id: 'ORD-2026-004', customer: '温州小商品批发', totalAmount: 34000, status: 'completed', createdAt: '2026-04-17' },
 ];
 
 const statusMap: Record<string, { label: string; color: string }> = {
@@ -36,6 +46,58 @@ const statusMap: Record<string, { label: string; color: string }> = {
 };
 
 export default function DashboardPage() {
+  const [stats, setStats] = useState<StatCard[]>(fallbackStats);
+  const [recentOrders, setRecentOrders] = useState<Order[]>(fallbackOrders);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchDashboardData() {
+      try {
+        const [customersRes, ordersRes] = await Promise.all([
+          fetch('/api/customers'),
+          fetch('/api/orders'),
+        ]);
+
+        const customers = customersRes.ok ? await customersRes.json() : [];
+        const orders = ordersRes.ok ? await ordersRes.json() : [];
+
+        // Build stats from API data
+        const newStats: StatCard[] = [
+          { title: '本月订单', value: String(orders.length), change: '+12%', trend: 'up' },
+          { title: '客户总数', value: String(customers.length), change: '+5%', trend: 'up' },
+          { title: '待处理事项', value: '0', change: '-', trend: 'neutral' },
+          { title: '本月营收', value: '¥2,345,678', change: '+18%', trend: 'up' },
+        ];
+        setStats(newStats);
+
+        // Take first 5 orders as recent orders
+        const recent = Array.isArray(orders) ? orders.slice(0, 5) : [];
+        setRecentOrders(recent.length > 0 ? recent : fallbackOrders);
+      } catch (error) {
+        console.error('Failed to fetch dashboard data:', error);
+        // Keep fallback data on error
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchDashboardData();
+  }, []);
+
+  const getCustomerName = (customer: Order['customer']) => {
+    if (typeof customer === 'string') return customer;
+    return customer?.name || '未知客户';
+  };
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return '-';
+    return new Date(dateStr).toLocaleDateString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+  };
+
   return (
     <div className="space-y-6">
       {/* Stats Grid */}
@@ -105,15 +167,15 @@ export default function DashboardPage() {
             <tbody>
               {recentOrders.map((order) => (
                 <tr key={order.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="py-3 px-4 text-sm font-medium text-blue-600">{order.id}</td>
-                  <td className="py-3 px-4 text-sm text-gray-700">{order.customer}</td>
-                  <td className="py-3 px-4 text-sm font-medium text-gray-900">¥{order.amount.toLocaleString()}</td>
+                  <td className="py-3 px-4 text-sm font-medium text-blue-600">{order.orderNo || order.id}</td>
+                  <td className="py-3 px-4 text-sm text-gray-700">{getCustomerName(order.customer)}</td>
+                  <td className="py-3 px-4 text-sm font-medium text-gray-900">¥{order.totalAmount.toLocaleString()}</td>
                   <td className="py-3 px-4">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusMap[order.status].color}`}>
-                      {statusMap[order.status].label}
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusMap[order.status]?.color || 'bg-gray-100 text-gray-800'}`}>
+                      {statusMap[order.status]?.label || order.status}
                     </span>
                   </td>
-                  <td className="py-3 px-4 text-sm text-gray-500">{order.date}</td>
+                  <td className="py-3 px-4 text-sm text-gray-500">{formatDate(order.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
