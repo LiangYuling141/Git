@@ -1,0 +1,32 @@
+{
+  "name": "lymatrix-crm-erp",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.7.0",
+    "@prisma/client": "^7.7.0",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.4.2",
+    "ioredis": "^5.10.1",
+    "next": "^16.0.0",
+    "pg": "^8.20.0",
+    "prisma": "^7.7.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "16.0.0",
+    "typescript": "^5.7.0"
+  }
+}
