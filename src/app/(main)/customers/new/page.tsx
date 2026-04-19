@@ -3,6 +3,18 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
+type EnterpriseType = 'manufacturer' | 'trader' | 'ecommerce' | 'other';
+type MonthlyOrderVolume = 'less_than_10' | '10_to_50' | '50_to_100' | 'more_than_100';
+type MainMarket = 'domestic' | 'export' | 'import' | 'transit';
+type CustomerSource = 'active_acquisition' | 'exhibition' | 'referral' | 'online_promotion';
+
+interface OnboardingData {
+  enterpriseType: EnterpriseType;
+  monthlyOrderVolume: MonthlyOrderVolume;
+  mainMarket: MainMarket;
+  customerSource: CustomerSource;
+}
+
 export default function NewCustomerPage() {
   const router = useRouter();
   const [form, setForm] = useState({
@@ -11,6 +23,12 @@ export default function NewCustomerPage() {
     email: '',
     address: '',
     creditLimit: '0',
+  });
+  const [onboarding, setOnboarding] = useState<OnboardingData>({
+    enterpriseType: 'manufacturer',
+    monthlyOrderVolume: 'less_than_10',
+    mainMarket: 'domestic',
+    customerSource: 'active_acquisition',
   });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -31,6 +49,15 @@ export default function NewCustomerPage() {
       });
       const data = await res.json();
       if (res.ok) {
+        // Start onboarding process
+        await fetch('/api/onboarding', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customerId: data.id,
+            onboardingData: onboarding,
+          }),
+        });
         router.push(`/customers/${data.id}`);
       } else {
         setError(data.error || '创建失败');
@@ -108,6 +135,77 @@ export default function NewCustomerPage() {
               onChange={e => setForm({ ...form, creditLimit: e.target.value })}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
             />
+          </div>
+
+          {/* Onboarding Questionnaire */}
+          <div className="border-t border-gray-200 pt-5 mt-5">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">入驻问卷</h2>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  企业类型
+                </label>
+                <select
+                  value={onboarding.enterpriseType}
+                  onChange={e => setOnboarding({ ...onboarding, enterpriseType: e.target.value as EnterpriseType })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                >
+                  <option value="manufacturer">制造商</option>
+                  <option value="trader">贸易商</option>
+                  <option value="ecommerce">电商卖家</option>
+                  <option value="other">其他</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  月订单量估算
+                </label>
+                <select
+                  value={onboarding.monthlyOrderVolume}
+                  onChange={e => setOnboarding({ ...onboarding, monthlyOrderVolume: e.target.value as MonthlyOrderVolume })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                >
+                  <option value="less_than_10">&lt;10</option>
+                  <option value="10_to_50">10-50</option>
+                  <option value="50_to_100">50-100</option>
+                  <option value="more_than_100">&gt;100</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  主要市场
+                </label>
+                <select
+                  value={onboarding.mainMarket}
+                  onChange={e => setOnboarding({ ...onboarding, mainMarket: e.target.value as MainMarket })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                >
+                  <option value="domestic">国内</option>
+                  <option value="export">出口</option>
+                  <option value="import">进口</option>
+                  <option value="transit">转口</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  客户来源渠道
+                </label>
+                <select
+                  value={onboarding.customerSource}
+                  onChange={e => setOnboarding({ ...onboarding, customerSource: e.target.value as CustomerSource })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                >
+                  <option value="active_acquisition">主动获客</option>
+                  <option value="exhibition">展会</option>
+                  <option value="referral">口碑推荐</option>
+                  <option value="online_promotion">网络推广</option>
+                </select>
+              </div>
+            </div>
           </div>
 
           {error && (

@@ -50,6 +50,8 @@ export interface Customer {
   isHighRisk: boolean;
   monthlyTransaction: number;
   lastTransactionDate?: Date;
+  onboardingStatus: 'pending' | 'in_progress' | 'completed';
+  onboardingData?: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
 }

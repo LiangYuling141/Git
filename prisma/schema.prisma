@@ -1,0 +1,249 @@
+// =============================================================================
+// Prisma Schema for LyMatrix CRM-ERP
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+enum RiskLevel {
+  L0
+  L1
+  L2
+}
+
+enum OperationType {
+  query
+  create
+  update
+  delete
+}
+
+enum OrderStatus {
+  pending
+  confirmed
+  shipped
+  completed
+  cancelled
+}
+
+enum PaymentMethod {
+  cash
+  transfer
+  credit
+  wechat
+  alipay
+}
+
+enum PaymentStatus {
+  pending
+  completed
+  failed
+  refunded
+}
+
+enum WhitelistLevel {
+  none
+  WL1
+  WL2
+  WL3
+}
+
+enum ConfirmationStatus {
+  pending
+  approved
+  rejected
+  expired
+}
+
+enum OnboardingStatus {
+  pending
+  in_progress
+  completed
+}
+
+// -----------------------------------------------------------------------------
+// User & Auth
+// -----------------------------------------------------------------------------
+
+model User {
+  id        String   @id @default(cuid())
+  userName  String
+  email     String?  @unique
+  phone     String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions         Session[]
+  auditLogs        AuditLog[]
+  confirmations    ConfirmationRequest[] @relation("Approver")
+  whitelistEntries WhitelistEntry[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  riskLevel RiskLevel @default(L1)
+  metadata  Json?
+  createdAt DateTime @default(now())
+  expiresAt DateTime?
+
+  @@map("sessions")
+}
+
+// -----------------------------------------------------------------------------
+// Business Entities
+// -----------------------------------------------------------------------------
+
+model Customer {
+  id                   String    @id @default(cuid())
+  name                 String
+  phone                String
+  email                String?
+  address              String?
+  taxId                String?
+  creditLimit          Float     @default(0)
+  creditLine           Float     @default(0)
+  isHighRisk           Boolean   @default(false)
+  monthlyTransaction   Float     @default(0)
+  lastTransactionDate  DateTime?
+  onboardingStatus     OnboardingStatus @default(pending)
+  onboardingData       Json?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  orders Order[]
+
+  @@map("customers")
+}
+
+model Order {
+  id           String      @id @default(cuid())
+  customerId   String
+  customer     Customer    @relation(fields: [customerId], references: [id])
+  orderNo      String      @unique
+  items        Json
+  totalAmount  Float
+  discount     Float?
+  remark       String?
+  status       OrderStatus @default(pending)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  payments Payment[]
+
+  @@map("orders")
+}
+
+model Payment {
+  id        String         @id @default(cuid())
+  orderId   String
+  order     Order          @relation(fields: [orderId], references: [id])
+  amount    Float
+  method    PaymentMethod
+  remark    String?
+  status    PaymentStatus @default(pending)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@map("payments")
+}
+
+// -----------------------------------------------------------------------------
+// Whitelist
+// -----------------------------------------------------------------------------
+
+model WhitelistEntry {
+  id                  String        @id @default(cuid())
+  userId              String
+  user                User          @relation(fields: [userId], references: [id])
+  level               WhitelistLevel @default(none)
+  passedRate          Float         @default(0)
+  monthlyTransaction  Float         @default(0)
+  enteredAt           DateTime      @default(now())
+  lastEvaluatedAt     DateTime      @default(now())
+
+  @@unique([userId])
+  @@map("whitelist_entries")
+}
+
+// -----------------------------------------------------------------------------
+// Confirmation Workflow
+// -----------------------------------------------------------------------------
+
+model ConfirmationRequest {
+  id         String             @id @default(cuid())
+  operation  Json
+  riskLevel  RiskLevel
+  userId     String
+  status     ConfirmationStatus @default(pending)
+  createdAt  DateTime           @default(now())
+  expiresAt  DateTime
+  approvedAt DateTime?
+  rejectedAt DateTime?
+  approverId String?
+  approver   User?              @relation("Approver", fields: [approverId], references: [id])
+
+  @@map("confirmation_requests")
+}
+
+// -----------------------------------------------------------------------------
+// Audit Logging
+// -----------------------------------------------------------------------------
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  timestamp   DateTime @default(now())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  operation   String
+  entity      String
+  entityId    String
+  before      Json?
+  after       Json?
+  ip          String?
+  userAgent   String?
+  result      String
+  errorMessage String?
+
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+// -----------------------------------------------------------------------------
+// Hook Execution Logs
+// -----------------------------------------------------------------------------
+
+model HookExecutionLog {
+  id        String   @id @default(cuid())
+  timestamp DateTime @default(now())
+  hookName  String
+  hookType  String
+  phase     String
+  status    String
+  duration  Int
+  userId    String?
+  operationType String?
+  riskLevel String?
+  message   String?
+  warnings  String[]
+  error     String?
+
+  @@index([hookName])
+  @@index([timestamp])
+  @@map("hook_execution_logs")
+}
