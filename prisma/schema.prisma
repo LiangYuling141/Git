@@ -224,6 +224,27 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+model SystemLog {
+  id         String   @id @default(cuid())
+  timestamp  DateTime @default(now())
+  level      String   // DEBUG, INFO, WARN, ERROR, FATAL
+  category   String   // SYSTEM, AUDIT, SECURITY, PERFORMANCE, BUSINESS
+  message    String
+  component  String?
+  userId     String?
+  sessionId  String?
+  requestId  String?
+  metadata   Json?
+  errorName  String?
+  errorMsg   String?
+  errorStack String?
+
+  @@index([category, timestamp])
+  @@index([level, timestamp])
+  @@index([userId, timestamp])
+  @@map("system_logs")
+}
+
 // -----------------------------------------------------------------------------
 // Hook Execution Logs
 // -----------------------------------------------------------------------------

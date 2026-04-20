@@ -1,0 +1,7 @@
+export enum LogCategory {
+  SYSTEM = 'SYSTEM',
+  AUDIT = 'AUDIT',
+  SECURITY = 'SECURITY',
+  PERFORMANCE = 'PERFORMANCE',
+  BUSINESS = 'BUSINESS',
+}
