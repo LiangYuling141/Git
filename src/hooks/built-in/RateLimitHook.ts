@@ -15,7 +15,7 @@ interface RateLimitConfig {
 }
 
 const DEFAULT_CONFIG: RateLimitConfig = {
-  limit: 100,              // 100 requests per minute for normal API
+  limit: 60,              // 60 requests per minute per docs/technical/12-hook-system-design.md
   windowSecs: 60,
 };
 

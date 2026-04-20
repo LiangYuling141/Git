@@ -11,6 +11,9 @@ import { whitelistManager } from '@/white-list';
 import { confirmationWorkflow } from '@/confirm';
 import { businessEngine } from '@/engine';
 import { miniMaxClient, type MiniMaxMessage } from '@/lib/ai/MiniMaxClient';
+import { loggerManager, LogCategory } from '@/lib/logger';
+
+const logger = loggerManager.getLogger(LogCategory.SYSTEM, 'MainAgent');
 
 const HOOK_PIPELINE = ['pre_processing', 'pre_agent', 'stop', 'pre_tool', 'post_execution'] as const;
 
@@ -183,7 +186,7 @@ export class MainAgent {
     const apiKey = process.env.MINIMAX_API_KEY;
 
     if (!apiKey || apiKey === 'your_api_key_here') {
-      console.warn('MINIMAX_API_KEY not configured, using regex fallback');
+      logger.warn('MINIMAX_API_KEY not configured, using regex fallback');
       return this.parseIntentWithRegex(userInput);
     }
 
@@ -222,7 +225,7 @@ export class MainAgent {
       const operationType = validTypes.includes(parsed.type || '') ? parsed.type as Operation['type'] : 'query';
       const entity = validEntities.includes(parsed.entity || '') ? parsed.entity as 'customer' | 'order' | 'payment' : 'unknown';
 
-      console.log(`[MainAgent] AI parsed intent: ${operationType} ${entity} (confidence: ${parsed.confidence || 'N/A'})`);
+      logger.info(`AI parsed intent: ${operationType} ${entity} (confidence: ${parsed.confidence || 'N/A'})`);
 
       return {
         id: parsed.id || crypto.randomUUID(),
@@ -233,7 +236,7 @@ export class MainAgent {
         data: parsed.data,
       };
     } catch (error) {
-      console.error('[MainAgent] AI intent parsing failed, falling back to regex:', error);
+      logger.error(`AI intent parsing failed, falling back to regex`, error as Error);
       return this.parseIntentWithRegex(userInput);
     }
   }

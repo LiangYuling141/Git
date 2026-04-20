@@ -2,6 +2,10 @@
 // MiniMax API Client
 // =============================================================================
 
+import { loggerManager, LogCategory } from '@/lib/logger';
+
+const logger = loggerManager.getLogger(LogCategory.SYSTEM, 'MiniMaxClient');
+
 export interface MiniMaxMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -13,6 +17,10 @@ export interface MiniMaxChatRequest {
   temperature?: number;
   max_tokens?: number;
   stream?: boolean;
+  bot_setting?: Array<{
+    bot_name: string;
+    bot_description?: string;
+  }>;
 }
 
 export interface MiniMaxChatResponse {
@@ -68,10 +76,18 @@ export class MiniMaxClient {
   async chat(request: MiniMaxChatRequest): Promise<MiniMaxChatResponse> {
     const url = `${this.baseUrl}/chat/completions`;
 
+    // MiniMax API requires bot_setting parameter
+    const botSetting = request.bot_setting || [
+      {
+        bot_name: 'LyMtrix Assistant',
+        bot_description: 'AI-powered CRM assistant for small business management'
+      }
+    ];
+
     const response = await fetch(url, {
       method: 'POST',
       headers: this.getHeaders(),
-      body: JSON.stringify(request),
+      body: JSON.stringify({ ...request, bot_setting: botSetting }),
     });
 
     if (!response.ok) {
@@ -92,26 +108,65 @@ export class MiniMaxClient {
   ): Promise<MiniMaxChatResponse> {
     const { maxRetries = 3, timeoutMs = 30000, retryDelayMs = 1000 } = options;
 
+    return this.executeWithFallback(request, { maxRetries, timeoutMs, retryDelayMs });
+  }
+
+  private async executeWithFallback(
+    request: MiniMaxChatRequest,
+    options: { maxRetries: number; timeoutMs: number; retryDelayMs: number }
+  ): Promise<MiniMaxChatResponse> {
+    const fallbackChain: Array<{ model: string; provider: string }> = [
+      { model: 'MiniMax-M2.7', provider: 'minimax' },
+      { model: 'MiniMax-M2.5', provider: 'minimax' },
+      { model: 'doubao-pro-32k', provider: 'doubao' },
+    ];
+
     let lastError: Error | null = null;
 
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    for (let level = 0; level < fallbackChain.length; level++) {
+      const fallback = fallbackChain[level];
+      
       try {
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Request timeout')), timeoutMs);
-        });
+        const fallbackRequest = { ...request, model: fallback.model as 'MiniMax-M2.7' | 'MiniMax-M2.5' };
+        
+        for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
+          try {
+            const timeoutPromise = new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error(`Timeout at ${fallback.provider}`)), options.timeoutMs);
+            });
 
-        const responsePromise = this.chat(request);
-        return await Promise.race([responsePromise, timeoutPromise]);
+            const responsePromise = this.chat(fallbackRequest);
+            const response = await Promise.race([responsePromise, timeoutPromise]);
+            logger.debug(`Fallback success at level ${level + 1}: ${fallback.model}`);
+            return response;
+          } catch (error) {
+            lastError = error as Error;
+            if (attempt < options.maxRetries) {
+              await this.delay(options.retryDelayMs * Math.pow(2, attempt));
+            }
+          }
+        }
       } catch (error) {
         lastError = error as Error;
-
-        if (attempt < maxRetries) {
-          await this.delay(retryDelayMs * Math.pow(2, attempt));
-        }
+        logger.warn(`Fallback level ${level + 1} (${fallback.model}) failed: ${lastError.message}`);
       }
     }
 
-    throw lastError || new Error('Max retries exceeded');
+    logger.warn('All LLM levels failed, using rule engine fallback');
+    return this.ruleEngineFallback(request);
+  }
+
+  private ruleEngineFallback(request: MiniMaxChatRequest): MiniMaxChatResponse {
+    return {
+      id: 'rule-fallback-' + Date.now(),
+      model: 'rule-engine',
+      choices: [{
+        index: 0,
+        message: { role: 'assistant', content: '{"status":"fallback","reason":"All AI services unavailable"}' },
+        finish_reason: 'stop'
+      }],
+      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+    };
   }
 
   private delay(ms: number): Promise<void> {

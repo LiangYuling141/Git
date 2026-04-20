@@ -4,6 +4,9 @@
 
 import type { IndustryPlugin } from '@/rules/PluginRegistry';
 import type { RuleDefinition } from '@/rules/types';
+import { loggerManager, LogCategory } from '@/lib/logger';
+
+const logger = loggerManager.getLogger(LogCategory.BUSINESS, 'InventoryReservationPlugin');
 
 // Simulated inventory data store (in real implementation, this would query the database)
 // In production, this should be replaced with actual Product/Inventory model queries
@@ -264,7 +267,7 @@ export const inventoryReservationPlugin: IndustryPlugin = {
    * This is called by the rule engine to perform custom checks beyond simple conditions
    */
   beforeExecute: async function (context): Promise<void> {
-    console.log(`[InventoryReservationPlugin] beforeExecute for ${context.operation} on ${context.entity}`);
+    logger.debug(`beforeExecute for ${context.operation} on ${context.entity}`);
 
     if (context.entity === 'order' && context.operation === 'create') {
       const items = context.data.items as Array<{ productId: string; quantity: number }> | undefined;
@@ -276,7 +279,7 @@ export const inventoryReservationPlugin: IndustryPlugin = {
       // Clean up expired reservations first
       const cleaned = cleanupExpiredReservations();
       if (cleaned > 0) {
-        console.log(`[InventoryReservationPlugin] Cleaned up ${cleaned} expired reservations`);
+        logger.info(`Cleaned up ${cleaned} expired reservations`);
       }
 
       // Check each item's availability
@@ -285,10 +288,10 @@ export const inventoryReservationPlugin: IndustryPlugin = {
 
         if (available < item.quantity) {
           // Insufficient stock - this will be caught by the rule engine
-          console.log(`[InventoryReservationPlugin] Insufficient stock for ${item.productId}: requested ${item.quantity}, available ${available}`);
+          logger.warn(`Insufficient stock for ${item.productId}: requested ${item.quantity}, available ${available}`);
         } else if (available < item.quantity * 0.2) {
           // Stock is low (< 20% of requested)
-          console.log(`[InventoryReservationPlugin] WARNING: Low stock for ${item.productId}: available ${available}, requested ${item.quantity}`);
+          logger.warn(`Low stock for ${item.productId}: available ${available}, requested ${item.quantity}`);
         }
       }
     }
@@ -298,7 +301,7 @@ export const inventoryReservationPlugin: IndustryPlugin = {
    * Post-execution hook for auto-reservation logic
    */
   afterExecute: async function (context, result): Promise<void> {
-    console.log(`[InventoryReservationPlugin] afterExecute for ${context.operation}`);
+    logger.debug(`afterExecute for ${context.operation}`);
 
     // If order creation passed and is confirmed, auto-reserve inventory
     if (result.passed && context.entity === 'order' && context.operation === 'create') {
@@ -310,16 +313,16 @@ export const inventoryReservationPlugin: IndustryPlugin = {
         const reservationResult = reserveInventory(orderId, items);
 
         if (reservationResult.success) {
-          console.log(`[InventoryReservationPlugin] Auto-reserved inventory for order ${orderId}, reservation ID: ${reservationResult.reservationId}`);
+          logger.info(`Auto-reserved inventory for order ${orderId}, reservation ID: ${reservationResult.reservationId}`);
         } else {
-          console.error(`[InventoryReservationPlugin] Failed to auto-reserve: ${reservationResult.error}`);
+          logger.error(`Failed to auto-reserve: ${reservationResult.error}`);
         }
       }
     }
   },
 
   initialize: async function (config: Record<string, unknown>): Promise<void> {
-    console.log(`[InventoryReservationPlugin] Initialized with config:`, config);
+    logger.info(`Initialized with config`, { config });
 
     // Initialize inventory store from config or database in production
     if (config.initialInventory) {
@@ -338,7 +341,7 @@ export const inventoryReservationPlugin: IndustryPlugin = {
     // Cleanup any expired reservations on startup
     const cleaned = cleanupExpiredReservations();
     if (cleaned > 0) {
-      console.log(`[InventoryReservationPlugin] Cleaned up ${cleaned} expired reservations on startup`);
+      logger.info(`Cleaned up ${cleaned} expired reservations on startup`);
     }
   },
 };

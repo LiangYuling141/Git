@@ -15,6 +15,12 @@ import { permissionCheckHook } from './built-in/PermissionCheckHook';
 import { operationPreviewHook } from './built-in/OperationPreviewHook';
 import { auditLogHook } from './built-in/AuditLogHook';
 import type { Hook } from './types';
+import { loggerManager, LogCategory, initializeLogger } from '@/lib/logger';
+
+// Initialize logger before hooks
+initializeLogger();
+
+const logger = loggerManager.getLogger(LogCategory.SYSTEM, 'HookInit');
 
 const builtInHooks: Hook[] = [
   inputSanitizationHook,
@@ -35,8 +41,8 @@ export function initializeHooks(): void {
 
   for (const hook of builtInHooks) {
     engine.register(hook);
-    console.log(`[Hooks] Registered: ${hook.name} (${hook.type}, priority ${hook.priority})`);
+    logger.debug(`Registered: ${hook.name} (${hook.type}, priority ${hook.priority})`);
   }
 
-  console.log(`[Hooks] Initialized ${builtInHooks.length} built-in hooks`);
+  logger.info(`Initialized ${builtInHooks.length} built-in hooks`);
 }

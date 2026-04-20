@@ -7,6 +7,9 @@ import { ruleExecutor } from './RuleExecutor';
 import { pluginRegistry } from './PluginRegistry';
 import { internationalTradePlugin } from './plugins/InternationalTradePlugin';
 import { inventoryReservationPlugin } from './plugins/InventoryReservationPlugin';
+import { loggerManager, LogCategory } from '@/lib/logger';
+
+const logger = loggerManager.getLogger(LogCategory.SYSTEM, 'RuleRegistry');
 
 export class RuleRegistry {
   private rules: Map<string, RuleDefinition> = new Map();
@@ -26,7 +29,7 @@ export class RuleRegistry {
     for (const rule of pluginRules) {
       this.register(rule);
     }
-    console.log(`[RuleRegistry] Loaded ${pluginRules.length} rules from plugins`);
+    logger.info(`Loaded ${pluginRules.length} rules from plugins`);
   }
 
   register(rule: RuleDefinition): void {
@@ -56,11 +59,34 @@ export class RuleRegistry {
     const relevantRules = this.getForEntityOperation(entity, operation);
     const context: RuleContext = { entity, operation, data };
 
+    for (const plugin of pluginRegistry.getAll()) {
+      if (plugin.beforeExecute) {
+        try {
+          await plugin.beforeExecute(context);
+        } catch (e) {
+          logger.warn(`Plugin ${plugin.pluginId} beforeExecute failed`, e as Error);
+        }
+      }
+    }
+
     const results = await Promise.all(
       relevantRules.map(async (rule) => {
         return ruleExecutor.execute(rule, context);
       })
     );
+
+    for (const plugin of pluginRegistry.getAll()) {
+      if (plugin.afterExecute) {
+        try {
+          const firstResult = results[0];
+          if (firstResult) {
+            await plugin.afterExecute(context, firstResult);
+          }
+        } catch (e) {
+          logger.warn(`Plugin ${plugin.pluginId} afterExecute failed`, e as Error);
+        }
+      }
+    }
 
     return {
       passed: !results.some((r) => !r.passed && r.errorLevel === 'reject'),

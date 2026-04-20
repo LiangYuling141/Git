@@ -4,6 +4,9 @@
 
 import type { Hook, HookContext, HookResult, HookType } from '../types';
 import { auditLogger } from '@/audit/AuditLogger';
+import { loggerManager, LogCategory } from '@/lib/logger';
+
+const logger = loggerManager.getLogger(LogCategory.AUDIT, 'AuditLogHook');
 
 export class AuditLogHook implements Hook {
   name = 'audit_log';
@@ -42,7 +45,7 @@ export class AuditLogHook implements Hook {
 
       return { status: 'allow', allowRetry: false };
     } catch (error) {
-      console.error('[AuditLogHook] Failed to write audit log:', error);
+      logger.error('Failed to write audit log', error as Error);
       return {
         status: 'warn',
         message: 'Failed to write audit log',

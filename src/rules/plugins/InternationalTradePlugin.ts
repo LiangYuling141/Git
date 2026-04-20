@@ -4,6 +4,9 @@
 
 import type { IndustryPlugin } from '../PluginRegistry';
 import type { RuleDefinition, RuleContext } from '../types';
+import { loggerManager, LogCategory } from '@/lib/logger';
+
+const logger = loggerManager.getLogger(LogCategory.BUSINESS, 'InternationalTradePlugin');
 
 // HS code validation: 6-10 digits, first 6 must match international HS classification
 function validateHsCode(hsCode: unknown): string[] {
@@ -179,7 +182,7 @@ export const internationalTradePlugin: IndustryPlugin = {
   },
 
   initialize: async function (config: Record<string, unknown>): Promise<void> {
-    console.log(`[InternationalTradePlugin] Initialized with config:`, config);
+    logger.info(`Initialized with config`, { config });
   },
 };
 
