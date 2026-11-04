@@ -1,5 +1,7 @@
 # 开源协议合规方案
 
+> **架构演进说明**：项目当前不再使用 OpenClaw，本文档中的 OpenClaw 条款保留作为历史参考。当前第三方依赖合规以 MCP SDK、Next.js、Prisma 等实际依赖为准，见 [06-system-architecture.md](../technical/06-system-architecture.md) 和 [13-trusted-execution-architecture.md](../technical/13-trusted-execution-architecture.md)。
+
 > 本文档详细描述项目使用 OpenClaw 框架的开源协议合规方案，确保商业化合法合规。
 
 ---

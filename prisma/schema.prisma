@@ -1,5 +1,5 @@
 // =============================================================================
-// Prisma Schema for LyMatrix CRM-ERP
+// Prisma Schema for LyMatrix TEF reference implementation (CRM-ERP)
 // =============================================================================
 
 generator client {

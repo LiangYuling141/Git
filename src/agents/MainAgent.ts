@@ -17,7 +17,7 @@ const logger = loggerManager.getLogger(LogCategory.SYSTEM, 'MainAgent');
 
 const HOOK_PIPELINE = ['pre_processing', 'pre_agent', 'stop', 'pre_tool', 'post_execution'] as const;
 
-const INTENT_SYSTEM_PROMPT = `You are an Intent Parser for LyMatrix CRM-ERP system.
+const INTENT_SYSTEM_PROMPT = `You are an Intent Parser for the LyMatrix TEF reference implementation (CRM-ERP).
 Your job is to understand user natural language input and convert it to structured operations.
 
  ENTITY TYPES:
@@ -83,6 +83,14 @@ export class MainAgent {
 
     // 3. Risk assessment
     const riskResult = riskAssessmentEngine.evaluateRiskLevel(operation, undefined, session);
+
+    if (riskResult.decision === 'block') {
+      return {
+        success: false,
+        error: `Blocked: ${riskResult.reasons.join('; ')}`,
+        riskLevel: riskResult.riskLevel,
+      };
+    }
 
     // 4. Check whitelist fast track
     const skipVotes = await whitelistManager.getFastTrackSkipCount(session.userId);

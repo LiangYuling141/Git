@@ -335,5 +335,7 @@
 
 ## 相关文档
 
+- [../technical/14-unified-architecture.md](../technical/14-unified-architecture.md) — 统一架构框架（裁决版，权威；审计假名化、crypto-shredding、保留期基线见 §10）
 - [01-open-source-compliance.md](01-open-source-compliance.md) — 开源协议合规方案
-- [../technical/05-four-layer-safety.md](../technical/05-four-layer-safety.md) — 四重防护机制详解
+- [../technical/05-four-layer-safety.md](../technical/05-four-layer-safety.md) — 六重防护机制详解（历史方案）
+- [../technical/13-trusted-execution-architecture.md](../technical/13-trusted-execution-architecture.md) — 可信执行架构详细设计（当前方案）

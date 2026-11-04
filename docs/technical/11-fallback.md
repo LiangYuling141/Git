@@ -1,6 +1,10 @@
 # 多级兜底策略
 
-> 本文档描述当 MiniMax 大模型服务不可用时的多级兜底策略，确保系统高可用。
+> **⚠️ 部分失效**：本文档中基于「投票票数」「L3 档位」的措辞已失效（投票已废弃、L3 不存在）。
+> 主题（LLM 不可用时的多级降级）在新架构中仍然有效且无替代品，但档位需按 **L0 / L1 / L2 / Block** 重写，并需澄清「规则引擎直接查询数据库」是否仍经 MCP 查询工具（否则违反「Agent 不碰 DB」）。
+> 权威定义见 [14-unified-architecture.md](14-unified-architecture.md) §1「设计公理」与 §3「唯一风险模型」。
+
+> 本文档描述当模型服务不可用时的多级兜底策略，确保系统高可用。
 
 ---
 
@@ -383,8 +387,10 @@ MVP阶段建议：
 
 ## 10. 相关文档
 
+- [14-unified-architecture.md](14-unified-architecture.md) — 统一架构框架（裁决版，权威）
 - [08-risk-classification.md](08-risk-classification.md) — 风险分级体系
-- [05-four-layer-safety.md](05-four-layer-safety.md) — 六重防护机制详解
+- [05-four-layer-safety.md](05-four-layer-safety.md) — 六重防护机制详解（历史方案）
 - [09-fast-path.md](09-fast-path.md) — 快速通道与白名单
 - [10-dynamic-risk.md](10-dynamic-risk.md) — 动态风险评估
 - [12-hook-system-design.md](12-hook-system-design.md) — Hook 系统详细设计
+- [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md) — 可信执行架构详细设计（当前方案）

@@ -79,8 +79,8 @@ export class MiniMaxClient {
     // MiniMax API requires bot_setting parameter
     const botSetting = request.bot_setting || [
       {
-        bot_name: 'LyMtrix Assistant',
-        bot_description: 'AI-powered CRM assistant for small business management'
+        bot_name: 'LyMatrix TEF Assistant',
+        bot_description: 'Trusted execution framework reference implementation for CRM-ERP'
       }
     ];
 

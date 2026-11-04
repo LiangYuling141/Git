@@ -29,7 +29,7 @@ const DEMO_SESSION: Session = {
 const WELCOME_MESSAGE: Message = {
   id: 'welcome',
   role: 'assistant',
-  content: '您好！我是 LyMatrix AI 助手。您可以用自然语言描述您的业务需求，例如：\n\n• "帮我查询一下伟业公司的最近订单"\n• "创建一个新客户：张三，电话 13800138000"\n• "查看本月的销售报表"\n\n请注意，金额超过 1 万元的操作需要二次确认。',
+  content: '您好！我是 LyMatrix TEF 参考实现助手。您可以用自然语言描述您的业务需求，例如：\n\n• "帮我查询一下伟业公司的最近订单"\n• "创建一个新客户：张三，电话 13800138000"\n• "查看本月的销售报表"\n\n请注意，金额超过 1 万元的操作需要二次确认。',
   timestamp: new Date(),
 };
 

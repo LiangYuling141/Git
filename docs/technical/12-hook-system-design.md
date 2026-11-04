@@ -1,6 +1,12 @@
 # Hook 系统设计
 
-> 本文档设计一套完整的 Hook 机制，用于在 AI 操作的关键节点进行拦截、验证和增强，实现多层防护的精细化控制。
+> **⚠️ 已被裁决**：Hook 不再是独立的横切安全层。Hook 被收编进 **L5 业务执行层**，只能作为契约 `Check` 的实现机制运行在可信域内。
+> 运行在 Agent 进程中的 Hook **不计入安全边界**——Agent 可被替换或攻破，其进程内的拦截不可信。
+> 权威定义见 [14-unified-architecture.md](14-unified-architecture.md) §9「能力归属矩阵」。
+>
+> 本文档中的「多 Agent 投票保持不变」「Stop Hooks 拦截后要求 AI 重新生成」等表述已失效。凡与 14 号冲突处一律以 14 号为准。
+
+> 本文档设计一套 Hook 机制，用于在契约执行的关键节点进行拦截、验证和增强。Hook 运行于 MCP Server 内部，实现与契约 `Check` 的职责对齐。
 
 ---
 
@@ -1081,6 +1087,8 @@ async executeWithCache(hook: Hook, context: HookContext): Promise<HookResult> {
 
 ### 8.2 相关文档
 
-- [05-four-layer-safety.md](05-four-layer-safety.md) — 四重防护机制
+- [14-unified-architecture.md](14-unified-architecture.md) — 统一架构框架（裁决版，权威）
+- [05-four-layer-safety.md](05-four-layer-safety.md) — 六重防护机制详解（历史方案）
 - [08-risk-classification.md](08-risk-classification.md) — 风险分级体系
 - [03-mcp-tool-whitelist.md](03-mcp-tool-whitelist.md) — MCP 工具白名单
+- [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md) — 可信执行架构详细设计（当前方案）

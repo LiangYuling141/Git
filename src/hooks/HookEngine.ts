@@ -64,7 +64,8 @@ export class HookEngine {
         results.push(result);
 
         if (result.status === 'modify' && result.modifiedData) {
-          context.metadata = { ...context.metadata, ...result.modifiedData };
+          const modifiedData = result.modifiedData as Record<string, unknown>;
+          context.metadata = { ...context.metadata, ...modifiedData };
         }
       } catch (error) {
         logger.error(`Hook ${hook.name} execution failed`, error as Error);

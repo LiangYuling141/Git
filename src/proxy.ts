@@ -1,14 +1,14 @@
-// src/middleware.ts
+// src/proxy.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
-const PUBLIC_PATHS = ['/api/auth/login', '/api/auth/logout', '/api/agent', '/api/customers', '/api/orders', '/api/payments'];
+const PUBLIC_PATHS = ['/api/auth/login', '/api/auth/logout'];
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Allow public paths
-  if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
+  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return NextResponse.next();
   }
 

@@ -10,7 +10,7 @@ import { loggerManager, LogCategory } from '@/lib/logger';
 
 const logger = loggerManager.getLogger(LogCategory.SECURITY, 'SubAgent2');
 
-const SYSTEM_PROMPT = `You are a Security Permission Validator Agent for LyMatrix CRM-ERP.
+const SYSTEM_PROMPT = `You are a Security Permission Validator Agent for the LyMatrix TEF reference implementation (CRM-ERP).
 Your role is to check if operations violate security rules or permission boundaries.
 
 SECURITY RULES:

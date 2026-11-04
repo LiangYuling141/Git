@@ -1,5 +1,7 @@
 # 统一业务引擎设计
 
+> **架构演进说明**：当前业务引擎位于 MCP Server 内部，作为可信执行内核；工具层与契约设计见 [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md)。
+
 > 本文档详细描述统一业务引擎的设计方案，包括核心模块、规则引擎、插件化架构、安全设计。
 
 ---
@@ -700,10 +702,12 @@ const businessRuleViolationHook = {
 
 ## 相关文档
 
+- [14-unified-architecture.md](14-unified-architecture.md) — 统一架构框架（裁决版，权威；规则系统已并入契约 Check）
 - [01-multi-agent-design.md](01-multi-agent-design.md) — Multi-Agent 协同决策系统
 - [02-openclaw-development.md](02-openclaw-development.md) — OpenClaw 内核定制方案
 - [03-mcp-tool-whitelist.md](03-mcp-tool-whitelist.md) — MCP 工具白名单体系
-- [05-four-layer-safety.md](05-four-layer-safety.md) — 六重防护机制详解
+- [05-four-layer-safety.md](05-four-layer-safety.md) — 六重防护机制详解（历史方案）
 - [08-risk-classification.md](08-risk-classification.md) — 风险分级体系
 - [09-fast-path.md](09-fast-path.md) — 快速通道与白名单
 - [12-hook-system-design.md](12-hook-system-design.md) — Hook 系统详细设计
+- [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md) — 可信执行架构详细设计（当前方案）
