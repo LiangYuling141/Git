@@ -1,5 +1,10 @@
-import { LogLevel, LogCategory } from './';
-import { Logger, LogOutput, LoggerOptions } from './Logger';
+import { LogLevel } from './LogLevel';
+import type { LogCategory } from './LogCategory';
+import { Logger } from './Logger';
+import type { LogOutput } from './Logger';
+import { ConsoleOutput } from './outputs/ConsoleOutput';
+import { FileOutput } from './outputs/FileOutput';
+import { DatabaseOutput } from './outputs/DatabaseOutput';
 
 export class LoggerManager {
   private loggers: Map<string, Logger> = new Map();
@@ -17,17 +22,14 @@ export class LoggerManager {
     this.outputs = [];
 
     if (options.enableConsole) {
-      const { ConsoleOutput } = require('./outputs/ConsoleOutput');
       this.outputs.push(new ConsoleOutput());
     }
 
     if (options.enableFile) {
-      const { FileOutput } = require('./outputs/FileOutput');
       this.outputs.push(new FileOutput(options.logDir || './logs'));
     }
 
     if (options.enableDatabase) {
-      const { DatabaseOutput } = require('./outputs/DatabaseOutput');
       this.outputs.push(new DatabaseOutput());
     }
 

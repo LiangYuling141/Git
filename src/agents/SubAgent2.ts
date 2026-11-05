@@ -38,7 +38,7 @@ User Context:
 - Risk Level: {riskLevel}`;
 
 export class SubAgent2 implements AgentVoter {
-  role: 'sub2' = 'sub2';
+  role = 'sub2' as const;
   private reason = '';
   private lastResult: ValidationResult = { passed: true };
 

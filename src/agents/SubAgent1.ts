@@ -40,7 +40,7 @@ Customer Context:
 - Monthly Transaction: {monthlyTransaction}`;
 
 export class SubAgent1 implements AgentVoter {
-  role: 'sub1' = 'sub1';
+  role = 'sub1' as const;
   private reason = '';
   private lastResult: ValidationResult = { passed: true };
 

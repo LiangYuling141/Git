@@ -300,7 +300,7 @@ export class BusinessEngine {
             data: { status: 'cancelled' },
           });
         } else {
-          // @ts-ignore - dynamic table deletion
+          // @ts-expect-error - dynamic table deletion
           await prisma[entity].delete({ where: { id } });
         }
 

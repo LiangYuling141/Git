@@ -85,7 +85,7 @@ export class HookEngine {
     initialContext: HookContext
   ): Promise<{ context: HookContext; results: Map<HookType, HookResult[]> }> {
     const results = new Map<HookType, HookResult[]>();
-    let context = initialContext;
+    const context = initialContext;
 
     for (const phase of phases) {
       const phaseResults = await this.execute(phase, context);

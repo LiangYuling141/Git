@@ -1,7 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { LogEntry, LogLevel } from '../';
-import { LogOutput } from '../Logger';
+import { LogLevel } from '../LogLevel';
+import type { LogEntry } from '../LogEntry';
+import type { LogOutput } from '../Logger';
 
 export class FileOutput implements LogOutput {
   private logDir: string;

@@ -2,7 +2,9 @@
 // Logger Configuration
 // =============================================================================
 
-import { LogLevel, LogCategory } from './';
+import { LogLevel } from './LogLevel';
+import { LogCategory } from './LogCategory';
+import { loggerManager } from './LoggerManager';
 
 export interface LoggerConfig {
   level: LogLevel;
@@ -25,7 +27,6 @@ export function getDefaultConfig(): LoggerConfig {
 }
 
 export function initializeLogger(): void {
-  const { loggerManager } = require('./');
   const config = getDefaultConfig();
 
   loggerManager.configure({

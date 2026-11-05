@@ -1,4 +1,6 @@
-import { LogLevel, LogCategory, LogEntry } from './';
+import { LogLevel } from './LogLevel';
+import type { LogCategory } from './LogCategory';
+import type { LogEntry } from './LogEntry';
 
 export interface LogOutput {
   write(entry: LogEntry): void | Promise<void>;

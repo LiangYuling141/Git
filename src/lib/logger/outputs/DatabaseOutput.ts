@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/prisma';
-import { LogEntry, LogLevel, LogCategory } from '../';
-import { LogOutput } from '../Logger';
+import { LogLevel } from '../LogLevel';
+import { LogCategory } from '../LogCategory';
+import type { LogEntry } from '../LogEntry';
+import type { LogOutput } from '../Logger';
 
 const PERSISTENT_CATEGORIES = [LogCategory.AUDIT, LogCategory.SECURITY, LogCategory.BUSINESS];
 
