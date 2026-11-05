@@ -202,6 +202,12 @@ Agent Runtime 不持有数据库凭据，不直接执行写操作；模型可以
 | [docs/technical/13-trusted-execution-architecture.md](docs/technical/13-trusted-execution-architecture.md) | 可信执行架构详细设计：业务操作契约、MCP 工具链、评测基准 |
 | [docs/technical/06-system-architecture.md](docs/technical/06-system-architecture.md) | 整体技术架构设计：技术选型、分层职责、核心流程、部署 |
 
+### 比赛材料
+
+| 文档 | 说明 |
+|------|------|
+| [docs/competition/挑战杯项目设计说明书.md](docs/competition/挑战杯项目设计说明书.md) | 挑战杯版项目设计说明书：设计思路、创新点、现状差距、评测方案与答辩手册 |
+
 ### 技术文档全集
 
 | 文档 | 说明 |
