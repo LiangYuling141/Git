@@ -58,20 +58,24 @@ async function prepareAppRole() {
   const client = connect();
   await client.connect();
   try {
+    // 角色名要拼进 SQL，所以只接受安全的标识符；密码来自环境变量，
+    // 而 CREATE/ALTER ROLE 是工具语句、不支持绑定参数，只能用 escapeLiteral。
+    if (!/^[a-z_][a-z0-9_]{0,62}$/.test(APP_ROLE)) {
+      throw new Error(`APP_DB_ROLE "${APP_ROLE}" is not a safe SQL identifier`);
+    }
+    const passwordLiteral = client.escapeLiteral(APP_ROLE_PASSWORD);
+
     const me = await client.query(`SELECT rolsuper, rolcreaterole FROM pg_roles WHERE rolname = current_user`);
     if (!me.rows[0]?.rolcreaterole && !me.rows[0]?.rolsuper) {
-      throw new Error(`current role cannot CREATE ROLE; run this step as a privileged role (CI does), or verify as the table owner`);
+      throw new Error(
+        `current role cannot CREATE ROLE; run this step as a privileged role (CI does), or verify as the table owner`,
+      );
     }
     const exists = await client.query(`SELECT 1 FROM pg_roles WHERE rolname = $1`, [APP_ROLE]);
-    if (exists.rowCount === 0) {
-      await client.query(`CREATE ROLE ${APP_ROLE} LOGIN PASSWORD $1 NOSUPERUSER NOCREATEROLE NOBYPASSRLS`, [
-        APP_ROLE_PASSWORD,
-      ]);
-    } else {
-      await client.query(`ALTER ROLE ${APP_ROLE} LOGIN PASSWORD $1 NOSUPERUSER NOCREATEROLE NOBYPASSRLS`, [
-        APP_ROLE_PASSWORD,
-      ]);
-    }
+    const verb = exists.rowCount === 0 ? 'CREATE' : 'ALTER';
+    await client.query(
+      `${verb} ROLE ${APP_ROLE} LOGIN PASSWORD ${passwordLiteral} NOSUPERUSER NOCREATEROLE NOBYPASSRLS`,
+    );
     await client.query(`GRANT USAGE, CREATE ON SCHEMA public TO ${APP_ROLE}`);
     await client.query(`GRANT ALL ON ALL TABLES IN SCHEMA public TO ${APP_ROLE}`);
     await client.query(`GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO ${APP_ROLE}`);
