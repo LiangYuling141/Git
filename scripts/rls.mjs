@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import pg from 'pg';
 
-dotenv.config({ path: ['.env.local', '.env'] });
+dotenv.config({ path: ['.env.local', '.env'], quiet: true });
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SQL_PATH = join(here, '..', 'prisma', 'rls.sql');

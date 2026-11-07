@@ -8,7 +8,7 @@
 import dotenv from 'dotenv';
 import pg from 'pg';
 
-dotenv.config({ path: ['.env.local', '.env'] });
+dotenv.config({ path: ['.env.local', '.env'], quiet: true });
 
 export const DEFAULT_TENANT_ID = 't_yiwu_demo';
 
