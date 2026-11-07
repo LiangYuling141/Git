@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="LyMatrix TEF">
+  <title>LyMatrix TEF</title>
+  <g fill="#4DA3FF">
+    <path d="M 906.71,275.77 A 460,460 0 0 0 117.29,275.77 L 261.37,362 L 762.63,362 Z"/>
+    <path d="M 110.06,288.29 A 460,460 0 0 0 504.77,971.94 L 507.41,804.05 L 256.78,369.95 Z"/>
+    <path d="M 519.23,971.94 A 460,460 0 0 0 913.94,288.29 L 767.22,369.95 L 516.59,804.05 Z"/>
+  </g>
+  <circle cx="512" cy="512" r="82" fill="#F2B84B"/>
+</svg>
