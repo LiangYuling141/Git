@@ -79,6 +79,12 @@ jobs:
       - name: Apply row-level security
         run: npm run rls:apply
 
+      # RLS 对超级用户和（未 FORCE 时的）表 owner 都不生效。CI 的 postgres 用户
+      # 是超级用户，用它验证会得到"全部通过"的假象，所以先建一个既非超级用户、
+      # 也非表 owner 的应用角色，再用它验证——这时所有启用 RLS 的表都真正受约束。
+      - name: Prepare non-superuser app role
+        run: node scripts/rls.mjs prepare-app-role
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -91,7 +97,7 @@ jobs:
         run: npm test
 
       - name: Verify tenant isolation
-        run: npm run rls:verify
+        run: DATABASE_URL="$(node scripts/rls.mjs app-role-url)" npm run rls:verify
 
       - name: Build
         run: npm run build
