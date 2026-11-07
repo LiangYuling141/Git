@@ -1,5 +1,9 @@
 // =============================================================================
 // Prisma Schema for LyMatrix TEF reference implementation (CRM-ERP)
+//
+// 多租户约定：所有租户隔离表都带 tenantId，默认值为 DEFAULT_TENANT_ID
+// （"t_yiwu_demo"，定义于 src/tef/tenant.ts）。该默认值只为让既有演示数据无损
+// 落入首个租户，不代表租户可选——TEF 的每条数据访问路径都必须显式解析租户。
 // =============================================================================
 
 generator client {
@@ -49,6 +53,8 @@ enum PaymentStatus {
   completed
   failed
   refunded
+  // 补偿动作把尚未收款的计划作废；refunded 表示钱真的退回了，语义不同。
+  voided
 }
 
 enum WhitelistLevel {
@@ -71,12 +77,134 @@ enum OnboardingStatus {
   completed
 }
 
+// 统一风险模型（docs/technical/14-unified-architecture.md §3）。
+// 上面的 RiskLevel 是遗留枚举，TEF 侧一律使用 RiskOutcome：Block 是结果不是等级。
+enum RiskOutcome {
+  L0
+  L1
+  L2
+  BLOCK
+}
+
+enum TenantRole {
+  owner
+  sales
+  finance
+  viewer
+}
+
+enum PreviewStatus {
+  active
+  consumed
+  expired
+  revoked
+}
+
+enum TokenStatus {
+  issued
+  approved
+  used
+  rejected
+  expired
+  revoked
+}
+
+enum ActorType {
+  human
+  agent
+  system
+}
+
+enum AuditDecision {
+  allow
+  confirm
+  block
+  reject
+}
+
+enum AuditResult {
+  success
+  failure
+  compensated
+  compensation_failed
+}
+
+// TaskState 的 12 个状态（§8.1）
+enum TaskStatus {
+  idle
+  intent_parsed
+  awaiting_clarification
+  context_loaded
+  preview_ready
+  awaiting_confirmation
+  executing
+  completed
+  failed
+  compensated
+  compensation_failed
+  conflict
+}
+
+// -----------------------------------------------------------------------------
+// Tenancy
+// -----------------------------------------------------------------------------
+
+model Tenant {
+  id             String   @id @default(cuid())
+  name           String
+  slug           String   @unique
+  plan           String   @default("free")
+  status         String   @default("active")
+  dataResidency  String   @default("CN")
+  // 风险阈值等租户配置。配置变更本身也应是契约操作并留审计（§11.1）。
+  thresholds     Json     @default("{}")
+  enabledPlugins String[] @default([])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  members       TenantMember[]
+  users         User[]                @relation("UserHomeTenant")
+  sessions      Session[]
+  customers     Customer[]
+  orders        Order[]
+  payments      Payment[]
+  products      Product[]
+  whitelist     WhitelistEntry[]
+  confirmations ConfirmationRequest[]
+  auditLogs     AuditLog[]
+  previews      PreviewSnapshot[]
+  tokens        ConfirmationToken[]
+  idempotency   IdempotencyRecord[]
+  auditEvents   AuditEvent[]
+  chainHead     AuditChainHead?
+  taskStates    TaskState[]
+
+  @@map("tenants")
+}
+
+model TenantMember {
+  id        String     @id @default(cuid())
+  tenantId  String
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      TenantRole @default(viewer)
+  createdAt DateTime   @default(now())
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+  @@map("tenant_members")
+}
+
 // -----------------------------------------------------------------------------
 // User & Auth
 // -----------------------------------------------------------------------------
 
 model User {
   id        String   @id @default(cuid())
+  // 归属租户：登录后的默认租户上下文。跨租户访问由 TenantMember 决定。
+  tenantId  String   @default("t_yiwu_demo")
+  tenant    Tenant   @relation("UserHomeTenant", fields: [tenantId], references: [id])
   userName  String
   email     String?  @unique
   phone     String?  @unique
@@ -87,19 +215,24 @@ model User {
   auditLogs        AuditLog[]
   confirmations    ConfirmationRequest[] @relation("Approver")
   whitelistEntries WhitelistEntry[]
+  memberships      TenantMember[]
 
+  @@index([tenantId])
   @@map("users")
 }
 
 model Session {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
+  tenantId  String    @default("t_yiwu_demo")
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
   riskLevel RiskLevel @default(L1)
   metadata  Json?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
   expiresAt DateTime?
 
+  @@index([tenantId])
   @@map("sessions")
 }
 
@@ -107,58 +240,104 @@ model Session {
 // Business Entities
 // -----------------------------------------------------------------------------
 
+// 义乌场景重名极多，故意不给 name / phone 加唯一约束：
+// 候选多于 1 时必须走澄清（§7.3），唯一约束会把这条关键路径抹掉。
 model Customer {
-  id                   String    @id @default(cuid())
-  name                 String
-  phone                String
-  email                String?
-  address              String?
-  taxId                String?
-  creditLimit          Float     @default(0)
-  creditLine           Float     @default(0)
-  isHighRisk           Boolean   @default(false)
-  monthlyTransaction   Float     @default(0)
-  lastTransactionDate  DateTime?
-  onboardingStatus     OnboardingStatus @default(pending)
-  onboardingData       Json?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  id                  String           @id @default(cuid())
+  tenantId            String           @default("t_yiwu_demo")
+  tenant              Tenant           @relation(fields: [tenantId], references: [id])
+  name                String
+  phone               String
+  email               String?
+  address             String?
+  taxId               String?
+  creditLimit         Float            @default(0)
+  creditLine          Float            @default(0)
+  creditUsed          Float            @default(0)
+  overdueDays         Int              @default(0)
+  customerType        String           @default("normal")
+  status              String           @default("active")
+  isHighRisk          Boolean          @default(false)
+  monthlyTransaction  Float            @default(0)
+  lastTransactionDate DateTime?
+  onboardingStatus    OnboardingStatus @default(pending)
+  onboardingData      Json?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
   orders Order[]
 
+  @@index([tenantId])
+  @@index([tenantId, name])
   @@map("customers")
 }
 
 model Order {
-  id           String      @id @default(cuid())
-  customerId   String
-  customer     Customer    @relation(fields: [customerId], references: [id])
-  orderNo      String      @unique
-  items        Json
-  totalAmount  Float
-  discount     Float?
-  remark       String?
-  status       OrderStatus @default(pending)
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  id          String      @id @default(cuid())
+  tenantId    String      @default("t_yiwu_demo")
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
+  customerId  String
+  customer    Customer    @relation(fields: [customerId], references: [id])
+  orderNo     String
+  items       Json
+  totalAmount Float
+  discount    Float?
+  // 赊账订单条款：定金比例、定金、余款、账期天数
+  depositRate Float       @default(0)
+  deposit     Float       @default(0)
+  balance     Float       @default(0)
+  termsDays   Int         @default(0)
+  remark      String?
+  status      OrderStatus @default(pending)
+  // 溯源：这单由哪个预览快照 / 追踪链产生
+  previewId   String?
+  traceId     String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
   payments Payment[]
 
+  @@unique([tenantId, orderNo])
+  @@index([tenantId, customerId])
+  @@index([traceId])
   @@map("orders")
 }
 
 model Payment {
-  id        String         @id @default(cuid())
+  id        String        @id @default(cuid())
+  tenantId  String        @default("t_yiwu_demo")
+  tenant    Tenant        @relation(fields: [tenantId], references: [id])
   orderId   String
-  order     Order          @relation(fields: [orderId], references: [id])
+  order     Order         @relation(fields: [orderId], references: [id])
   amount    Float
   method    PaymentMethod
   remark    String?
   status    PaymentStatus @default(pending)
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  dueAt     DateTime?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
 
+  @@index([tenantId, orderId])
   @@map("payments")
+}
+
+// 库存。inventory.check 查询工具与赊账契约的库存前置条件都读这里，
+// 取代 src/rules/plugins/InventoryReservationPlugin.ts 的进程内 Map 模拟。
+model Product {
+  id           String   @id @default(cuid())
+  tenantId     String   @default("t_yiwu_demo")
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  sku          String
+  name         String
+  unitPrice    Float    @default(0)
+  availableQty Int      @default(0)
+  reservedQty  Int      @default(0)
+  unit         String   @default("件")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, sku])
+  @@map("products")
 }
 
 // -----------------------------------------------------------------------------
@@ -166,25 +345,31 @@ model Payment {
 // -----------------------------------------------------------------------------
 
 model WhitelistEntry {
-  id                  String        @id @default(cuid())
-  userId              String
-  user                User          @relation(fields: [userId], references: [id])
-  level               WhitelistLevel @default(none)
-  passedRate          Float         @default(0)
-  monthlyTransaction  Float         @default(0)
-  enteredAt           DateTime      @default(now())
-  lastEvaluatedAt     DateTime      @default(now())
+  id                 String         @id @default(cuid())
+  tenantId           String         @default("t_yiwu_demo")
+  tenant             Tenant         @relation(fields: [tenantId], references: [id])
+  userId             String
+  user               User           @relation(fields: [userId], references: [id])
+  level              WhitelistLevel @default(none)
+  passedRate         Float          @default(0)
+  monthlyTransaction Float          @default(0)
+  enteredAt          DateTime       @default(now())
+  lastEvaluatedAt    DateTime       @default(now())
 
   @@unique([userId])
+  @@index([tenantId])
   @@map("whitelist_entries")
 }
 
 // -----------------------------------------------------------------------------
-// Confirmation Workflow
+// Confirmation Workflow (legacy)
 // -----------------------------------------------------------------------------
 
+// 遗留确认表。TEF 的确认协议走 PreviewSnapshot + ConfirmationToken。
 model ConfirmationRequest {
   id         String             @id @default(cuid())
+  tenantId   String             @default("t_yiwu_demo")
+  tenant     Tenant             @relation(fields: [tenantId], references: [id])
   operation  Json
   riskLevel  RiskLevel
   userId     String
@@ -196,39 +381,213 @@ model ConfirmationRequest {
   approverId String?
   approver   User?              @relation("Approver", fields: [approverId], references: [id])
 
+  @@index([tenantId, status])
   @@map("confirmation_requests")
 }
 
 // -----------------------------------------------------------------------------
-// Audit Logging
+// TEF: Preview Snapshot & One-time Confirmation Token
+// -----------------------------------------------------------------------------
+
+// 预览快照是执行参数的唯一来源（§4.1）。模型无法在确认后修改这里的任何字段。
+model PreviewSnapshot {
+  id              String        @id @default(cuid())
+  tenantId        String        @default("t_yiwu_demo")
+  tenant          Tenant        @relation(fields: [tenantId], references: [id])
+  contract        String
+  contractVersion String
+  status          PreviewStatus @default(active)
+  // 归一化后的参数。执行时按此取回，不接受模型重新生成的业务参数（公理 I3）。
+  normalizedArgs  Json
+  intentHash      String
+  // 证据摘要只进审计，绝不进 intentHash（§4.2）
+  evidenceDigest  String
+  evidence        Json
+  diff            Json
+  risk            RiskOutcome
+  reasons         String[]
+  failedChecks    Json?
+  userId          String
+  sessionId       String
+  traceId         String
+  createdAt       DateTime      @default(now())
+  expiresAt       DateTime
+  consumedAt      DateTime?
+
+  tokens ConfirmationToken[]
+
+  @@index([tenantId, status, expiresAt])
+  @@index([traceId])
+  @@map("preview_snapshots")
+}
+
+// 令牌字符串本身不落库，只存 sha256(token)。HMAC 签名保证不可伪造，
+// 本表的原子状态迁移保证一次性；重放返回 CONFLICT（§4.3）。
+model ConfirmationToken {
+  id               String          @id @default(cuid())
+  tokenHash        String          @unique
+  tenantId         String          @default("t_yiwu_demo")
+  tenant           Tenant          @relation(fields: [tenantId], references: [id])
+  previewId        String
+  preview          PreviewSnapshot @relation(fields: [previewId], references: [id])
+  userId           String
+  sessionId        String
+  intentHash       String
+  contract         String
+  contractVersion  String
+  risk             RiskOutcome
+  status           TokenStatus     @default(issued)
+  // L1 签发即生效；L2 必须先 approved 才能执行（公理 I4）
+  requiresApproval Boolean         @default(false)
+  approvedBy       String?
+  approvedAt       DateTime?
+  rejectedBy       String?
+  rejectedAt       DateTime?
+  issuedAt         DateTime        @default(now())
+  expiresAt        DateTime
+  usedAt           DateTime?
+  traceId          String
+
+  @@index([tenantId, status])
+  @@index([previewId])
+  @@index([expiresAt])
+  @@map("confirmation_tokens")
+}
+
+// 幂等：重复请求返回第一次的结果，不重复执行（§4.4）
+model IdempotencyRecord {
+  id             String   @id @default(cuid())
+  tenantId       String   @default("t_yiwu_demo")
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  toolName       String
+  idempotencyKey String
+  status         String   @default("completed")
+  response       Json
+  auditEventId   String?
+  createdAt      DateTime @default(now())
+
+  @@unique([tenantId, toolName, idempotencyKey])
+  @@map("idempotency_records")
+}
+
+// -----------------------------------------------------------------------------
+// TEF: Audit Hash Chain
+// -----------------------------------------------------------------------------
+
+// 每租户一个链头，作为追加时的锁锚点：seq 与 prevHash 都从这里原子推进。
+model AuditChainHead {
+  tenantId  String   @id
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lastSeq   Int      @default(0)
+  lastHash  String
+  updatedAt DateTime @updatedAt
+
+  @@map("audit_chain_heads")
+}
+
+// 只追加。hash = H(prevHash ‖ canonical(event))（§10.1）
+// 事件里只存 subjectRef 假名，绝不存姓名/电话/地址等直接标识（§10.2）。
+model AuditEvent {
+  id              String        @id @default(cuid())
+  eventId         String        @unique
+  traceId         String
+  tenantId        String        @default("t_yiwu_demo")
+  tenant          Tenant        @relation(fields: [tenantId], references: [id])
+  seq             Int
+  actorId         String
+  actorType       ActorType
+  tool            String
+  contract        String
+  contractVersion String
+  intentHash      String
+  argsRedacted    Json
+  evidenceDigest  String
+  risk            RiskOutcome
+  reasons         String[]
+  decision        AuditDecision
+  result          AuditResult
+  subjectRef      String?
+  modelVersion    String?
+  promptVersion   String?
+  ts              DateTime      @default(now())
+  prevHash        String
+  hash            String        @unique
+  // canonical(event 去掉 prevHash/hash) 的摘要，校验时无需信任库内 JSON 编码
+  payloadDigest   String
+
+  @@unique([tenantId, seq])
+  @@index([traceId])
+  @@index([tenantId, ts])
+  @@map("audit_events")
+}
+
+// -----------------------------------------------------------------------------
+// TEF: Task State
+// -----------------------------------------------------------------------------
+
+// 对话上下文只保存"说了什么"，任务进行到哪一步只存在这里（§8.3）
+model TaskState {
+  id                     String     @id @default(cuid())
+  tenantId               String     @default("t_yiwu_demo")
+  tenant                 Tenant     @relation(fields: [tenantId], references: [id])
+  userId                 String
+  conversationId         String
+  status                 TaskStatus @default(idle)
+  intent                 Json?
+  pendingPreviewId       String?
+  pendingIntentHash      String?
+  pendingContract        String?
+  pendingContractVersion String?
+  pendingExpiresAt       DateTime?
+  activeCustomerId       String?
+  activeOrderId          String?
+  idempotencyKey         String?
+  clarificationRounds    Int        @default(0)
+  version                Int        @default(0)
+  // 任务级 trace：一次写入的完整生命周期（含澄清往返）共用一条链，
+  // 否则 audit.trace 会把同一个任务切成几段，回放不出完整决策过程。
+  traceId                String?
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
+
+  @@unique([tenantId, conversationId])
+  @@index([tenantId, userId, status])
+  @@map("task_states")
+}
+
+// -----------------------------------------------------------------------------
+// Audit Logging (legacy — TEF 的审计走上面的 AuditEvent 哈希链)
 // -----------------------------------------------------------------------------
 
 model AuditLog {
-  id          String   @id @default(cuid())
-  timestamp   DateTime @default(now())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  operation   String
-  entity      String
-  entityId    String
-  before      Json?
-  after       Json?
-  ip          String?
-  userAgent   String?
-  result      String
+  id           String   @id @default(cuid())
+  tenantId     String   @default("t_yiwu_demo")
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  timestamp    DateTime @default(now())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  operation    String
+  entity       String
+  entityId     String
+  before       Json?
+  after        Json?
+  ip           String?
+  userAgent    String?
+  result       String
   errorMessage String?
 
   @@index([userId])
   @@index([entity, entityId])
   @@index([timestamp])
+  @@index([tenantId])
   @@map("audit_logs")
 }
 
 model SystemLog {
   id         String   @id @default(cuid())
   timestamp  DateTime @default(now())
-  level      String   // DEBUG, INFO, WARN, ERROR, FATAL
-  category   String   // SYSTEM, AUDIT, SECURITY, PERFORMANCE, BUSINESS
+  level      String // DEBUG, INFO, WARN, ERROR, FATAL
+  category   String // SYSTEM, AUDIT, SECURITY, PERFORMANCE, BUSINESS
   message    String
   component  String?
   userId     String?
@@ -250,19 +609,19 @@ model SystemLog {
 // -----------------------------------------------------------------------------
 
 model HookExecutionLog {
-  id        String   @id @default(cuid())
-  timestamp DateTime @default(now())
-  hookName  String
-  hookType  String
-  phase     String
-  status    String
-  duration  Int
-  userId    String?
+  id            String   @id @default(cuid())
+  timestamp     DateTime @default(now())
+  hookName      String
+  hookType      String
+  phase         String
+  status        String
+  duration      Int
+  userId        String?
   operationType String?
-  riskLevel String?
-  message   String?
-  warnings  String[]
-  error     String?
+  riskLevel     String?
+  message       String?
+  warnings      String[]
+  error         String?
 
   @@index([hookName])
   @@index([timestamp])

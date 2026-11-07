@@ -5,7 +5,7 @@
 
 LyMatrix TEF 是一个面向 AI Agent 的可信执行框架。它不试图让模型输出变得确定，而是让模型产生的**副作用**变得确定：任何写操作都必须经过契约校验、证据加载、风险定级、预览快照、一次性令牌确认和幂等执行，否则被阻断、拒绝或转人工。
 
-**当前状态**：参考架构与 Phase 0 MVP 建设中，尚未达到生产可用。成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)。
+**当前状态（2026-11-07）**：Phase 0 闭环已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime 与确认 UI 全部可运行，232 个测试通过（含 19 个对真实 PostgreSQL 的闭环与攻击场景集成测试）。尚未达到生产可用：评测体系（Phase 2）、补偿执行路径与遗留代码清理仍未完成。成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
 
 ---
 
@@ -42,7 +42,7 @@ LyMatrix TEF 是一个面向 AI Agent 的可信执行框架。它不试图让模
 | 目录 | 现状 | 目标 |
 |------|------|------|
 | `docs/` | 框架设计、参考实现与合规文档 | 拆分为 `docs/core/` 与 `docs/reference/crm-erp/` |
-| `src/` | Next.js CRM-ERP 参考实现（Phase 0 建设中） | 核心能力下沉到 `packages/core` |
+| `src/` | Next.js 参考实现 + TEF 框架核心（`src/tef/`）、MCP 工具层（`src/mcp-server/`）、垂直契约（`src/contracts/`）、Agent Runtime（`src/agent-runtime/`） | 框架核心下沉到 `packages/core`，垂直移入 `examples/crm-erp` |
 | `prisma/` | 参考实现数据模型 | 保留为 `examples/crm-erp` 的数据层 |
 
 当前阶段先完成"改名 + 定位 + 文档"，代码目录拆分与仓库改名随 Phase 0 一起做。框架核心不得依赖 CRM 字段、订单模型或义乌规则。
@@ -246,14 +246,50 @@ Agent Runtime 不持有数据库凭据，不直接执行写操作；模型可以
 
 ## 成熟度与落地计划
 
-| 阶段 | 时间 | 核心交付物 |
-|------|------|------------|
-| Phase 0 | 第 1-2 周 | 多租户底座 + 契约引擎 + 跑通"赊账订单"闭环：查询客户、查额度、查库存、预览订单、执行订单 |
-| Phase 1 | 第 3-4 周 | L1 自动执行路径、dry-run/diff、确认令牌、幂等、冲突恢复、补偿、审计事件 |
-| Phase 2 | 第 5-6 周 | 300-500 条评测集、危险写入拦截率、误拒率、P95、成本；核心与垂直解耦 |
-| Phase 3 | 第 7-8 周 | 参考垂直插件、计量计费与配额、角色细化、生产部署、软著/专利/论文材料 |
+| 阶段 | 核心交付物 | 状态（2026-11-07） |
+|------|------------|--------------------|
+| Phase 0 | 多租户底座 + 契约引擎 + 跑通"赊账订单"闭环：查询客户、查额度、查库存、预览订单、执行订单 | **已完成**，CI 每次推送对真实 PostgreSQL 复跑闭环与攻击场景 |
+| Phase 1 | L1 自动执行路径、dry-run/diff、确认令牌、幂等、冲突恢复、补偿、审计事件 | **部分提前落地**：L1 路径、diff、令牌、幂等、审计事件、`CONFLICT` 检测与旧令牌作废已实现；**补偿的运行时执行路径未实现** |
+| Phase 2 | 300-500 条评测集、危险写入拦截率、误拒率、P95、成本；核心与垂直解耦 | 未开始 |
+| Phase 3 | 参考垂直插件、计量计费与配额、角色细化、生产部署、软著/专利/论文材料 | 未开始 |
 
-当前对外表述应使用"参考架构 / framework，目标工业级"，不得宣称已达到工业级生产可用。
+当前对外表述应使用"参考架构 / framework，目标工业级"，不得宣称已达到工业级生产可用。Phase 0 闭环跑通也不等于 L1 完成——L1 的验收还包含补偿回滚。
+
+---
+
+## 本地运行
+
+前置：Node 22+、PostgreSQL、（可选）Redis 与 MiniMax API key。
+
+```bash
+cp .env.example .env.local      # 真实密钥写 .env.local，它被 gitignore 覆盖
+npm install
+
+# 1. 生成令牌签名密钥（至少 32 字符，缺失时服务拒绝签发令牌）
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+#    把输出填进 .env.local 的 TEF_TOKEN_SECRET
+
+# 2. 建库并灌入参考场景数据
+npm run db:bootstrap            # 先建 tenants 表并写入默认租户（外键顺序要求）
+npx prisma db push              # 同步其余 schema
+npx prisma generate
+npm run db:seed                 # 义乌赊账订单演示数据：两个"伟业"候选、圣诞球库存、角色成员
+
+# 3. 启用行级安全
+npm run rls:apply
+npm run rls:verify              # 7 项隔离检查，用真实查询证明策略生效
+
+# 4. 验证与运行
+npm test                        # 单元测试
+TEF_DB_TESTS=1 npm test         # 加上对真实数据库的闭环与攻击场景集成测试
+npm run dev                     # http://localhost:3000/login，账号 admin@example.com / demo123
+```
+
+登录后进入 `/chat`，输入：
+
+> 给伟业公司下一单，5000 个圣诞球，单价 2 块，先付 30% 定金，余款 30 天账期
+
+会依次看到：重名澄清（两个"伟业"候选）→ 选定客户 → L2 风险判定与服务端 diff → 人工批准 → 出单与审计事件 ID。整个过程共用一条 `traceId`，可用 `audit.trace` 工具回放。
 
 ---
 
