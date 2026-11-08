@@ -264,6 +264,7 @@ git merge --no-ff feature/customer-management
 ## Key Files
 
 - [docs/00-positioning.md](docs/00-positioning.md) — **定位与命名**：LyMatrix TEF 的核心命题、边界、成熟度与参考实现关系
+- [docs/00-framework.md](docs/00-framework.md) — **项目框架总览**：分层架构、信任域、核心机制、MCP 工具、数据模型、核心流程、代码映射与实施进度
 - [docs/technical/14-unified-architecture.md](docs/technical/14-unified-architecture.md) — **统一架构框架（裁决版，单一权威）**：六条公理、信任域分层、L0/L1/L2/Block、预览快照、双层哈希、契约引擎、澄清协议、审计合规、多租户
 - [README.md](README.md) — 完整项目文档
 - [docs/technical/06-system-architecture.md](docs/technical/06-system-architecture.md) — 整体技术架构设计（MCP 可信执行版）

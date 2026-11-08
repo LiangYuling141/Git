@@ -263,6 +263,8 @@ stateDiagram-v2
 - 失败时执行契约中定义的补偿动作，并记录 `rolled_back` 事件。
 - 补偿动作本身也必须幂等。
 
+> **实现状态（2026-11-08）**：已提交订单的补偿通过 `compensate_order` 契约执行，复用原契约的 `compensation` 声明；补偿本身是 L2，需要人工确认后才能执行。详见 [../00-framework.md](../00-framework.md) §4.5、§7.5。
+
 ### 4.5 并发控制
 
 - 客户信用额度、库存使用乐观锁或行级锁。
@@ -562,6 +564,7 @@ src/
 ## 相关文档
 
 - [../00-positioning.md](../00-positioning.md) — 定位与命名（项目身份、边界与成熟度）
+- [../00-framework.md](../00-framework.md) — 项目框架总览（分层架构、MCP 工具、数据模型、核心流程与实施进度）
 - [14-unified-architecture.md](14-unified-architecture.md) — 统一架构框架（裁决版，权威；operationHash 已拆分为 intentHash + evidenceDigest）
 - [06-system-architecture.md](06-system-architecture.md) — 整体技术架构设计
 - [03-mcp-tool-whitelist.md](03-mcp-tool-whitelist.md) — MCP 工具白名单体系

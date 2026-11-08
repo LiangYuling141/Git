@@ -65,7 +65,7 @@ TEF 的判断是：模型输出无法被证明确定，但**执行边界可以�
 | 级别 | 定义 | 当前状态 |
 |------|------|----------|
 | L0 设计 | 架构、契约、威胁模型成文 | 已完成 |
-| L1 参考实现 | 一个垂直端到端跑通 | 进行中：Phase 0 闭环已跑通并有自动化验证（2026-11-07，232 个测试，含 19 个真实数据库集成测试）；Phase 1 的补偿执行路径未完成，因此尚未达到 L1 |
+| L1 参考实现 | 一个垂直端到端跑通 | 进行中：Phase 0 闭环与 Phase 1 补偿运行时已跑通并有自动化验证（2026-11-08，279 个测试，含 27 个真实数据库集成测试）；崩溃恢复与并发压测未完成，因此尚未达到完整 L1 |
 | L2 框架 Beta | 核心与垂直解耦，具备 SDK、文档与测试 | 未开始（`src/tef/` 已不依赖 CRM 字段，垂直经契约与实体适配器注入，这是 L2 的前置条件而非 L2 本身） |
 | L3 工业级 | 安全评审、压测、兼容性、SLA | 未开始 |
 
@@ -98,6 +98,7 @@ CRM-ERP 不再是项目的最终形态，而是框架的第一个参考实现与
 
 ## 相关文档
 
+- [00-framework.md](00-framework.md) — 项目框架总览（分层架构、核心机制、代码映射与实施进度）
 - [technical/14-unified-architecture.md](technical/14-unified-architecture.md) — 统一架构框架（裁决版，单一权威）
 - [technical/13-trusted-execution-architecture.md](technical/13-trusted-execution-architecture.md) — 可信执行架构详细设计
 - [technical/06-system-architecture.md](technical/06-system-architecture.md) — 整体技术架构设计
