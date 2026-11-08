@@ -2,8 +2,9 @@ import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 
-// 集成测试需要真实连接串与令牌密钥；.env.local 优先于被 git 跟踪的 .env。
-dotenv.config({ path: ['.env.local', '.env'], quiet: true });
+// 集成测试需要真实连接串与令牌密钥；统一从 .env 读取（已 gitignore）。
+// CI 未提供 .env 时静默跳过，直接使用 workflow 注入的环境变量。
+dotenv.config({ path: '.env', quiet: true });
 
 export default defineConfig({
   resolve: {

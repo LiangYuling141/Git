@@ -262,13 +262,16 @@ Agent Runtime 不持有数据库凭据，不直接执行写操作；模型可以
 
 前置：Node 22+、PostgreSQL、（可选）Redis 与 MiniMax API key。
 
+所有配置统一放在仓库根目录的 `.env`（已被 `.gitignore` 忽略），模板见 `.env.example`。项目不再读取 `.env.local`。
+
 ```bash
-cp .env.example .env.local      # 真实密钥写 .env.local，它被 gitignore 覆盖
+cp .env.example .env            # 唯一配置入口，禁止提交
 npm install
 
-# 1. 生成令牌签名密钥（至少 32 字符，缺失时服务拒绝签发令牌）
+# 1. 填写 .env：DATABASE_URL 必填
+#    生成令牌签名密钥（至少 32 字符，缺失时服务拒绝签发令牌）
 node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
-#    把输出填进 .env.local 的 TEF_TOKEN_SECRET
+#    把输出填进 .env 的 TEF_TOKEN_SECRET
 
 # 2. 建库并灌入参考场景数据
 npm run db:bootstrap            # 先建 tenants 表并写入默认租户（外键顺序要求）
@@ -291,6 +294,8 @@ npm run dev                     # http://localhost:3000/login，账号 admin@exa
 > 给伟业公司下一单，5000 个圣诞球，单价 2 块，先付 30% 定金，余款 30 天账期
 
 会依次看到：重名澄清（两个"伟业"候选）→ 选定客户 → L2 风险判定与服务端 diff → 人工批准 → 出单与审计事件 ID。整个过程共用一条 `traceId`，可用 `audit.trace` 工具回放。
+
+完整变量清单与默认值见 [docs/00-framework.md §9.5](docs/00-framework.md#95-关键环境变量)。
 
 ---
 
