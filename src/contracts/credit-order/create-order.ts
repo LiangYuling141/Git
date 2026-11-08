@@ -369,7 +369,8 @@ function compensation(params: CreateOrderParams, evidence: CreateOrderEvidence, 
 
   const orderId = r.refs.order?.id as string | undefined;
   if (orderId) {
-    out.push({ type: 'update', entity: 'order', target: orderId, payload: { status: 'cancelled' } });
+    // `as: 'order'` 让通用执行器把补偿后的订单引用带回响应，便于确认页与审计定位。
+    out.push({ type: 'update', entity: 'order', as: 'order', target: orderId, payload: { status: 'cancelled' } });
   }
 
   for (const ref of ['depositPayment', 'balancePayment']) {

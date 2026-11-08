@@ -104,3 +104,68 @@ export interface CreateOrderEvidence {
 
 export const OVERDUE_THRESHOLD_KEY = 'overdueDaysL2Threshold';
 export const DEFAULT_OVERDUE_DAYS_L2_THRESHOLD = 30;
+
+// -----------------------------------------------------------------------------
+// compensate_order：已提交订单的补偿契约
+// -----------------------------------------------------------------------------
+
+export const compensateOrderRawSchema = z.object({
+  orderId: z.string().min(1, 'orderId is required'),
+  reason: z.string().max(500, 'reason must be at most 500 characters').optional(),
+});
+
+/** normalize() 的输出，也就是补偿令牌绑定的人批准内容。 */
+export interface CompensateOrderParams {
+  orderId: string;
+  reason?: string;
+}
+
+export const compensateOrderParamsSchema = z.object({
+  orderId: z.string().min(1),
+  reason: z.string().max(500).optional(),
+});
+
+export interface OrderEvidence {
+  id: string;
+  orderNo: string;
+  status: string;
+  customerId: string;
+  items: CreateOrderItem[];
+  totalAmount: number;
+  deposit: number;
+  balance: number;
+  previewId: string | null;
+  traceId: string | null;
+}
+
+export type PaymentRole = 'deposit' | 'balance';
+
+export interface PaymentEvidence {
+  id: string;
+  amount: number;
+  method: string;
+  status: string;
+  remark: string | null;
+  /** 由 loadEvidence 根据契约生成的 remark/method 推断，用于确定性重建补偿 refs。 */
+  role: PaymentRole | null;
+}
+
+/**
+ * 补偿证据。
+ *
+ * 同时包含「当前状态」（订单、收款、库存、额度）与「原始执行快照」：
+ * 前置条件看当前状态，副作用复用原契约的 compensation 声明。
+ */
+export interface CompensateOrderEvidence {
+  queriedAt: string;
+  order: OrderEvidence | null;
+  payments: PaymentEvidence[];
+  products: ProductEvidence[];
+  customer: CustomerEvidence | null;
+  original: {
+    params: CreateOrderParams;
+    evidence: CreateOrderEvidence;
+    contractOperation: string;
+    contractVersion: string;
+  } | null;
+}

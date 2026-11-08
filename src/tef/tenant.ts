@@ -20,7 +20,12 @@ export const DEFAULT_TENANT_ID = 't_yiwu_demo';
 export type ClientKind = 'agent' | 'confirmation-ui' | 'ops';
 
 const QUERY_TOOLS = ['customer.search', 'customer.get', 'credit.get', 'inventory.check', 'order.get', 'audit.trace', 'policy.get'];
-const WRITE_TOOLS = ['order.preview_create', 'order.execute_create'];
+const WRITE_TOOLS = [
+  'order.preview_create',
+  'order.execute_create',
+  'order.preview_compensate',
+  'order.execute_compensate',
+];
 const GOVERNANCE_TOOLS = ['confirmation.approve', 'confirmation.reject'];
 const OPS_TOOLS = ['whitelist.list', 'whitelist.set', 'tenant.config.get'];
 
