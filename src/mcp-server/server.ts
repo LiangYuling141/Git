@@ -6,7 +6,12 @@ import { envelopeToToolResult, fail } from './envelope';
 import type { Principal } from './principal';
 import { auditTrace, policyGet } from './tools/audit';
 import { confirmationApprove, confirmationReject } from './tools/confirmation';
-import { orderExecuteCreate, orderPreviewCreate } from './tools/order';
+import {
+  orderExecuteCompensate,
+  orderExecuteCreate,
+  orderPreviewCompensate,
+  orderPreviewCreate,
+} from './tools/order';
 import { creditGet, customerGet, customerSearch, inventoryCheck, orderGet } from './tools/query';
 
 /**
@@ -158,6 +163,51 @@ export function createTefServer(options: TefServerOptions): McpServer {
       async (args) =>
         envelopeToToolResult(
           await orderExecuteCreate(
+            principal,
+            { confirmation_token: args.confirmation_token, idempotency_key: args.idempotency_key },
+            writeOptions,
+          ),
+        ),
+    );
+  }
+
+  if (register('order.preview_compensate')) {
+    server.registerTool(
+      'order.preview_compensate',
+      {
+        title: '预览订单补偿',
+        description:
+          'Validate and preview compensation of a committed order. Returns diff, risk, reasons, preview_id and a ' +
+          'one-time confirmation_token. Compensation is always L2 and requires human approval through a separate ' +
+          'client. Only orders created through TEF with a preview snapshot can be compensated.',
+        inputSchema: {
+          orderId: z.string().min(1),
+          reason: z.string().max(500).optional(),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      },
+      async (args) => envelopeToToolResult(await orderPreviewCompensate(principal, args, writeOptions)),
+    );
+  }
+
+  if (register('order.execute_compensate')) {
+    server.registerTool(
+      'order.execute_compensate',
+      {
+        title: '执行订单补偿',
+        description:
+          'Execute a previewed order compensation. Accepts ONLY confirmation_token and idempotency_key. ' +
+          'Business parameters are read from the server-side preview snapshot; parameters supplied here are ignored. ' +
+          'Reusing a token returns CONFLICT.',
+        inputSchema: {
+          confirmation_token: z.string().min(1),
+          idempotency_key: z.string().min(1),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+      },
+      async (args) =>
+        envelopeToToolResult(
+          await orderExecuteCompensate(
             principal,
             { confirmation_token: args.confirmation_token, idempotency_key: args.idempotency_key },
             writeOptions,

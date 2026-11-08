@@ -18,6 +18,11 @@ export {
   maskPhone,
   orderGet,
 } from './tools/query';
-export { orderExecuteCreate, orderPreviewCreate } from './tools/order';
+export {
+  orderExecuteCompensate,
+  orderExecuteCreate,
+  orderPreviewCompensate,
+  orderPreviewCreate,
+} from './tools/order';
 export { confirmationApprove, confirmationReject } from './tools/confirmation';
 export { auditTrace, policyGet } from './tools/audit';

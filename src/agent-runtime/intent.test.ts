@@ -85,6 +85,29 @@ describe('查询意图', () => {
   });
 });
 
+describe('补偿意图', () => {
+  it('"取消刚才那单" 解析为 compensate_order', () => {
+    const intent = parseIntentDeterministic('把刚才那单取消掉');
+    expect(intent.kind).toBe('operation');
+    if (intent.kind !== 'operation') return;
+    expect(intent.contract).toBe('compensate_order');
+    expect(intent.slots.reason).toContain('取消');
+  });
+
+  it('显式订单号会进入 slots', () => {
+    const intent = parseIntentDeterministic('撤销订单 SO-MABC-1234');
+    if (intent.kind !== 'operation') return expect.unreachable('should be an operation');
+    expect(intent.contract).toBe('compensate_order');
+    expect(intent.slots.orderNo).toBe('SO-MABC-1234');
+  });
+
+  it('普通下单不会被误判成补偿', () => {
+    const intent = parseIntentDeterministic('给伟业公司下一单 5000 个圣诞球 单价 2 块');
+    if (intent.kind !== 'operation') return expect.unreachable('should be an operation');
+    expect(intent.contract).toBe('create_order');
+  });
+});
+
 describe('提示注入（§5.3 演示脚本第 5 项）', () => {
   it('"忽略之前的规则"只被当作普通文本，业务参数照字面解析', () => {
     const intent = parseIntentDeterministic(

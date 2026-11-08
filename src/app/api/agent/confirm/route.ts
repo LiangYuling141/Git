@@ -6,6 +6,7 @@ import { taskStateStore } from '@/tef/task-state';
 import { resolveTenantContext } from '@/tef/tenant';
 import { loadTokenSecret } from '@/tef/token';
 import type { Envelope, TenantRole } from '@/tef/types';
+import { resolveExecutionPlan } from './execute-plan';
 
 /**
  * 人工确认入口（治理工具 + 确认后的执行）。
@@ -99,7 +100,15 @@ export async function POST(request: Request) {
           ? taskStateStore.update(
               tenant.tenantId,
               conversationId,
-              { status: 'failed', pendingPreviewId: null, intent: null },
+              {
+                status: 'failed',
+                pendingPreviewId: null,
+                pendingIntentHash: null,
+                pendingContract: null,
+                pendingContractVersion: null,
+                pendingExpiresAt: null,
+                intent: null,
+              },
               state.version,
             )
           : null,
@@ -121,6 +130,8 @@ export async function POST(request: Request) {
   const traceId = decision.traceId ?? `tr_exec_${Date.now()}`;
   const state = await taskStateStore.load(tenant.tenantId, conversationId);
   const idempotencyKey = state?.idempotencyKey ?? `idem_${Date.now()}`;
+  const contractOperation = state?.pendingPreview?.contract ?? 'create_order';
+  const plan = resolveExecutionPlan(contractOperation);
 
   const agent = await connectTefClient({
     principal: { ...humanPrincipal, clientKind: 'agent' },
@@ -129,7 +140,7 @@ export async function POST(request: Request) {
   });
   let executed: Envelope;
   try {
-    executed = await agent.callTool('order.execute_create', {
+    executed = await agent.callTool(plan.tool, {
       confirmation_token: token,
       idempotency_key: idempotencyKey,
     });
@@ -137,7 +148,8 @@ export async function POST(request: Request) {
     await agent.close();
   }
 
-  const nextStatus = executed.status === 'ok' ? 'completed' : executed.status === 'conflict' ? 'conflict' : 'failed';
+  const nextStatus =
+    executed.status === 'ok' ? plan.successStatus : executed.status === 'conflict' ? 'conflict' : 'failed';
   if (state) {
     await taskStateStore
       .update(
@@ -146,6 +158,10 @@ export async function POST(request: Request) {
         {
           status: nextStatus,
           pendingPreviewId: null,
+          pendingIntentHash: null,
+          pendingContract: null,
+          pendingContractVersion: null,
+          pendingExpiresAt: null,
           intent: null,
           activeOrderId: ((executed.data as Record<string, unknown> | undefined)?.orderId as string) ?? null,
         },
@@ -157,13 +173,18 @@ export async function POST(request: Request) {
   const data = (executed.data ?? {}) as Record<string, unknown>;
   const reply =
     executed.status === 'ok'
-      ? [
-          '已批准并执行。',
-          `订单 ${String(data.orderNo ?? '')}：总额 ¥${Number(data.totalAmount ?? 0).toFixed(2)}，定金 ¥${Number(
-            data.deposit ?? 0,
-          ).toFixed(2)}，余款 ¥${Number(data.balance ?? 0).toFixed(2)}（${String(data.termsDays ?? 0)} 天账期）`,
-          `审计事件 ${String(executed.auditId ?? '')}`,
-        ].join('\n')
+      ? contractOperation === 'compensate_order'
+        ? [
+            '已批准并执行补偿。订单已取消，收款计划已作废，库存与信用额度已恢复。',
+            `审计事件 ${String(executed.auditId ?? '')}`,
+          ].join('\n')
+        : [
+            '已批准并执行。',
+            `订单 ${String(data.orderNo ?? '')}：总额 ¥${Number(data.totalAmount ?? 0).toFixed(2)}，定金 ¥${Number(
+              data.deposit ?? 0,
+            ).toFixed(2)}，余款 ¥${Number(data.balance ?? 0).toFixed(2)}（${String(data.termsDays ?? 0)} 天账期）`,
+            `审计事件 ${String(executed.auditId ?? '')}`,
+          ].join('\n')
       : executed.status === 'conflict'
         ? `已批准，但执行时发生冲突，未产生写入：${executed.error?.message ?? ''}\n旧令牌已作废，请重新预览。`
         : `已批准，但执行失败：${executed.error?.message ?? ''}`;

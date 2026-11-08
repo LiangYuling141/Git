@@ -174,6 +174,8 @@ export interface Contract<P = unknown, EV = unknown, DB = unknown> {
   compensation(p: P, ev: EV, r: ExecResult): Effect[];
   /** r 为 null 表示预览阶段，此时只有 before 有意义 */
   audit(p: P, ev: EV, r: ExecResult | null): AuditSpec;
+  /** 成功执行时写入的审计结果；补偿契约应声明 'compensated'，缺省为 'success'。 */
+  auditResult?: AuditResultType;
   /**
    * 确认页展示的服务端 diff。框架核心不猜字段语义，所以由契约提供；
    * 缺省时引擎从 effects 派生一个粗粒度 diff。
@@ -294,7 +296,8 @@ export type IntentResult =
   | { kind: 'operation'; contract: string; slots: Record<string, unknown>; unresolved?: string[] }
   // slots 是 §7.3 要求的"intent 快照"：追问时必须连同已解析的槽位一起持久化，
   // 否则用户回答完就得从头再说一遍。
-  | { kind: 'clarify'; questions: ClarifyQuestion[]; slots?: Record<string, unknown> }
+  // contract 记录这次澄清属于哪个操作，回答后才能回到正确契约（如 compensate_order）。
+  | { kind: 'clarify'; contract?: string; questions: ClarifyQuestion[]; slots?: Record<string, unknown> }
   | { kind: 'compound'; steps: IntentResult[] }
   | { kind: 'chat'; reply: string };
 

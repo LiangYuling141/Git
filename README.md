@@ -5,7 +5,7 @@
 
 LyMatrix TEF 是一个面向 AI Agent 的可信执行框架。它不试图让模型输出变得确定，而是让模型产生的**副作用**变得确定：任何写操作都必须经过契约校验、证据加载、风险定级、预览快照、一次性令牌确认和幂等执行，否则被阻断、拒绝或转人工。
 
-**当前状态（2026-11-07）**：Phase 0 闭环已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime 与确认 UI 全部可运行，232 个测试通过（含 19 个对真实 PostgreSQL 的闭环与攻击场景集成测试）。尚未达到生产可用：评测体系（Phase 2）、补偿执行路径与遗留代码清理仍未完成。成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
+**当前状态（2026-11-08）**：Phase 0 闭环与 Phase 1 补偿运行时已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime、确认 UI 与补偿闭环全部可运行，279 个测试通过（含 27 个对真实 PostgreSQL 的闭环、攻击场景与补偿集成测试）。尚未达到生产可用：评测体系（Phase 2）、遗留代码清理、崩溃恢复与并发压测仍未完成。成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
 
 ---
 
@@ -198,6 +198,7 @@ Agent Runtime 不持有数据库凭据，不直接执行写操作；模型可以
 | 文档 | 说明 |
 |------|------|
 | [docs/00-positioning.md](docs/00-positioning.md) | **定位与命名**：核心命题、边界、成熟度、与 CRM-ERP 的关系 |
+| [docs/00-framework.md](docs/00-framework.md) | **项目框架总览**：分层架构、信任域、核心机制、MCP 工具、数据模型、核心流程、代码映射与实施进度 |
 | [docs/technical/14-unified-architecture.md](docs/technical/14-unified-architecture.md) | **统一架构框架（裁决版，单一权威）**：六条公理、信任域、L0/L1/L2/Block、契约引擎、审计合规 |
 | [docs/technical/13-trusted-execution-architecture.md](docs/technical/13-trusted-execution-architecture.md) | 可信执行架构详细设计：业务操作契约、MCP 工具链、评测基准 |
 | [docs/technical/06-system-architecture.md](docs/technical/06-system-architecture.md) | 整体技术架构设计：技术选型、分层职责、核心流程、部署 |
@@ -246,14 +247,14 @@ Agent Runtime 不持有数据库凭据，不直接执行写操作；模型可以
 
 ## 成熟度与落地计划
 
-| 阶段 | 核心交付物 | 状态（2026-11-07） |
+| 阶段 | 核心交付物 | 状态（2026-11-08） |
 |------|------------|--------------------|
 | Phase 0 | 多租户底座 + 契约引擎 + 跑通"赊账订单"闭环：查询客户、查额度、查库存、预览订单、执行订单 | **已完成**，CI 每次推送对真实 PostgreSQL 复跑闭环与攻击场景 |
-| Phase 1 | L1 自动执行路径、dry-run/diff、确认令牌、幂等、冲突恢复、补偿、审计事件 | **部分提前落地**：L1 路径、diff、令牌、幂等、审计事件、`CONFLICT` 检测与旧令牌作废已实现；**补偿的运行时执行路径未实现** |
+| Phase 1 | L1 自动执行路径、dry-run/diff、确认令牌、幂等、冲突恢复、补偿、审计事件 | **已完成主要项**：L1 路径、diff、令牌、幂等、审计事件、`CONFLICT` 检测与旧令牌作废、`compensate_order` 契约与完整补偿运行时（preview → L2 → 人工确认 → execute）均已实现并有测试；崩溃恢复与并发压测仍待补 |
 | Phase 2 | 300-500 条评测集、危险写入拦截率、误拒率、P95、成本；核心与垂直解耦 | 未开始 |
 | Phase 3 | 参考垂直插件、计量计费与配额、角色细化、生产部署、软著/专利/论文材料 | 未开始 |
 
-当前对外表述应使用"参考架构 / framework，目标工业级"，不得宣称已达到工业级生产可用。Phase 0 闭环跑通也不等于 L1 完成——L1 的验收还包含补偿回滚。
+当前对外表述应使用"参考架构 / framework，目标工业级"，不得宣称已达到工业级生产可用。Phase 0 闭环与补偿回滚均已验证，但崩溃恢复、并发压测与生产级认证尚未完成，因此仍不宣称 L1 完整达成。
 
 ---
 

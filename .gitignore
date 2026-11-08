@@ -65,3 +65,10 @@ yarn-error.log*
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+# Tool artifacts
+.playwright-mcp/
+
+# WPS temporary files
+~$*.pptx
+*.pptx:WPSSyncID

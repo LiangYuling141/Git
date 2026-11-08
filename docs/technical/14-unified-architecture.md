@@ -230,6 +230,8 @@ L5 execute（事务内：重校验前置条件 → 写入 → 预占库存 → �
 
 补偿动作本身必须幂等、可重试。
 
+> **实现状态（2026-11-08）**：`compensate_order@1.0` 契约与补偿运行时已落地。补偿本身走 preview → 风险 L2 → 一次性令牌 → 人工确认 → execute，并复用 `create_order.compensation()`，不重写补偿规则。实现细节见 [../00-framework.md](../00-framework.md) §4.5、§7.5。
+
 ---
 
 ## 5. 契约引擎（核心壁垒）
@@ -696,6 +698,7 @@ execute 失败
 ## 相关文档
 
 - [../00-positioning.md](../00-positioning.md) — 定位与命名（项目身份、边界与成熟度）
+- [../00-framework.md](../00-framework.md) — 项目框架总览（全景索引与代码映射，架构裁决仍以本篇为准）
 - [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md) — 可信执行架构详细设计（契约、MCP 工具链、preview/confirm/execute、评测基准）
 - [06-system-architecture.md](06-system-architecture.md) — 整体技术架构设计
 - [03-mcp-tool-whitelist.md](03-mcp-tool-whitelist.md) — MCP 工具白名单体系（工具命名与分类以 14 号为准）
