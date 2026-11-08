@@ -791,14 +791,29 @@ npm run rls:verify
 
 ### 9.5 关键环境变量
 
+所有配置统一放在仓库根目录的 `.env`（已被 `.gitignore` 忽略），模板见 `.env.example`。Next.js、`prisma.config.ts`、`vitest.config.ts`、`scripts/*.mjs` 与 `prisma/seed.mjs` 均只读取该文件，不再使用 `.env.local`。CI 不依赖 `.env`，直接由 workflow 注入同名变量。
+
 | 变量 | 必填 | 说明 |
 |------|------|------|
-| `DATABASE_URL` | 是 | PostgreSQL 连接串 |
+| `DATABASE_URL` | 是 | PostgreSQL 连接串，Prisma CLI 与运行时共用 |
 | `TEF_TOKEN_SECRET` | 是 | 令牌 HMAC-SHA256 密钥，至少 32 字符；缺失或过短时拒绝签发 |
-| `REDIS_URL` | 否 | 未配置时限流 fail-open，仅适合本地开发 |
-| `MINIMAX_API_KEY` | 否 | 未配置或为占位符时，意图解析回落到确定性规则解析器 |
-| `MINIMAX_API_BASE` / `MINIMAX_GROUP_ID` | 否 | 模型接入配置 |
-| `LOG_DIR` | 否 | 文件日志目录 |
+| `REDIS_URL` | 否 | 未配置或不可用时限流 fail-open，仅适合本地开发 |
+| `MINIMAX_API_KEY` | 否 | 未配置或为占位符时，意图解析回落到确定性规则解析器；有效 Key 需至少 20 字符且不以 `your` / `xxx` / `placeholder` / `changeme` 开头 |
+| `MINIMAX_API_BASE` | 否 | 模型 API 地址，未设置时使用内置默认值 |
+| `MINIMAX_GROUP_ID` | 否 | MiniMax 分组 ID，仅非空时附加 `MMG-Group-Id` 请求头 |
+| `LOG_DIR` | 否 | 文件日志目录，默认 `./logs`；仅 production 写文件 |
+| `APP_DB_ROLE` | 否 | RLS 验证用应用角色，默认 `lymatrix_app`，仅 `npm run rls:*` 使用 |
+| `APP_DB_PASSWORD` | 否 | 上述角色密码，仅 `prepare-app-role` / `app-role-url` 使用 |
+| `TEF_DB_TESTS` | 否 | 设为 `1` 时 `npm test` 额外执行真实数据库集成测试 |
+| `PORT` | 否 | Next.js 监听端口，默认 3000 |
+
+### 9.6 密钥管理
+
+- `.env` 是本地唯一配置入口，已被 `.gitignore` 忽略，禁止提交；仓库只跟踪 `.env.example`。
+- 新增配置项时先改 `.env.example`，模板中只放占位符与默认值，不得写入真实密钥。
+- `TEF_TOKEN_SECRET` 至少 32 字符；缺失或过短时服务拒绝签发令牌，不降级为弱密钥。
+- `npm run secrets:check` 在本地与 CI 中检查 `.env` 未被跟踪，并扫描常见凭证格式；只报告文件与行号，不输出匹配到的值。
+- 如果真实密钥曾经进入 Git 历史，应立即轮换密钥，再评估是否需要重写历史；仅删除当前文件不能清除历史对象。
 
 ---
 
