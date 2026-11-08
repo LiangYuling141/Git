@@ -1,6 +1,12 @@
 # 动态风险评估体系
 
-> 本文档描述如何通过动态因子评分，实现风险等级的智能升降级，在保证安全的同时最大化运营效率。
+> **⚠️ 已被裁决**：本文档的独立评分定级器（`clamp(分数, L0, L2)`）不再作为独立风险系统存在。
+> 动态因子（时段、频率、客户历史、白名单）统一降级为契约 `riskRules` 的**输入因子**，且 `riskRules` 必须是纯函数——不读墙上时钟、不查库，所有外部输入经 `RiskInput` 传入。
+> 权威定义见 [14-unified-architecture.md](14-unified-architecture.md) §3.1「定级规则」。
+>
+> 本文档保留作为**因子设计素材**；其分数→等级的映射函数从未定义，不应据此实现。凡与 14 号冲突处一律以 14 号为准。
+
+> 本文档描述如何通过动态因子影响风险等级，在保证安全的同时提升运营效率。
 
 ---
 
@@ -343,8 +349,10 @@ Phase 4：
 
 ## 10. 相关文档
 
+- [14-unified-architecture.md](14-unified-architecture.md) — 统一架构框架（裁决版，权威）
 - [08-risk-classification.md](08-risk-classification.md) — 风险分级体系
-- [05-four-layer-safety.md](05-four-layer-safety.md) — 六重防护机制详解
+- [05-four-layer-safety.md](05-four-layer-safety.md) — 六重防护机制详解（历史方案）
 - [09-fast-path.md](09-fast-path.md) — 快速通道与白名单
 - [11-fallback.md](11-fallback.md) — 多级兜底策略
 - [12-hook-system-design.md](12-hook-system-design.md) — Hook 系统详细设计
+- [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md) — 可信执行架构详细设计（当前方案）

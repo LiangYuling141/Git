@@ -1,5 +1,7 @@
 # Multi-Agent 协同决策系统设计
 
+> **历史方案说明**：本文档描述的“三 Agent 分层投票”已降级为高风险时的可选独立验证器。当前架构见 [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md) 和 [06-system-architecture.md](06-system-architecture.md)。
+
 > 本文档详细描述 1主2从 多Agent架构的设计方案，包括Agent角色定义、投票决策规则、通信协议、权限边界。
 
 ---
@@ -314,6 +316,7 @@ Stop Hooks（最终拦截）
 
 ## 相关文档
 
+- [14-unified-architecture.md](14-unified-architecture.md) — 统一架构框架（裁决版，权威）
 - [08-risk-classification.md](08-risk-classification.md) — 风险分级体系（3档分级详细说明）
 - [09-fast-path.md](09-fast-path.md) — 快速通道与白名单机制
 - [10-dynamic-risk.md](10-dynamic-risk.md) — 动态风险评估
@@ -321,3 +324,4 @@ Stop Hooks（最终拦截）
 - [02-openclaw-development.md](02-openclaw-development.md) — OpenClaw 二次开发方案
 - [05-four-layer-safety.md](05-four-layer-safety.md) — 六重防护机制详解
 - [12-hook-system-design.md](12-hook-system-design.md) — Hook 系统详细设计
+- [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md) — 可信执行架构详细设计（当前方案）

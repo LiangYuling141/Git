@@ -1,5 +1,7 @@
 # 核心请求全流程设计
 
+> **架构演进说明**：以下正文是早期的七层流程（含 OpenClaw 调度层与多 Agent 投票），保留用于对比。当前流程以 MCP 工具层的契约校验、预览、确认和幂等执行为准，见 [06-system-architecture.md](06-system-architecture.md) 与 [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md)。
+
 > 本文档以"创建销售订单"为例，详细描述请求从用户输入到结果返回的完整流程。
 
 ---
@@ -568,7 +570,9 @@
 
 ## 相关文档
 
+- [14-unified-architecture.md](14-unified-architecture.md) — 统一架构框架（裁决版，权威；本文为历史方案，不得据此实现）
 - [01-multi-agent-design.md](01-multi-agent-design.md) — Multi-Agent 协同决策系统设计
-- [05-four-layer-safety.md](05-four-layer-safety.md) — 六重防护机制详解
+- [05-four-layer-safety.md](05-four-layer-safety.md) — 六重防护机制详解（历史方案）
 - [06-system-architecture.md](06-system-architecture.md) — 整体技术架构设计
 - [12-hook-system-design.md](12-hook-system-design.md) — Hook 系统详细设计
+- [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md) — 可信执行架构详细设计（当前方案）

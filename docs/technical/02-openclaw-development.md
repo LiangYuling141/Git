@@ -1,5 +1,7 @@
 # OpenClaw 内核定制开发方案
 
+> **历史方案说明**：项目当前不再使用 OpenClaw。当前架构采用 MCP 工具链 + 轻量 Agent Runtime，见 [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md) 和 [06-system-architecture.md](06-system-architecture.md)。
+
 > 本文档描述以 OpenClaw 为核心内核，在其基础上进行深度定制开发的架构方案。
 
 ---
@@ -454,3 +456,4 @@ class VotingDecisionMaker {
 - [08-risk-classification.md](08-risk-classification.md) — 风险分级体系
 - [09-fast-path.md](09-fast-path.md) — 快速通道与白名单
 - [11-fallback.md](11-fallback.md) — 多级兜底策略
+- [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md) — 可信执行架构详细设计（当前方案）

@@ -1,6 +1,12 @@
 # 风险分级体系
 
-> 本文档定义3档风险分级标准及对应的投票机制，实现安全与效率的平衡。
+> **⚠️ 已被裁决**：本文档原有的 **L3 档**与**按档投票机制**已废弃。
+> 当前唯一权威的风险模型为 **L0 / L1 / L2 / Block**，且定级只发生在契约的 `riskRules` 中（纯函数），不存在第二个定级器。
+> 权威定义见 [14-unified-architecture.md](14-unified-architecture.md) §3「唯一风险模型」。
+>
+> 本文档保留作为**判定素材**：四维判断体系、敏感字段分级、客户类型、金额阈值均作为 `RiskInput` 的因子来源被吸收；凡与 14 号冲突处一律以 14 号为准。
+
+> 本文档定义风险分级的判定素材与阈值配置，实现安全与效率的平衡。
 
 ---
 
@@ -585,9 +591,11 @@ thresholds:
 
 ## 12. 相关文档
 
+- [14-unified-architecture.md](14-unified-architecture.md) — 统一架构框架（裁决版，权威）
 - [01-multi-agent-design.md](01-multi-agent-design.md) — Multi-Agent协同决策系统
-- [05-four-layer-safety.md](05-four-layer-safety.md) — 六重防护机制详解
+- [05-four-layer-safety.md](05-four-layer-safety.md) — 六重防护机制详解（历史方案）
 - [09-fast-path.md](09-fast-path.md) — 快速通道与白名单机制
 - [10-dynamic-risk.md](10-dynamic-risk.md) — 动态风险评估
 - [11-fallback.md](11-fallback.md) — 多级兜底策略
 - [12-hook-system-design.md](12-hook-system-design.md) — Hook 系统详细设计
+- [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md) — 可信执行架构详细设计（当前方案）

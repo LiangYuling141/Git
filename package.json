@@ -1,0 +1,48 @@
+{
+  "name": "lymatrix-tef",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LyMatrix Trusted Execution Framework — a deterministic execution boundary for AI agents.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:bootstrap": "node scripts/bootstrap-db.mjs --run",
+    "db:seed": "node prisma/seed.mjs",
+    "rls:apply": "node scripts/rls.mjs apply",
+    "rls:verify": "node scripts/rls.mjs verify",
+    "rls:drop": "node scripts/rls.mjs drop"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@prisma/adapter-pg": "^7.7.0",
+    "@prisma/client": "^7.7.0",
+    "@tailwindcss/postcss": "^4.3.5",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.4.2",
+    "ioredis": "^5.10.1",
+    "next": "^16.0.0",
+    "pg": "^8.20.0",
+    "postcss": "^8.5.32",
+    "prisma": "^7.7.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwindcss": "^4.3.5",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "16.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.7"
+  }
+}

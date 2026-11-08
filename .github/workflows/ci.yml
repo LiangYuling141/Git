@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - "feature/**"
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Typecheck, Lint, Test & Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: lymatrix_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/lymatrix_ci
+      REDIS_URL: redis://localhost:6379
+      MINIMAX_API_KEY: ci-placeholder
+      # 至少 32 字符：缺失或过短时服务会拒绝签发确认令牌，CI 必须显式提供
+      TEF_TOKEN_SECRET: ci-only-token-signing-secret-not-for-production
+      TEF_DB_TESTS: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      # 先建 tenants 表并写入默认租户，再 db push：
+      # 既有表的 tenantId 外键在 ADD CONSTRAINT 时会校验存量行，顺序反了会失败。
+      - name: Bootstrap default tenant
+        run: node scripts/bootstrap-db.mjs --run
+
+      - name: Sync database schema
+        run: npx prisma db push
+
+      - name: Seed reference scenario
+        run: npm run db:seed
+
+      - name: Apply row-level security
+        run: npm run rls:apply
+
+      # RLS 对超级用户和（未 FORCE 时的）表 owner 都不生效。CI 的 postgres 用户
+      # 是超级用户，用它验证会得到"全部通过"的假象，所以先建一个既非超级用户、
+      # 也非表 owner 的应用角色，再用它验证——这时所有启用 RLS 的表都真正受约束。
+      - name: Prepare non-superuser app role
+        run: node scripts/rls.mjs prepare-app-role
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # 含 tests/integration：对真实 PostgreSQL 跑通
+      # preview → confirm → execute 闭环与三个攻击场景
+      - name: Test
+        run: npm test
+
+      - name: Verify tenant isolation
+        run: DATABASE_URL="$(node scripts/rls.mjs app-role-url)" npm run rls:verify
+
+      - name: Build
+        run: npm run build

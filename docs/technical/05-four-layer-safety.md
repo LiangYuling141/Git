@@ -1,5 +1,7 @@
 # 六重防护机制详解
 
+> **历史方案说明**：当前以“可信执行边界”为准，见 [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md)；Hook 作为可选增强保留。
+
 > 本文档详细描述项目设计的六重AI安全防护体系，融合 Hook 机制，实现从输入到执行的全链路防护。
 
 ---
@@ -498,7 +500,9 @@ Hook3 (Allow) → 不执行
 
 ## 相关文档
 
+- [14-unified-architecture.md](14-unified-architecture.md) — 统一架构框架（裁决版，权威）
 - [01-multi-agent-design.md](01-multi-agent-design.md) — Multi-Agent 协同决策系统设计
 - [03-mcp-tool-whitelist.md](03-mcp-tool-whitelist.md) — MCP 工具白名单体系
 - [04-business-engine.md](04-business-engine.md) — 统一业务引擎设计
 - [12-hook-system-design.md](12-hook-system-design.md) — Hook 系统详细设计
+- [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md) — 可信执行架构详细设计（当前方案）

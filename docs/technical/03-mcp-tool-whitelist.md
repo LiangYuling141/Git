@@ -1,5 +1,7 @@
 # MCP 工具白名单体系设计
 
+> **架构演进说明**：本文档描述基础白名单机制；当前特制 MCP 工具链（查询 / 预览 / 确认 / 执行）见 [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md)。
+
 > 本文档详细描述 MCP（Model Context Protocol）工具白名单体系的设计方案，实现 AI 与业务逻辑的彻底隔离。
 
 ---
@@ -454,7 +456,9 @@ const toolParameterValidationHook = {
 
 ## 相关文档
 
+- [14-unified-architecture.md](14-unified-architecture.md) — 统一架构框架（裁决版，权威）
 - [01-multi-agent-design.md](01-multi-agent-design.md) — Multi-Agent 协同决策系统设计
 - [04-business-engine.md](04-business-engine.md) — 统一业务引擎设计
-- [05-four-layer-safety.md](05-four-layer-safety.md) — 六重防护机制详解
+- [05-four-layer-safety.md](05-four-layer-safety.md) — 六重防护机制详解（历史方案）
 - [12-hook-system-design.md](12-hook-system-design.md) — Hook 系统详细设计
+- [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md) — 可信执行架构详细设计（当前方案）
