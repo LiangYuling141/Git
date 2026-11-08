@@ -87,6 +87,16 @@ function resolveClarification(taskState: TaskState, message: string): { intent: 
   const normalized = text.replace(/[个吧啊。！!]/g, '');
 
   for (const question of intent.questions) {
+    // 订单号没有候选列表，用户回答什么就是什么；由契约在执行前校验。
+    if (question.slot === 'orderNo') {
+      if (text) base.orderNo = text;
+      continue;
+    }
+    if (question.slot === 'orderId') {
+      if (text) base.orderId = text;
+      continue;
+    }
+
     const candidates = question.candidates ?? [];
     const ordinal = ORDINALS[text] ?? ORDINALS[normalized];
     const picked =
@@ -106,7 +116,14 @@ function resolveClarification(taskState: TaskState, message: string): { intent: 
     }
   }
 
-  return { intent: { kind: 'operation', contract: 'create_order', slots: base as Record<string, unknown> }, slots: base };
+  return {
+    intent: {
+      kind: 'operation',
+      contract: intent.contract ?? 'create_order',
+      slots: base as Record<string, unknown>,
+    },
+    slots: base,
+  };
 }
 
 export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResult> {
@@ -155,6 +172,14 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
     }
 
     const contract = intent.contract;
+    if (contract === 'compensate_order') {
+      return await handleCompensateOrder(session, intent.slots, {
+        taskState,
+        traceId,
+        toolCalls,
+        intentSource,
+      });
+    }
     if (contract === 'create_order') {
       return await handleCreateOrder(session, intent.slots as OrderSlots, {
         taskState,
@@ -185,6 +210,7 @@ function askClarification(
   traceId: string,
   toolCalls: ToolCallRecord[],
   partialSlots: Record<string, unknown> = {},
+  contract?: string,
 ): AgentTurnResult {
   const rounds = taskState.clarificationRounds + 1;
   // §7.3：超过 3 轮就终止任务，不要无限追问
@@ -212,7 +238,15 @@ function askClarification(
   return finish(
     'awaiting_clarification',
     reply,
-    { clarificationRounds: rounds, intent: { kind: 'clarify', questions, slots: { ...previousSlots, ...partialSlots } } },
+    {
+      clarificationRounds: rounds,
+      intent: {
+        kind: 'clarify',
+        ...(contract ? { contract } : {}),
+        questions,
+        slots: { ...previousSlots, ...partialSlots },
+      },
+    },
     { traceId, toolCalls, intentSource, questions },
   );
 }
@@ -309,6 +343,134 @@ async function resolveCustomer(
     kind: 'many',
     questions: [{ slot: 'customerId', reason: 'ambiguous', candidates }],
   };
+}
+
+/**
+ * 已提交订单的补偿路径。
+ *
+ * 订单定位优先级：显式 orderId → 订单号 → 当前任务上下文 → 追问。
+ * 补偿本身仍然走 preview → L2 → 人工确认 → execute，Runtime 不直接写库。
+ */
+async function handleCompensateOrder(
+  session: TefClientSession,
+  slots: Record<string, unknown>,
+  meta: { taskState: TaskState; traceId: string; toolCalls: ToolCallRecord[]; intentSource: 'model' | 'deterministic' },
+): Promise<AgentTurnResult> {
+  const reason = typeof slots.reason === 'string' ? slots.reason : undefined;
+  let orderId = typeof slots.orderId === 'string' ? slots.orderId : undefined;
+  const orderNo = typeof slots.orderNo === 'string' ? slots.orderNo : undefined;
+
+  // 1. 订单定位：显式 ID → 订单号 → 当前任务上下文 → 追问
+  if (!orderId && orderNo) {
+    const lookup = await session.callTool('order.get', { orderNo });
+    meta.toolCalls.push({ tool: 'order.get', status: lookup.status, risk: lookup.risk });
+    if (lookup.status !== 'ok') {
+      return finish('failed', `没有找到订单 ${orderNo}。`, {}, { ...meta, envelope: lookup });
+    }
+    orderId = envelopeData(lookup).id as string | undefined;
+  }
+  if (!orderId) orderId = meta.taskState.activeOrderId ?? undefined;
+  if (!orderId) {
+    return askClarification(
+      [{ slot: 'orderNo', reason: 'missing' }],
+      meta.taskState,
+      meta.intentSource,
+      meta.traceId,
+      meta.toolCalls,
+      { ...slots, ...(reason ? { reason } : {}) },
+      'compensate_order',
+    );
+  }
+
+  // 2. 预览补偿：前置条件、风险与副作用全部由契约判定
+  const preview = await session.callTool('order.preview_compensate', {
+    orderId,
+    ...(reason ? { reason } : {}),
+  });
+  meta.toolCalls.push({ tool: 'order.preview_compensate', status: preview.status, risk: preview.risk });
+
+  if (preview.status === 'blocked') {
+    const lines = ['本次补偿被契约阻断，没有产生任何写入：', ...(preview.reasons ?? [])];
+    (preview.error?.checks ?? []).forEach((check) => lines.push(`  · ${check.code} — ${check.message}`));
+    return finish('failed', lines.join('\n'), { intent: null }, { ...meta, envelope: preview });
+  }
+
+  if (preview.status === 'needs_confirmation') {
+    const diffLines = (preview.diff ?? []).map((entry) => `  · ${entry.label ?? `${entry.action} ${entry.entity}`}`);
+    const reply = [
+      `补偿风险等级 ${preview.risk}，需要人工确认。`,
+      '判定依据：',
+      ...(preview.reasons ?? []).map((item) => `  · ${item}`),
+      '服务端计算出的变更（不是模型摘要）：',
+      ...diffLines,
+      '请在确认区批准或拒绝。批准前不会有任何写入。',
+    ].join('\n');
+
+    return finish(
+      'awaiting_confirmation',
+      reply,
+      {
+        intent: { kind: 'operation', contract: 'compensate_order', slots: { orderId, ...(reason ? { reason } : {}) } },
+        pendingPreviewId: preview.previewId ?? null,
+        pendingIntentHash: '',
+        pendingContract: 'compensate_order',
+        pendingContractVersion: '1.0',
+        pendingExpiresAt: preview.expiresAt ? new Date(preview.expiresAt) : null,
+        activeOrderId: orderId,
+        idempotencyKey: randomUUID(),
+        clarificationRounds: 0,
+      },
+      { ...meta, envelope: preview },
+    );
+  }
+
+  // 补偿契约恒为 L2；这里保留防御分支，契约若降级也不至于静默不执行。
+  if (preview.status === 'ok' && preview.confirmationToken) {
+    const idempotencyKey = randomUUID();
+    const executed = await session.callTool('order.execute_compensate', {
+      confirmation_token: preview.confirmationToken,
+      idempotency_key: idempotencyKey,
+    });
+    meta.toolCalls.push({ tool: 'order.execute_compensate', status: executed.status, risk: executed.risk });
+    return reportCompensation(executed, idempotencyKey, meta);
+  }
+
+  return finish('failed', preview.error?.message ?? '补偿预览未成功。', {}, { ...meta, envelope: preview });
+}
+
+function reportCompensation(
+  executed: Envelope,
+  idempotencyKey: string,
+  meta: { traceId: string; toolCalls: ToolCallRecord[]; intentSource: 'model' | 'deterministic' },
+): AgentTurnResult {
+  if (executed.status === 'ok') {
+    return finish(
+      'compensated',
+      '订单补偿已完成：订单已取消，收款计划已作废，库存与信用额度已恢复。',
+      {
+        activeOrderId: (envelopeData(executed).orderId as string) ?? null,
+        idempotencyKey,
+        intent: null,
+        pendingPreviewId: null,
+        pendingContract: null,
+      },
+      { ...meta, envelope: executed },
+    );
+  }
+  if (executed.status === 'conflict') {
+    return finish(
+      'conflict',
+      `补偿执行冲突，未产生写入：${executed.error?.message ?? ''}\n需要重新预览；旧令牌已作废。`,
+      { pendingPreviewId: null, intent: null },
+      { ...meta, envelope: executed },
+    );
+  }
+  return finish(
+    'failed',
+    executed.error?.message ?? '补偿执行失败。',
+    { pendingPreviewId: null },
+    { ...meta, envelope: executed },
+  );
 }
 
 async function handleCreateOrder(
