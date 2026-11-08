@@ -85,6 +85,9 @@ jobs:
       - name: Prepare non-superuser app role
         run: node scripts/rls.mjs prepare-app-role
 
+      - name: Check secrets
+        run: npm run secrets:check
+
       - name: Typecheck
         run: npm run typecheck
 
