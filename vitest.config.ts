@@ -15,5 +15,8 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
     exclude: ['node_modules', '.next', 'BASE', 'src/generated'],
+    // 真实数据库集成测试共享 demo 租户夹具；并行文件会互相 reset，
+    // 导致"单独跑通过、全量跑失败"的假象。顺序执行文件成本很低。
+    fileParallelism: false,
   },
 });

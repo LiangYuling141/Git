@@ -44,7 +44,16 @@ describe('toolsForClient（按 client 身份注册）', () => {
 
   it('Agent Runtime 能看到查询、预览与执行工具', () => {
     const agentTools = toolsForClient('agent');
-    for (const tool of ['customer.search', 'customer.get', 'credit.get', 'inventory.check', 'order.preview_create', 'order.execute_create']) {
+    for (const tool of [
+      'customer.search',
+      'customer.get',
+      'credit.get',
+      'inventory.check',
+      'order.preview_create',
+      'order.execute_create',
+      'order.preview_compensate',
+      'order.execute_compensate',
+    ]) {
       expect(agentTools).toContain(tool);
     }
   });
@@ -55,6 +64,8 @@ describe('toolsForClient（按 client 身份注册）', () => {
     expect(uiTools).toContain('confirmation.reject');
     expect(uiTools).not.toContain('order.execute_create');
     expect(uiTools).not.toContain('order.preview_create');
+    expect(uiTools).not.toContain('order.execute_compensate');
+    expect(uiTools).not.toContain('order.preview_compensate');
   });
 
   it('运维后台能看到治理与白名单工具', () => {
@@ -102,6 +113,8 @@ describe('MCP Server 实际注册的工具集', () => {
     expect(tools).not.toContain('confirmation.reject');
     expect(tools).toContain('order.preview_create');
     expect(tools).toContain('order.execute_create');
+    expect(tools).toContain('order.preview_compensate');
+    expect(tools).toContain('order.execute_compensate');
     expect(tools).toContain('policy.get');
   });
 
@@ -117,6 +130,8 @@ describe('MCP Server 实际注册的工具集', () => {
     const tools = await registeredTools(principal({ clientKind: 'agent', role: 'viewer' }));
     expect(tools).not.toContain('order.preview_create');
     expect(tools).not.toContain('order.execute_create');
+    expect(tools).not.toContain('order.preview_compensate');
+    expect(tools).not.toContain('order.execute_compensate');
     expect(tools).toContain('customer.search');
   });
 
