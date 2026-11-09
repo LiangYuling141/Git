@@ -1,12 +1,13 @@
 # Phase B1：BusinessGateway 端口与垂直读路径改造实施计划
 
 > **执行状态**：Phase B1 已完成（2026-11-09）。
+> 任务复选框保留为原始计划记录；完成状态以本行为准。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在 `tef-core` 定义业务数据访问端口 `BusinessGateway`，用 Prisma 实现进程内版本，并让 CRM 垂直的查询工具与契约 `loadEvidence` 全部通过端口访问业务数据；为 Phase B2 的 CRM HTTP 网关与 Phase C 的跨服务执行做准备。
 
-**Architecture:** `BusinessGateway` 是框架核心定义的只读业务数据端口；CRM 垂直提供 `PrismaCrmGateway`（进程内）与后续的 `HttpCrmGateway`。`ExecContext` 增加可选 `gateway`，由 MCP Kit 的契约运行时通过注入的工厂装配。本阶段不改变执行路径（effects 仍走 Prisma 事务），因此运行时行为与 304 项测试保持不变。
+**Architecture:** `BusinessGateway` 是框架核心定义的只读业务数据端口；CRM 垂直提供 `PrismaCrmGateway`（进程内）与后续的 `HttpCrmGateway`。`ExecContext` 增加可选 `gateway`，由 MCP Kit 的契约运行时通过注入的工厂装配。本阶段不改变执行路径（effects 仍走 Prisma 事务），既有 304 项不变，Task 4 后基线 308。
 
 **Tech Stack:** TypeScript 5.7、Prisma 7、Vitest 3、npm workspaces。
 
@@ -525,13 +526,14 @@ Expected: boundary check 通过；secrets 通过；typecheck 0；lint 0 错误 /
 
 | 计划 | 内容 | 前置 |
 |------|------|------|
-| Phase B2 | CRM 通用 HTTP 网关（query/evidence/effects）+ HttpCrmGateway | B1 完成 |
-| Phase B3 | 独立 TEF/运行时存储、TEF Server 进程、Docker Compose | B2 完成 |
-| Phase C | P1 收尾：执行状态机、故障注入、并发与崩溃恢复 | B3 完成 |
+| Phase B2 | CRM 通用 HTTP 网关（query/evidence/effects）+ HttpCrmGateway + 可复用一致性测试套件 | B1 完成 |
+| Phase B3 | `TefStateStore`/`Clock` 端口、TEF/Runtime 独立 schema、TEF Server 进程、JWT/对话/确认 API、Docker Compose | B2 完成 |
+| Phase B4 | 三进程 e2e 闭环与文档 | B3 完成 |
+| Phase C | P1 收尾：执行状态机、故障注入、并发与崩溃恢复 | B4 完成 |
 | Phase D | P2 准备：指标埋点、fixture、eval harness 与种子样本 | C 完成 |
 
 ## 自检记录
 
-- 规格覆盖：对应设计文档 §8.2 的 B1 端口定义与 B5 的垂直读路径前置；HTTP 网关与 effects 执行留待 B2/C。
+- 规格覆盖：对应设计文档 §8.2 的 B1 端口定义与 B2 的垂直 HTTP 读路径前置；HTTP 网关与 effects 执行留待 B2/C。
 - 占位符：无 TBD/TODO；新文件给出完整代码，修改类步骤给出精确映射规则。
 - 类型一致性：`BusinessGateway` 在 core 定义；Prisma 实现在垂直包；MCP Kit 只通过 `gatewayFactory` 注入，不依赖垂直包。

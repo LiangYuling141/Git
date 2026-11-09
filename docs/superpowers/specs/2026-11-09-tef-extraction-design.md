@@ -326,15 +326,14 @@ EXECUTING → SUCCEEDED
 
 | 步骤 | 交付 | 验收 |
 |------|------|------|
-| B1 | `tef-core` 端口：`TefStateStore`、`BusinessGateway`、`Clock` | 端口有契约测试；核心无 IO |
-| B2 | `tef-mcp-kit` PostgreSQL 适配器与独立 schema | 治理状态可在独立库运行 |
-| B3 | `tef-runtime` TaskState 独立 schema | 会话恢复测试通过 |
-| B4 | CRM 通用网关：query / evidence / effects，白名单与幂等 | 网关契约测试与冲突测试通过 |
-| B5 | `verticals/crm-erp-mcp` 通过 HTTP 网关访问 CRM | 现有契约测试在 HTTP 模式通过 |
-| B6 | `tef-server`：JWT、对话 API、确认 API、MCP Client | e2e 对话闭环通过 |
-| B7 | Docker Compose 三进程启动 | 一条命令跑通闭环 |
+| B1（已完成） | `BusinessGateway` 端口、`PrismaCrmGateway` 进程内实现、查询工具与契约 `loadEvidence` 改造、租户与 fail-closed 测试 | 既有 308 项测试通过；端口无垂直依赖；租户不匹配显式拒绝 |
+| B2 | CRM 通用 HTTP 网关（`query`、`evidence:load`、`effects:execute`）+ `HttpCrmGateway` + 可复用一致性测试套件 | 进程内与 HTTP 实现运行同一套端口一致性测试；HTTP 模式覆盖现有契约测试 |
+| B3 | `TefStateStore`/`Clock` 端口、TEF 与 Runtime 独立 schema、TEF Server 进程、JWT/对话/确认 API、Docker Compose | 治理状态可在独立库运行；会话恢复测试通过；三进程一条命令启动 |
+| B4 | 三进程 e2e 闭环与文档 | e2e 对话闭环通过；架构、API、运维文档与实现一致 |
 
 迁移期保留进程内适配器供给现有集成测试；HTTP 模式由新增 e2e 测试覆盖。稳定后切换默认。
+
+> **B1 交接说明**：B1 实际交付为 `BusinessGateway` 端口、`PrismaCrmGateway` 读路径实现、查询工具与契约 `loadEvidence` 的网关化，以及租户绑定与 fail-closed 回归测试（基线 308）。原计划中的 `TefStateStore` 与 `Clock` 端口推迟到 B3。B2 启动前必须先确定三件事：`expectedEvidenceVersion` 的来源与冲突语义、effects 执行的结构化错误契约（`CONFLICT`/`INTERNAL`/`IN_PROGRESS` 等），以及 `BusinessGateway` 端口保持垂直中立（不引入 CRM 专属字段）的裁决。
 
 B1 补充（来自最终评审）：core 边界目前靠 ESLint 的 alias 规则，无法拦截相对路径（如 `../../src/lib/prisma`）与 `node:fs`、`pg`、`ioredis` 等直接 IO 导入。A2 必须引入目录级约束（`no-restricted-paths`、`dependency-cruiser` 或等价方案），并加入一个 CI 探针测试：在 core 内临时写入违规导入时必须报错。
 

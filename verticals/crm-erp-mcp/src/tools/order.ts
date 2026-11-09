@@ -31,7 +31,7 @@ export function orderPreviewCreate(
     principal,
     'create_order',
     args,
-    { ...options, gatewayFactory: createPrismaCrmGateway },
+    { ...options, gatewayFactory: options.gatewayFactory ?? createPrismaCrmGateway },
     'order.preview_create',
   );
 }
@@ -44,7 +44,7 @@ export function orderExecuteCreate(
   return executeContract(
     principal,
     args,
-    { ...options, gatewayFactory: createPrismaCrmGateway },
+    { ...options, gatewayFactory: options.gatewayFactory ?? createPrismaCrmGateway },
     'order.execute_create',
     'create_order',
     'failure',
@@ -61,7 +61,7 @@ export function orderPreviewCompensate(
     principal,
     'compensate_order',
     args,
-    { ...options, gatewayFactory: createPrismaCrmGateway },
+    { ...options, gatewayFactory: options.gatewayFactory ?? createPrismaCrmGateway },
     'order.preview_compensate',
   );
 }
@@ -74,7 +74,7 @@ export function orderExecuteCompensate(
   return executeContract(
     principal,
     args,
-    { ...options, gatewayFactory: createPrismaCrmGateway },
+    { ...options, gatewayFactory: options.gatewayFactory ?? createPrismaCrmGateway },
     'order.execute_compensate',
     'compensate_order',
     'compensation_failed',

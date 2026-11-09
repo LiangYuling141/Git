@@ -77,6 +77,7 @@ export interface EffectsExecuteRequest {
   idempotencyKey: string;
   previewId: string;
   traceId: string;
+  /** 由 B2 定义来源与冲突语义；B1 不使用。 */
   expectedEvidenceVersion?: string;
   effects: Effect[];
 }

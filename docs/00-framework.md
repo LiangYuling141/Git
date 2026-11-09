@@ -766,11 +766,11 @@ sequenceDiagram
 |------|------|----------|------|
 | 框架核心包 | 纯治理原语，无 IO 与垂直依赖 | `packages/tef-core/src/` | `canonical`、`hashing`、`risk`、`contract-engine` 测试随包迁移 |
 | 框架类型 | 契约、风险、信封、TaskState 类型 | `packages/tef-core/src/types.ts` | 由各模块测试间接覆盖 |
-| 业务网关端口 | 只读业务数据访问端口；Phase B2 的 HTTP 网关替换点，本阶段仍用进程内 Prisma 实现 | `packages/tef-core/src/business-gateway.ts` | 由垂直与集成测试间接覆盖 |
+| 业务网关端口 | 读路径端口 + 预留 effects 执行（B2/C）；Phase B2 的 HTTP 网关替换点，本阶段仍用进程内 Prisma 实现 | `packages/tef-core/src/business-gateway.ts` | 由 `prisma-gateway.test.ts`（2）直接覆盖 |
 | CRM 业务网关 | `BusinessGateway` 的进程内 Prisma 实现：显式租户绑定、响应字段映射 | `verticals/crm-erp-mcp/src/gateway/prisma-gateway.ts` | `prisma-gateway.test.ts`（2） |
 | MCP Kit | 通用 MCP Server 工厂、治理工具、契约运行时与状态存储 | `packages/tef-mcp-kit/src/` | `audit-chain.test.ts`（25）、`preview-store.test.ts`（10）、`token.test.ts`（26）随包迁移 |
 | Agent Runtime | 意图解析、模型客户端、TaskState 与编排 | `packages/tef-runtime/src/` | `intent.test.ts`（17）、`intent.model.test.ts`（3）、`LLMClient.test.ts`（11）随包迁移 |
-| CRM 垂直包 | CRM 查询/订单工具与赊账订单契约 | `verticals/crm-erp-mcp/src/` | `create-order.test.ts`（53）、`compensate-order.test.ts`（34）、`prisma-gateway.test.ts`（2）随包迁移 |
+| CRM 垂直包 | CRM 查询/订单工具与赊账订单契约 | `verticals/crm-erp-mcp/src/` | `create-order.test.ts`（53）、`compensate-order.test.ts`（34）随包迁移 |
 | 契约引擎 | 预览、阻断、重校验 | `packages/tef-core/src/contract-engine.ts` | `packages/tef-core/src/contract-engine.test.ts`（21） |
 | 风险路由 | L0/L1/L2/Block 定级 | `packages/tef-core/src/risk.ts` | `packages/tef-core/src/risk.test.ts`（19） |
 | 预览快照 | 保存、读取、一次性消费、撤销 | `packages/tef-mcp-kit/src/preview-store.ts`（`src/tef/preview-store.ts` 为 shim） | `preview-store.test.ts`（10） |

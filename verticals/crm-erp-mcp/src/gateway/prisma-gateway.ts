@@ -76,6 +76,11 @@ export function createPrismaCrmGateway(tx: PrismaTx, tenantId: string): Business
     async searchCustomers(input) {
       assertBoundTenant(tenantId, input.tenantId);
       const { name, phone, limit } = input;
+      // 防御纵深：工具层已校验，端口本身也不能允许"无任何业务标识"的查询，
+      // 否则一次参数缺失会静默返回本租户全部客户。
+      if (!name && !phone) {
+        throw new TefError('VALIDATION_ERROR', 'customer search requires name or phone');
+      }
       const rows = await tx.customer.findMany({
         where: {
           tenantId,
