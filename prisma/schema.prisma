@@ -127,6 +127,16 @@ enum AuditResult {
   failure
   compensated
   compensation_failed
+  // 执行意图已在副作用之前提交，但结果尚未结算。对账会补齐结果事件。
+  pending
+}
+
+// 两阶段执行的状态。executing/unknown 都需要由 reconcileExecutions 收敛。
+enum ExecutionStatus {
+  executing
+  succeeded
+  failed
+  unknown
 }
 
 // TaskState 的 12 个状态（§8.1）
@@ -162,22 +172,23 @@ model Tenant {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  members       TenantMember[]
-  users         User[]                @relation("UserHomeTenant")
-  sessions      Session[]
-  customers     Customer[]
-  orders        Order[]
-  payments      Payment[]
-  products      Product[]
-  whitelist     WhitelistEntry[]
-  confirmations ConfirmationRequest[]
-  auditLogs     AuditLog[]
-  previews      PreviewSnapshot[]
-  tokens        ConfirmationToken[]
-  idempotency   IdempotencyRecord[]
-  auditEvents   AuditEvent[]
-  chainHead     AuditChainHead?
-  taskStates    TaskState[]
+  members           TenantMember[]
+  users             User[]                @relation("UserHomeTenant")
+  sessions          Session[]
+  customers         Customer[]
+  orders            Order[]
+  payments          Payment[]
+  products          Product[]
+  whitelist         WhitelistEntry[]
+  confirmations     ConfirmationRequest[]
+  auditLogs         AuditLog[]
+  previews          PreviewSnapshot[]
+  tokens            ConfirmationToken[]
+  idempotency       IdempotencyRecord[]
+  auditEvents       AuditEvent[]
+  chainHead         AuditChainHead?
+  taskStates        TaskState[]
+  executionAttempts ExecutionAttempt[]
 
   @@map("tenants")
 }
@@ -553,6 +564,42 @@ model TaskState {
   @@unique([tenantId, conversationId])
   @@index([tenantId, userId, status])
   @@map("task_states")
+}
+
+// -----------------------------------------------------------------------------
+// TEF: Execution Attempt（两阶段执行状态机）
+// -----------------------------------------------------------------------------
+
+// 一次写入尝试的对账锚点：预审计先于副作用提交，结果审计在结算时补写。
+// executing/unknown 表示副作用可能已发生，只能按同一 idempotencyKey 重放收敛。
+model ExecutionAttempt {
+  id                      String          @id @default(cuid())
+  tenantId                String
+  tenant                  Tenant          @relation(fields: [tenantId], references: [id])
+  attemptId               String          @unique
+  traceId                 String
+  previewId               String
+  contract                String
+  contractVersion         String
+  intentHash              String
+  toolName                String
+  idempotencyKey          String
+  status                  ExecutionStatus @default(executing)
+  risk                    RiskOutcome
+  effects                 Json
+  expectedEvidenceVersion String?
+  result                  Json?
+  errorCode               String?
+  errorMessage            String?
+  preAuditEventId         String?
+  resultAuditEventId      String?
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+  settledAt               DateTime?
+
+  @@unique([tenantId, toolName, idempotencyKey])
+  @@index([tenantId, status, updatedAt])
+  @@map("execution_attempts")
 }
 
 // -----------------------------------------------------------------------------

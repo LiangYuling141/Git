@@ -233,7 +233,7 @@ async function verify() {
         WHERE n.nspname = 'public' AND c.relrowsecurity ORDER BY 1`,
     );
     const forced = flags.rows.filter((r) => r.f).map((r) => r.t);
-    check('FORCE 档表已生效', forced.length >= 7, `FORCE: ${forced.join(', ')}`);
+    check('FORCE 档表已生效', forced.length >= 8, `FORCE: ${forced.join(', ')}`);
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     check('验证过程无异常', false, error.message);

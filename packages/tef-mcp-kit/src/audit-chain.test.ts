@@ -119,6 +119,23 @@ describe('AuditChain.append', () => {
     expect(a.hash).not.toBe(b.hash);
   });
 
+  it('调用方传入确定性 eventId 时原样使用；不传时仍生成随机 aud_ 前缀', async () => {
+    const chain = new AuditChain();
+    const { db, events } = createFakeDb();
+    const deterministic = await chain.append(event({ eventId: 'attempt_1:result' }), db, T0);
+
+    expect(deterministic.eventId).toBe('attempt_1:result');
+    expect(events[0]?.eventId).toBe('attempt_1:result');
+    expect(events[0]?.payloadDigest).toBe(deterministic.payloadDigest);
+
+    const random = await chain.append(event(), db, new Date(T0.getTime() + 1000));
+    expect(random.eventId).toMatch(/^aud_[0-9a-f-]{36}$/);
+    expect(random.eventId).not.toBe(deterministic.eventId);
+
+    // 确定性 ID 不改变链校验语义
+    expect(await chain.verify(TENANT, db)).toMatchObject({ ok: true, length: 2 });
+  });
+
   it('事件内容不同则哈希不同', async () => {
     const chain = new AuditChain();
     const { db } = createFakeDb();

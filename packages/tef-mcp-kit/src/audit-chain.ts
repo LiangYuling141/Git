@@ -22,6 +22,11 @@ type Db = Pick<Prisma.TransactionClient, 'auditEvent' | 'auditChainHead'>;
 const APPEND_RETRIES = 3;
 
 export interface AuditEventInput {
+  /**
+   * 可选确定性事件 ID（如 `${attemptId}:result`）。对账重放时用同一 ID 写入，
+   * 避免重复事件把链拉长；不传则沿用随机 `aud_<uuid>`。
+   */
+  eventId?: string;
   traceId: string;
   tenantId: string;
   actorId: string;
@@ -119,7 +124,7 @@ export class AuditChain {
       throw new TefError('CONFLICT', 'audit chain head advanced concurrently');
     }
 
-    const eventId = `aud_${randomUUID()}`;
+    const eventId = input.eventId ?? `aud_${randomUUID()}`;
     const payload = buildPayload(input, seq, eventId, now);
     const prevHash = head.lastHash;
     const hash = computeChainHash(prevHash, payload);

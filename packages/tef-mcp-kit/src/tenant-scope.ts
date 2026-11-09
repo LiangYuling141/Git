@@ -43,6 +43,7 @@ export const RLS_TABLES_FORCED = [
   'confirmation_tokens',
   'idempotency_records',
   'task_states',
+  'execution_attempts',
   'products',
 ] as const;
 

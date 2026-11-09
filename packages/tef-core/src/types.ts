@@ -238,7 +238,13 @@ export interface Envelope<T = Record<string, unknown>> {
 
 export type ActorType = 'human' | 'agent' | 'system';
 export type AuditDecision = 'allow' | 'confirm' | 'block' | 'reject';
-export type AuditResultType = 'success' | 'failure' | 'compensated' | 'compensation_failed';
+export type AuditResultType =
+  | 'success'
+  | 'failure'
+  | 'compensated'
+  | 'compensation_failed'
+  // 预审计：执行意图已提交，副作用与结果审计尚未完成，等待结算或对账。
+  | 'pending';
 
 /**
  * 参与哈希的事件本体。prevHash / hash 不在其中——hash = H(prevHash ‖ canonical(event))，
