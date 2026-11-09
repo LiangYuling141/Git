@@ -1,11 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { POST } from '@/app/api/internal/v1/query/route';
+import { POST as effectsPost } from '@/app/api/internal/v1/effects/execute/route';
+import { withTenantScope } from '@/tef/tenant-scope';
 
 /**
- * 内部 query 网关集成测试。
+ * 内部网关集成测试（query 与 effects:execute）。
  *
  * 需要真实 PostgreSQL：`TEF_DB_TESTS=1 npx vitest run tests/integration/internal-gateway.test.ts`。
- * 本任务只读种子数据，不写业务数据，因此不需要复位夹具。
+ * query 用例只读种子数据；effects 用例会写入 product 与幂等记录，
+ * 因此每个改动用例结束后复位夹具。
  */
 
 const RUN_DB = process.env.TEF_DB_TESTS === '1' && Boolean(process.env.DATABASE_URL);
@@ -33,7 +36,60 @@ function query(body: unknown, token: string | null = TOKEN): Request {
   return request(JSON.stringify(body), token);
 }
 
-describeDb('内部 query 网关（真实数据库）', () => {
+// -----------------------------------------------------------------------------
+// effects:execute 夹具
+// -----------------------------------------------------------------------------
+
+const TOOL_NAME = 'internal.effects.execute';
+const PRODUCT = 'p_xmas_ball';
+const PRODUCT_AVAILABLE_QTY = 20000;
+
+function effectsRequest(body: unknown, token: string | null = TOKEN): Request {
+  return new Request('http://localhost/api/internal/v1/effects/execute', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+let effectsSeq = 0;
+
+/** 每次运行生成唯一幂等键，避免历史遗留记录把重放用例变成假阳性。 */
+function effectsKey(): string {
+  effectsSeq += 1;
+  return `itest_effects_${Date.now()}_${effectsSeq}`;
+}
+
+async function readProduct(): Promise<{ availableQty: number; reservedQty: number }> {
+  return withTenantScope(TENANT, (tx) =>
+    tx.product.findFirstOrThrow({
+      where: { id: PRODUCT, tenantId: TENANT },
+      select: { availableQty: true, reservedQty: true },
+    }),
+  );
+}
+
+async function resetProductFixture(): Promise<void> {
+  await withTenantScope(TENANT, async (tx) => {
+    await tx.product.updateMany({
+      where: { id: PRODUCT, tenantId: TENANT },
+      data: { availableQty: PRODUCT_AVAILABLE_QTY, reservedQty: 0 },
+    });
+  });
+}
+
+async function deleteIdempotencyRecord(key: string, tenantId: string = TENANT): Promise<void> {
+  await withTenantScope(tenantId, async (tx) => {
+    await tx.idempotencyRecord.deleteMany({
+      where: { tenantId, toolName: TOOL_NAME, idempotencyKey: key },
+    });
+  });
+}
+
+describeDb('内部 HTTP 网关（真实数据库）', () => {
   beforeAll(() => {
     savedToken = process.env.TEF_CRM_SERVICE_TOKEN;
     process.env.TEF_CRM_SERVICE_TOKEN = TOKEN;
@@ -138,5 +194,224 @@ describeDb('内部 query 网关（真实数据库）', () => {
     expect(response.status).toBe(400);
     const body = (await response.json()) as { error: string };
     expect(body.error).toBe('VALIDATION_ERROR');
+  });
+
+  describe('effects:execute', () => {
+    it('缺少 Authorization 时返回 401', async () => {
+      const response = await effectsPost(
+        effectsRequest(
+          {
+            tenantId: TENANT,
+            idempotencyKey: effectsKey(),
+            effects: [{ type: 'update', entity: 'product', target: PRODUCT, payload: {} }],
+          },
+          null,
+        ),
+      );
+      expect(response.status).toBe(401);
+    });
+
+    it('未知 entity 返回 400', async () => {
+      const response = await effectsPost(
+        effectsRequest({
+          tenantId: TENANT,
+          idempotencyKey: effectsKey(),
+          effects: [{ type: 'update', entity: 'invoice', payload: {} }],
+        }),
+      );
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { ok: boolean; error: { code: string; message: string } };
+      expect(body.ok).toBe(false);
+      expect(body.error.code).toBe('VALIDATION_ERROR');
+      expect(body.error.message).toContain('entity');
+    });
+
+    it('未知 action 返回 400', async () => {
+      const response = await effectsPost(
+        effectsRequest({
+          tenantId: TENANT,
+          idempotencyKey: effectsKey(),
+          effects: [{ type: 'delete', entity: 'product', payload: {} }],
+        }),
+      );
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { ok: boolean; error: { code: string; message: string } };
+      expect(body.ok).toBe(false);
+      expect(body.error.code).toBe('VALIDATION_ERROR');
+      expect(body.error.message).toContain('type');
+    });
+
+    it('缺少 idempotencyKey 返回 400', async () => {
+      const response = await effectsPost(
+        effectsRequest({
+          tenantId: TENANT,
+          effects: [{ type: 'update', entity: 'product', target: PRODUCT, payload: {} }],
+        }),
+      );
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { ok: boolean; error: { code: string } };
+      expect(body.ok).toBe(false);
+      expect(body.error.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('product.update 增量执行成功并返回 refs', async () => {
+      const key = effectsKey();
+      try {
+        const response = await effectsPost(
+          effectsRequest({
+            tenantId: TENANT,
+            idempotencyKey: key,
+            previewId: 'pv_effects_test',
+            traceId: 'tr_effects_test',
+            // B2 接受但尚未比较证据版本；此处确认该字段不会破坏执行。
+            expectedEvidenceVersion: 'ev_effects_test',
+            effects: [
+              {
+                type: 'update',
+                entity: 'product',
+                as: 'product',
+                target: PRODUCT,
+                payload: {},
+                increment: { availableQty: 0 },
+              },
+            ],
+          }),
+        );
+
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as {
+          ok: boolean;
+          refs: Record<string, Record<string, unknown>>;
+        };
+        expect(body.ok).toBe(true);
+        expect(body.refs.product).toEqual({ id: PRODUCT, tenantId: TENANT });
+      } finally {
+        await resetProductFixture();
+        await deleteIdempotencyRecord(key);
+      }
+    });
+
+    it('同 idempotencyKey 重放返回首次响应且不重复写库存', async () => {
+      const key = effectsKey();
+      const body = {
+        tenantId: TENANT,
+        idempotencyKey: key,
+        previewId: 'pv_effects_test',
+        traceId: 'tr_effects_test',
+        effects: [
+          {
+            type: 'update',
+            entity: 'product',
+            as: 'product',
+            target: PRODUCT,
+            payload: {},
+            increment: { availableQty: -5, reservedQty: 5 },
+          },
+        ],
+      };
+
+      try {
+        await resetProductFixture();
+
+        const first = await effectsPost(effectsRequest(body));
+        expect(first.status).toBe(200);
+        const firstBody = await first.json();
+        await expect(readProduct()).resolves.toEqual({
+          availableQty: PRODUCT_AVAILABLE_QTY - 5,
+          reservedQty: 5,
+        });
+
+        const replay = await effectsPost(effectsRequest(body));
+        expect(replay.status).toBe(200);
+        await expect(replay.json()).resolves.toEqual(firstBody);
+
+        // 重放命中幂等记录，不再执行 effects，库存保持首次执行后的值。
+        await expect(readProduct()).resolves.toEqual({
+          availableQty: PRODUCT_AVAILABLE_QTY - 5,
+          reservedQty: 5,
+        });
+      } finally {
+        await resetProductFixture();
+        await deleteIdempotencyRecord(key);
+      }
+    });
+
+    it('目标不存在时返回结构化 CONFLICT', async () => {
+      const key = effectsKey();
+      try {
+        const response = await effectsPost(
+          effectsRequest({
+            tenantId: TENANT,
+            idempotencyKey: key,
+            effects: [
+              {
+                type: 'update',
+                entity: 'product',
+                target: 'p_missing',
+                payload: {},
+                increment: { availableQty: 0 },
+              },
+            ],
+          }),
+        );
+        expect(response.status).toBe(409);
+        const body = (await response.json()) as {
+          ok: boolean;
+          error: { code: string; message: string };
+        };
+        expect(body.ok).toBe(false);
+        expect(body.error.code).toBe('CONFLICT');
+        expect(body.error.message).toContain('p_missing');
+      } finally {
+        await deleteIdempotencyRecord(key);
+      }
+    });
+
+    it('update 缺少 target 时返回结构化 INTERNAL', async () => {
+      const response = await effectsPost(
+        effectsRequest({
+          tenantId: TENANT,
+          idempotencyKey: effectsKey(),
+          effects: [{ type: 'update', entity: 'product', payload: {} }],
+        }),
+      );
+      expect(response.status).toBe(500);
+      const body = (await response.json()) as { ok: boolean; error: { code: string; message: string } };
+      expect(body.ok).toBe(false);
+      expect(body.error.code).toBe('INTERNAL');
+    });
+
+    it('跨租户写入同一主键返回 CONFLICT 且不修改源租户库存', async () => {
+      const key = effectsKey();
+      try {
+        await resetProductFixture();
+        const response = await effectsPost(
+          effectsRequest({
+            tenantId: OTHER_TENANT,
+            idempotencyKey: key,
+            effects: [
+              {
+                type: 'update',
+                entity: 'product',
+                target: PRODUCT,
+                payload: {},
+                increment: { availableQty: -1 },
+              },
+            ],
+          }),
+        );
+        expect(response.status).toBe(409);
+        const body = (await response.json()) as { ok: boolean; error: { code: string } };
+        expect(body.ok).toBe(false);
+        expect(body.error.code).toBe('CONFLICT');
+        await expect(readProduct()).resolves.toEqual({
+          availableQty: PRODUCT_AVAILABLE_QTY,
+          reservedQty: 0,
+        });
+      } finally {
+        await resetProductFixture();
+        await deleteIdempotencyRecord(key, OTHER_TENANT);
+      }
+    });
   });
 });
