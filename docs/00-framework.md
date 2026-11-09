@@ -788,7 +788,7 @@ sequenceDiagram
 | 确认执行计划 | 根据契约选择执行工具与成功状态 | `src/app/api/agent/confirm/execute-plan.ts` | `execute-plan.test.ts`（3） |
 | 闭环集成 | 真实数据库端到端、攻击场景、补偿与内部网关 | `tests/integration/` | 51（需 `TEF_DB_TESTS=1`） |
 
-> 另有遗留测试 `src/agents/SubAgent.validation.test.ts`（2 个）计入 310 个单元测试总数；它属于旧投票路径，不在 TEF 模块映射内。
+> 另有遗留测试 `src/agents/SubAgent.validation.test.ts`（2 个）计入 314 个单元测试总数；它属于旧投票路径，不在 TEF 模块映射内。
 >
 > `BusinessGateway` 是 Phase B2 CRM HTTP 网关的端口：核心只定义泛型 `query` + `executeEffects`，不含 CRM 字段；CRM DTO 与类型化读方法通过垂直包的 `CrmBusinessGateway extends BusinessGateway` 扩展。Phase B2 默认仍使用进程内 Prisma 实现（`PrismaCrmGateway`），仅显式设置 `TEF_CRM_GATEWAY=http` 时切换为 `HttpCrmGateway`；垂直查询工具与契约 `loadEvidence` 均经该端口读取业务数据。
 
@@ -819,7 +819,7 @@ sequenceDiagram
 | 单元测试 | 契约引擎、风险、哈希、快照、令牌、审计链、意图、MCP、创建与补偿契约、Prisma/HTTP 业务网关、确认执行计划、包边界检查 | 310 | `npm test` 默认运行 |
 | 数据库集成测试 | Phase 0 闭环/攻击场景（19）+ Phase 1 补偿闭环（8）+ 内部 HTTP 网关（24） | 51 | `TEF_DB_TESTS=1` 且 `DATABASE_URL` 可用 |
 
-本地实测（2026-11-09）：310 个单元测试通过；设置 `TEF_DB_TESTS=1` 后 361 个测试全部通过；typecheck 通过；build 通过；lint 为 0 错误、28 警告（集中在遗留代码）。
+本地实测（2026-11-09）：314 个单元测试通过；设置 `TEF_DB_TESTS=1` 后 370 个测试全部通过；typecheck 通过；build 通过；lint 为 0 错误、28 警告（集中在遗留代码）。
 
 ### 9.3 CI 流水线
 
@@ -829,7 +829,7 @@ sequenceDiagram
 checkout → setup Node 22 → npm ci → prisma generate
 → bootstrap default tenant → prisma db push → seed
 → rls:apply → prepare non-superuser app role
-→ typecheck → lint → boundaries:check → test（含 51 个数据库集成测试：Phase 0 闭环 19 + Phase 1 补偿 8 + 内部 HTTP 网关 24）
+→ typecheck → lint → boundaries:check → test（含 56 个数据库集成测试：Phase 0 闭环 19 + Phase 1 补偿 8 + 内部 HTTP 网关 29）
 → rls:verify（以非 owner 角色）→ build
 ```
 
@@ -873,9 +873,10 @@ npm run rls:verify
 | `TEF_DB_TESTS` | 否 | 设为 `1` 时 `npm test` 额外执行真实数据库集成测试 |
 | `TEF_MODEL_TESTS` | 否 | 设为 `1` 时测试保留真实 `DEEPSEEK_API_KEY` 并调用模型；默认清空 Key，走确定性解析器 |
 | `PORT` | 否 | Next.js 监听端口，默认 3000 |
-| `TEF_CRM_GATEWAY` | 否 | `prisma`（默认）或 `http`；`http` 时业务 MCP 经 `HttpCrmGateway` 调用 CRM 内部网关。B2 阶段 HTTP 语义仍为只读，禁止在生产启用，详见 [README 内部 HTTP 网关](../README.md#内部-http-网关phase-b2) |
+| `TEF_CRM_GATEWAY` | 否 | `prisma`（默认）或 `http`；`http` 时业务 MCP 经 `HttpCrmGateway` 调用 CRM 内部网关。HTTP 通道包含 query 与 effects:execute，但 TEF 契约执行路径仍走本地适配器；Phase C 接入跨服务执行前禁止在生产启用。未知非空值直接报错，不回落 Prisma。详见 [README 内部 HTTP 网关](../README.md#内部-http-网关phase-b2) |
 | `TEF_CRM_SERVICE_TOKEN` | 条件 | CRM 内部网关的服务令牌；设为 `http` 模式时必填。缺失时内部端点 fail-closed 返回 503，`HttpCrmGateway` 构造失败 |
 | `TEF_CRM_API_BASE` | 条件 | `HttpCrmGateway` 访问 CRM 内部网关的基址（如 `http://localhost:3000`）；仅 `TEF_CRM_GATEWAY=http` 时使用 |
+| `TEF_CRM_EFFECTS_ENABLED` | 否 | 设为 `1` 才启用 `/api/internal/v1/effects/execute`；默认关闭，关闭时经服务令牌鉴权后仍返回 404。Phase C 接入预览、令牌与审计前仅限受控环境 |
 
 ### 9.6 密钥管理
 
@@ -891,9 +892,9 @@ npm run rls:verify
 
 | 阶段 | 目标 | 状态（2026-11-09） |
 |------|------|--------------------|
-| **Phase 0** | 跑通赊账订单闭环：租户、契约引擎、查询工具、预览/执行、令牌、快照、审计 | **已完成**。多租户、契约引擎、13 个 MCP 工具、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、TaskState、最小 Agent Runtime、确认 UI 全部可运行；当前全量 361 个测试（310 单元 + 51 真实数据库）在 CI 中持续验证 |
+| **Phase 0** | 跑通赊账订单闭环：租户、契约引擎、查询工具、预览/执行、令牌、快照、审计 | **已完成**。多租户、契约引擎、13 个 MCP 工具、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、TaskState、最小 Agent Runtime、确认 UI 全部可运行；当前全量 370 个测试（314 单元 + 56 真实数据库）在 CI 中持续验证 |
 | **Phase 1** | 完善写入协议：L1 自动执行、冲突恢复、补偿、澄清 | **已完成主要项**。L1 自动执行、澄清（上限 3 轮）、`CONFLICT` 检测与旧令牌作废、`compensate_order` 契约与完整补偿运行时（preview → L2 → 人工确认 → execute）均已实现并有测试；崩溃恢复与并发压测未完成 |
-| **Phase B2** | CRM 内部 HTTP 网关：`query`、`effects:execute`、`HttpCrmGateway` 与切换工厂 | **已完成**。内部端点使用服务令牌鉴权、租户绑定、effect 白名单与同事务幂等；默认仍为进程内 Prisma，HTTP 模式为只读且受已知限制约束（见 §11），跨服务 effects 执行留待 Phase C |
+| **Phase B2** | CRM 内部 HTTP 网关：`query`、`effects:execute`、`HttpCrmGateway` 与切换工厂 | **已完成**。内部端点使用服务令牌鉴权、租户绑定、effect 白名单与同事务幂等；默认仍为进程内 Prisma，HTTP 通道含 query 与默认关闭的 effects:execute，但契约执行仍走本地适配器并受已知限制约束（见 §11），跨服务 effects 执行留待 Phase C |
 | **Phase 2** | 评测体系：300–500 条样本、拦截率、误拒率、P95、成本、可选验证器 | **未开始** |
 | **Phase 3** | 框架化与行业扩展：行业插件、计量计费、角色细化、SDK、生产部署 | **未开始** |
 | 后续 | 工业级：安全评审、压测、兼容性、SLA、私有化 | **未开始** |
@@ -959,7 +960,7 @@ npm run rls:verify
 | ops 白名单工具 | `whitelist.list`、`whitelist.set`、`tenant.config.get` 已声明但未注册 |
 | 模型可替换演示 | 需要真实 `DEEPSEEK_API_KEY`；否则回落到确定性解析器，无法演示“更换模型” |
 | B2 HTTP 读的事务边界 | HTTP 读取仍在本地 `withTenantScope` 事务内发起网络 IO，网络往返期间持续占用数据库连接；B3 必须把远程读取移出事务 |
-| B2 HTTP 写入 | 契约执行仍使用本地 Prisma 适配器，`HttpCrmGateway.executeEffects` 尚未接入跨服务执行；HTTP 模式在生产语义上仍为只读，effects 跨服务与补偿语义（Phase C）完成前禁止在生产启用 `TEF_CRM_GATEWAY=http` |
+| B2 HTTP 写入 | HTTP 通道已暴露 `effects:execute`（`TEF_CRM_EFFECTS_ENABLED=1` 才启用，默认返回 404），但契约执行仍使用本地 Prisma 适配器，`HttpCrmGateway.executeEffects` 尚未接入 TEF 的 `executeContract`；effects 跨服务与补偿语义（Phase C）完成前禁止在生产启用 `TEF_CRM_GATEWAY=http` 或 `TEF_CRM_EFFECTS_ENABLED=1` |
 | 生产可用性 | 未做安全评审、压测、兼容性验证与 SLA，不得对外宣称工业级 |
 
 ---

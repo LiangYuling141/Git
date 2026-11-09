@@ -1,6 +1,6 @@
 # Phase B2：CRM 通用 HTTP 网关与 HttpCrmGateway 实施计划
 
-> 状态：已完成（2026-11-09）。全量 361 项测试通过（310 单元 + 51 真实数据库集成）。
+> 状态：已完成（2026-11-09，最终评审修复后）。全量 370 项测试通过（314 单元 + 56 真实数据库集成）。
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 
@@ -23,7 +23,7 @@
 ### B2 已知限制
 
 - **事务边界**：HTTP 读当前仍在本地租户事务（`withTenantScope`）内发起网络 IO，网络往返期间会持续占用一条数据库连接。B3 必须把远程读取移出事务后再启用跨服务读取。
-- **只读模式**：B2 的 HTTP 通道只承载查询；写入仍走本地 Prisma 适配器，直到 Phase C 的跨服务 effects 执行落地。在 effects 跨服务之前，禁止在生产设置 `TEF_CRM_GATEWAY=http`。
+- **写入通道与契约执行路径分离**：B2 的 HTTP 通道已经同时提供 `query` 与 `effects:execute`（默认关闭），但 TEF 的契约执行路径仍使用本地 Prisma 适配器，直到 Phase C 接入跨服务 effects 执行。在契约写入改道之前，禁止在生产设置 `TEF_CRM_GATEWAY=http`。
 
 ---
 
@@ -357,7 +357,7 @@ npm run lint
 
 - `.env.example` 增加 `TEF_CRM_GATEWAY`、`TEF_CRM_API_BASE`、`TEF_CRM_SERVICE_TOKEN`。
 - README 与 00-framework 记录内部网关端点、鉴权与默认 prisma 模式。
-- 记录 B2 已知限制：HTTP 读仍在本地租户事务内进行网络 IO，会占用数据库连接，B3 必须把远程读取移出事务；HTTP 模式暂时只读，写入仍走本地 Prisma 适配器，effects 跨服务前不得在生产启用 `TEF_CRM_GATEWAY=http`。
+- 记录 B2 已知限制：HTTP 读仍在本地租户事务内进行网络 IO，会占用数据库连接，B3 必须把远程读取移出事务；HTTP 通道已暴露 `effects:execute`，但 TEF 契约执行路径仍走本地 Prisma 适配器，Phase C 接入前不得在生产启用 `TEF_CRM_GATEWAY=http`。
 - 设计 spec 更新 B2 状态与测试基线（新增测试后同步）。
 - B2 计划状态标记完成。
 
@@ -397,4 +397,4 @@ Expected: 全部通过；新增测试后基线按实际数量同步到文档。
   - Task 4 新增集成测试 5 项：`payload.tenantId` / `payload.id` 越权（2 项）与 malformed effect（increment 非数字、bind 类型错误、空 effects 数组，3 项）。
 - 纵深防御：`payload.tenantId` 与 `payload.id` 由 `superRefine` 在触库前拒绝；空 effects 批次、`expectedEvidenceVersion` 空字符串同样返回 `VALIDATION_ERROR`。
 - 幂等重放：响应在首次结果基础上追加 `replayed: true`；重放测试同时断言首次响应无该标记。
-- 已知限制：HTTP 读仍在本地租户事务内发起网络 IO（B3 移出）；契约执行仍走本地 Prisma 适配器，`HttpCrmGateway.executeEffects` 尚未接入跨服务路径，生产语义仍为只读；effects 跨服务完成前禁止启用 `TEF_CRM_GATEWAY=http`。
+- 已知限制：HTTP 读仍在本地租户事务内发起网络 IO（B3 移出）；HTTP 通道已暴露 `effects:execute`（默认关闭），但契约执行仍走本地 Prisma 适配器，`HttpCrmGateway.executeEffects` 尚未接入 TEF 的 `executeContract`；Phase C 完成前禁止启用 `TEF_CRM_GATEWAY=http`。

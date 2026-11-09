@@ -20,6 +20,7 @@ const CUSTOMER = 'c_weiye_import';
 const TOKEN = 'test-internal-token';
 
 let savedToken: string | undefined;
+let savedEffectsEnabled: string | undefined;
 
 function request(body: string, token: string | null = TOKEN): Request {
   return new Request('http://localhost/api/internal/v1/query', {
@@ -92,7 +93,10 @@ async function deleteIdempotencyRecord(key: string, tenantId: string = TENANT): 
 describeDb('内部 HTTP 网关（真实数据库）', () => {
   beforeAll(() => {
     savedToken = process.env.TEF_CRM_SERVICE_TOKEN;
+    savedEffectsEnabled = process.env.TEF_CRM_EFFECTS_ENABLED;
     process.env.TEF_CRM_SERVICE_TOKEN = TOKEN;
+    // effects 端点默认关闭；本文件验证的是启用后的行为，单独用例再覆盖关闭态。
+    process.env.TEF_CRM_EFFECTS_ENABLED = '1';
   });
 
   afterAll(() => {
@@ -100,6 +104,11 @@ describeDb('内部 HTTP 网关（真实数据库）', () => {
       delete process.env.TEF_CRM_SERVICE_TOKEN;
     } else {
       process.env.TEF_CRM_SERVICE_TOKEN = savedToken;
+    }
+    if (savedEffectsEnabled === undefined) {
+      delete process.env.TEF_CRM_EFFECTS_ENABLED;
+    } else {
+      process.env.TEF_CRM_EFFECTS_ENABLED = savedEffectsEnabled;
     }
   });
 
@@ -211,6 +220,44 @@ describeDb('内部 HTTP 网关（真实数据库）', () => {
       expect(response.status).toBe(401);
     });
 
+    it('功能开关关闭时返回 404，不触库', async () => {
+      const saved = process.env.TEF_CRM_EFFECTS_ENABLED;
+      delete process.env.TEF_CRM_EFFECTS_ENABLED;
+      try {
+        const response = await effectsPost(
+          effectsRequest({
+            tenantId: TENANT,
+            idempotencyKey: effectsKey(),
+            effects: [{ type: 'update', entity: 'product', target: PRODUCT, payload: {} }],
+          }),
+        );
+        expect(response.status).toBe(404);
+        await expect(response.json()).resolves.toEqual({ error: 'NOT_FOUND' });
+      } finally {
+        if (saved === undefined) {
+          delete process.env.TEF_CRM_EFFECTS_ENABLED;
+        } else {
+          process.env.TEF_CRM_EFFECTS_ENABLED = saved;
+        }
+      }
+    });
+
+    it('expectedEvidenceVersion 为空字符串返回 400', async () => {
+      const response = await effectsPost(
+        effectsRequest({
+          tenantId: TENANT,
+          idempotencyKey: effectsKey(),
+          expectedEvidenceVersion: '',
+          effects: [{ type: 'update', entity: 'product', target: PRODUCT, payload: {} }],
+        }),
+      );
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { ok: boolean; error: { code: string; message: string } };
+      expect(body.ok).toBe(false);
+      expect(body.error.code).toBe('VALIDATION_ERROR');
+      expect(body.error.message).toContain('expectedEvidenceVersion');
+    });
+
     it('未知 entity 返回 400', async () => {
       const response = await effectsPost(
         effectsRequest({
@@ -285,6 +332,26 @@ describeDb('内部 HTTP 网关（真实数据库）', () => {
           target: PRODUCT,
           payload: {},
           bind: { customerId: { fromRef: 'order', field: 1 } },
+        },
+      ],
+      [
+        'bind 指向 tenantId',
+        {
+          type: 'update',
+          entity: 'product',
+          target: PRODUCT,
+          payload: {},
+          bind: { tenantId: { fromRef: 'order', field: 'tenantId' } },
+        },
+      ],
+      [
+        'bind 指向 id',
+        {
+          type: 'update',
+          entity: 'product',
+          target: PRODUCT,
+          payload: {},
+          bind: { id: { fromRef: 'order', field: 'id' } },
         },
       ],
       ['空 effects 数组', null],
@@ -379,6 +446,57 @@ describeDb('内部 HTTP 网关（真实数据库）', () => {
         await expect(readProduct()).resolves.toEqual({
           availableQty: PRODUCT_AVAILABLE_QTY - 5,
           reservedQty: 5,
+        });
+      } finally {
+        await resetProductFixture();
+        await deleteIdempotencyRecord(key);
+      }
+    });
+
+    it('并发同 idempotencyKey 只执行一次，另一个按重放返回', async () => {
+      const key = effectsKey();
+      const body = {
+        tenantId: TENANT,
+        idempotencyKey: key,
+        previewId: 'pv_effects_test',
+        traceId: 'tr_effects_test',
+        effects: [
+          {
+            type: 'update',
+            entity: 'product',
+            as: 'product',
+            target: PRODUCT,
+            payload: {},
+            increment: { availableQty: -7, reservedQty: 7 },
+          },
+        ],
+      };
+
+      try {
+        await resetProductFixture();
+
+        // 两个请求同时进入：都读不到幂等记录，先提交者成功；后提交者在唯一
+        // 索引上得到 P2002，整个事务回滚，再由路由读取先提交者的记录重放。
+        const [first, second] = await Promise.all([
+          effectsPost(effectsRequest(body)),
+          effectsPost(effectsRequest(body)),
+        ]);
+
+        expect(first.status).toBe(200);
+        expect(second.status).toBe(200);
+        const bodies = (await Promise.all([first.json(), second.json()])) as Array<{
+          ok: boolean;
+          refs: Record<string, Record<string, unknown>>;
+          replayed?: boolean;
+        }>;
+        expect(bodies.filter((entry) => entry.ok)).toHaveLength(2);
+        expect(bodies.filter((entry) => entry.replayed === true)).toHaveLength(1);
+        expect(bodies.filter((entry) => entry.replayed !== true)).toHaveLength(1);
+
+        // 失败方的事务回滚了它自己的库存扣减，净效果只应用一次。
+        await expect(readProduct()).resolves.toEqual({
+          availableQty: PRODUCT_AVAILABLE_QTY - 7,
+          reservedQty: 7,
         });
       } finally {
         await resetProductFixture();

@@ -83,6 +83,28 @@ function toEffectsFailure(payload: unknown, status: number): EffectsExecuteResul
   return { ok: false, refs: {}, error: { code, message } };
 }
 
+/**
+ * 2xx 响应必须至少满足 `{ ok: boolean, refs: object }`。
+ *
+ * 内部网关与业务 MCP 可能由不同版本部署，路由被反向代理接管或误配时
+ * 也可能返回任意 200 页面。这里只做端口语义的最小校验，不认识的附加字段
+ * （如 replayed）按布尔值透传；结构不符则抛 INTERNAL，避免把垃圾响应当成
+ * “副作用已成功”继续执行。
+ */
+function parseEffectsResponse(payload: unknown): EffectsExecuteResult {
+  const body = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null;
+  const refs = body?.refs;
+  if (!body || typeof body.ok !== 'boolean' || !refs || typeof refs !== 'object' || Array.isArray(refs)) {
+    throw new TefError('INTERNAL', 'invalid effects response');
+  }
+  const result: EffectsExecuteResult = {
+    ok: body.ok,
+    refs: refs as Record<string, Record<string, unknown>>,
+  };
+  if (typeof body.replayed === 'boolean') result.replayed = body.replayed;
+  return result;
+}
+
 export function createHttpCrmGateway(options: HttpCrmGatewayOptions): CrmBusinessGateway {
   const { baseUrl, serviceToken, tenantId } = options;
   if (!baseUrl) throw new TefError('INTERNAL', 'TEF_CRM_API_BASE is not configured');
@@ -124,7 +146,7 @@ export function createHttpCrmGateway(options: HttpCrmGatewayOptions): CrmBusines
     if (inputTenant !== tenantId) throw new TefError('PERMISSION_DENIED', 'gateway tenant mismatch');
   };
 
-  const gateway = {
+  const gateway: CrmBusinessGateway = {
     async query<T>(input: { tenantId: string; operation: string; params: Record<string, unknown> }): Promise<T> {
       assertTenant(input.tenantId);
       const result = await call<{ data: T }>('/api/internal/v1/query', {
@@ -166,9 +188,9 @@ export function createHttpCrmGateway(options: HttpCrmGatewayOptions): CrmBusines
       if (!ok) {
         return toEffectsFailure(payload, status);
       }
-      return payload as EffectsExecuteResult;
+      return parseEffectsResponse(payload);
     },
-  } as CrmBusinessGateway;
+  };
 
   return gateway;
 }

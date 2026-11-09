@@ -20,6 +20,8 @@ export interface EffectsExecuteRequest {
 export interface EffectsExecuteResult {
   ok: boolean;
   refs: Record<string, Record<string, unknown>>;
+  /** 命中幂等记录时为 true：响应来自首次执行，本次没有重复产生副作用。 */
+  replayed?: boolean;
   error?: { code: 'CONFLICT' | 'INTERNAL'; message: string };
 }
 

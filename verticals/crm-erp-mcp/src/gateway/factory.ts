@@ -12,14 +12,20 @@ import type { CrmBusinessGateway } from './types';
  * HTTP 模式缺少基址或服务令牌时直接失败，不做静默降级。
  */
 export function createCrmGateway(tx: PrismaTx, tenantId: string): CrmBusinessGateway {
-  if (process.env.TEF_CRM_GATEWAY === 'http') {
+  const mode = process.env.TEF_CRM_GATEWAY;
+  if (mode === 'http') {
     const baseUrl = process.env.TEF_CRM_API_BASE;
     const serviceToken = process.env.TEF_CRM_SERVICE_TOKEN;
     if (!baseUrl) throw new Error('TEF_CRM_API_BASE is not configured');
     if (!serviceToken) throw new Error('TEF_CRM_SERVICE_TOKEN is not configured');
     return createHttpCrmGateway({ baseUrl, serviceToken, tenantId });
   }
-  return createPrismaCrmGateway(tx, tenantId);
+  // 拼写错误或未知模式不能静默回落到 Prisma：调用方以为流量走 HTTP
+  // 网关，实际仍在进程内直连业务库，是部署期最难发现的配置事故。
+  if (mode === undefined || mode === '' || mode === 'prisma') {
+    return createPrismaCrmGateway(tx, tenantId);
+  }
+  throw new Error(`unknown TEF_CRM_GATEWAY: ${mode}`);
 }
 
 export type { BusinessGateway };

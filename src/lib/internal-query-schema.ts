@@ -37,7 +37,8 @@ const operationParams = {
   [CRM_QUERY.customerGet]: customerIdParams,
   [CRM_QUERY.creditGet]: customerIdParams,
   [CRM_QUERY.productsGet]: z.object({
-    skus: z.array(z.string().min(1)).min(1),
+    // 上限防止调用方用超大 SKU 列表把一次查询放大成无界 IN 扫描。
+    skus: z.array(z.string().min(1)).min(1).max(50),
   }),
   [CRM_QUERY.productsSearch]: z.object({
     term: z.string().min(1).optional(),

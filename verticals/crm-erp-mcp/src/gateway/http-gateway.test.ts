@@ -423,6 +423,17 @@ describe('effects:execute', () => {
     );
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('2xx 响应结构非法时抛 INTERNAL，不把垃圾响应当成成功', async () => {
+    stubFetch(jsonResponse({ ok: true }));
+    const gateway = createGateway();
+
+    await expectTefError(
+      () => gateway.executeEffects(effectsInput()),
+      'INTERNAL',
+      'invalid effects response',
+    );
+  });
 });
 
 describe('工厂切换：TEF_CRM_GATEWAY', () => {
@@ -478,6 +489,13 @@ describe('工厂切换：TEF_CRM_GATEWAY', () => {
     vi.stubEnv('TEF_CRM_SERVICE_TOKEN', '');
     expect(() => createCrmGateway({} as PrismaTx, BOUND_TENANT)).toThrow(
       'TEF_CRM_SERVICE_TOKEN is not configured',
+    );
+  });
+
+  it('未知非空模式直接报错，不静默回落到 Prisma', () => {
+    vi.stubEnv('TEF_CRM_GATEWAY', 'htp');
+    expect(() => createCrmGateway({} as PrismaTx, BOUND_TENANT)).toThrow(
+      'unknown TEF_CRM_GATEWAY: htp',
     );
   });
 });
