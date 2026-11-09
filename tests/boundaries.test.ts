@@ -1,0 +1,85 @@
+import { describe, expect, it } from 'vitest';
+import { checkSource } from '../scripts/check-boundaries.mjs';
+
+describe('package boundary checker', () => {
+  it('rejects filesystem imports from tef-core', () => {
+    const violations = checkSource(
+      'packages/tef-core/src/probe.ts',
+      "import fs from 'node:fs';",
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({
+      file: 'packages/tef-core/src/probe.ts',
+      specifier: 'node:fs',
+      rule: 'forbidden-import',
+    });
+  });
+
+  it('rejects relative imports that escape the package root', () => {
+    const violations = checkSource(
+      'packages/tef-core/src/probe.ts',
+      "import { prisma } from '../../../src/lib/prisma';",
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({
+      file: 'packages/tef-core/src/probe.ts',
+      specifier: '../../../src/lib/prisma',
+      rule: 'relative-escape',
+    });
+  });
+
+  it('rejects token-store imports from the runtime', () => {
+    const violations = checkSource(
+      'packages/tef-runtime/src/probe.ts',
+      "import { tokenStore } from '@lymatrix/tef-mcp-kit/token';",
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({
+      specifier: '@lymatrix/tef-mcp-kit/token',
+      rule: 'forbidden-import',
+    });
+  });
+
+  it('rejects runtime imports from the MCP kit package', () => {
+    const violations = checkSource(
+      'packages/tef-mcp-kit/src/probe.ts',
+      "import '@lymatrix/tef-runtime';",
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({
+      specifier: '@lymatrix/tef-runtime',
+      rule: 'forbidden-import',
+    });
+  });
+
+  it('rejects runtime imports from the CRM vertical', () => {
+    const violations = checkSource(
+      'verticals/crm-erp-mcp/src/probe.ts',
+      "import { createTefRuntime } from '@lymatrix/tef-runtime';",
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({
+      specifier: '@lymatrix/tef-runtime',
+      rule: 'forbidden-import',
+    });
+  });
+
+  it('accepts clean tef-core sources', () => {
+    const violations = checkSource(
+      'packages/tef-core/src/probe.ts',
+      [
+        "import { createHash } from 'node:crypto';",
+        "import { z } from 'zod';",
+        "import { classifyRisk } from './risk';",
+        "import type { Contract } from '@lymatrix/tef-core';",
+      ].join('\n'),
+    );
+
+    expect(violations).toEqual([]);
+  });
+});

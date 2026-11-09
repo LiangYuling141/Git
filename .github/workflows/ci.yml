@@ -94,6 +94,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Check package boundaries
+        run: npm run boundaries:check
+
       # 含 tests/integration：对真实 PostgreSQL 跑通
       # preview → confirm → execute 闭环与三个攻击场景
       - name: Test

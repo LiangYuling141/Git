@@ -1,6 +1,6 @@
 # Phase A2：tef-mcp-kit、CRM 垂直 MCP 与 tef-runtime 提取实施计划
 
-> **执行状态**：Phase A2 已完成（2026-11-09，commits 21a9433..最终提交）。
+> **执行状态**：Phase A2 已完成（2026-11-09，commits 21a9433..3c49f25）。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

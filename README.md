@@ -5,7 +5,7 @@
 
 LyMatrix TEF 是一个面向 AI Agent 的可信执行框架。它不试图让模型输出变得确定，而是让模型产生的**副作用**变得确定：任何写操作都必须经过契约校验、证据加载、风险定级、预览快照、一次性令牌确认和幂等执行，否则被阻断、拒绝或转人工。
 
-**当前状态（2026-11-09）**：Phase 0 闭环与 Phase 1 补偿运行时已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime、确认 UI 与补偿闭环全部可运行，295 个测试通过（含 27 个对真实 PostgreSQL 的闭环、攻击场景与补偿集成测试）。尚未达到生产可用：评测体系（Phase 2）、遗留代码清理、崩溃恢复与并发压测仍未完成。成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
+**当前状态（2026-11-09）**：Phase 0 闭环与 Phase 1 补偿运行时已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime、确认 UI 与补偿闭环全部可运行，301 个测试通过（含 27 个对真实 PostgreSQL 的闭环、攻击场景与补偿集成测试）。尚未达到生产可用：评测体系（Phase 2）、遗留代码清理、崩溃恢复与并发压测仍未完成。成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
 
 ---
 
@@ -44,7 +44,7 @@ LyMatrix TEF 是一个面向 AI Agent 的可信执行框架。它不试图让模
 | `docs/` | 框架设计、参考实现与合规文档 | 拆分为 `docs/core/` 与 `docs/reference/crm-erp/` |
 | `packages/tef-core/` | 纯治理核心（契约、风险、哈希、effects），不依赖 IO 与业务字段 | 保持零 IO、零垂直依赖，作为 MCP Kit、Runtime 与垂直包的公共底座 |
 | `packages/tef-mcp-kit/` | 通用 MCP 工厂、治理工具、契约运行时与状态存储 | 保持不依赖垂直包、Agent Runtime 与 Next.js |
-| `packages/tef-runtime/` | 意图、LLM、TaskState 与编排 | 通过注入的 MCP 连接器访问工具，不持有数据库凭据 |
+| `packages/tef-runtime/` | 意图、LLM、TaskState 与编排 | 通过注入的 MCP 连接器访问工具；不直接持有数据库凭据，TaskState 持久化经 tef-mcp-kit 的租户作用域存储完成 |
 | `verticals/crm-erp-mcp/` | CRM 查询工具与赊账订单契约 | 作为首个参考垂直插件独立演进 |
 | `src/` | Next.js 参考实现与迁移 shim | 后续阶段继续下沉到 `packages/` 与 `apps/` |
 | `prisma/` | 参考实现数据模型 | 后续阶段拆分为 business / tef / runtime schema |
@@ -155,7 +155,7 @@ flowchart TB
 | 任务状态 | 多轮对话、待确认操作、断点恢复 |
 | 流式输出 | 响应展示 |
 
-Agent Runtime 不持有数据库凭据，不直接执行写操作；模型可以替换，工具链和护栏不变。
+Agent Runtime 不持有数据库凭据，不直接执行写操作；TaskState 的持久化经 tef-mcp-kit 的租户作用域存储完成。模型可以替换，工具链和护栏不变。
 
 ---
 

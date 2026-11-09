@@ -38,6 +38,22 @@ export default defineConfig([
           ],
         },
       ],
+      // TypeScript 版本才能用 allowTypeImports：Runtime 可以引用 kit 的公共类型，
+      // 但 kit 中的令牌、快照、审计与契约运行时属于工具层，Runtime 不得取值导入。
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            { name: '@lymatrix/tef-mcp-kit', allowTypeImports: true, message: 'Runtime may import kit types from the root, but not kit values; use explicit allowed subpaths.' },
+            { name: '@lymatrix/tef-mcp-kit/token', message: 'Token store belongs to the tool layer, not the Runtime (axiom I2).' },
+            { name: '@lymatrix/tef-mcp-kit/preview-store', message: 'Preview store belongs to the tool layer, not the Runtime (axiom I2).' },
+            { name: '@lymatrix/tef-mcp-kit/audit-chain', message: 'Audit chain belongs to the tool layer, not the Runtime (axiom I2).' },
+            { name: '@lymatrix/tef-mcp-kit/tools/contract', message: 'Contract runtime belongs to the tool layer; the Runtime may only call MCP tools.' },
+            { name: '@lymatrix/tef-mcp-kit/tools/confirmation', message: 'Confirmation tools belong to the tool layer.' },
+            { name: '@lymatrix/tef-mcp-kit/tools/audit', message: 'Audit tools belong to the tool layer.' },
+          ],
+        },
+      ],
     },
   },
   {
@@ -48,6 +64,12 @@ export default defineConfig([
       'no-restricted-imports': [
         'error',
         {
+          // 允许 @/generated/prisma 的类型导入；真实持久化必须经 kit 的 withTenantScope。
+          paths: [
+            { name: '@/lib/prisma', message: 'TaskState must use the kit tenant-scoped store, not a raw Prisma client (axiom I2).' },
+            { name: '@/engine', message: 'TaskState must not import the business engine.' },
+            { name: '@/engine/BusinessEngine', message: 'TaskState must not import BusinessEngine.' },
+          ],
           patterns: [
             {
               group: ['@/contracts/*', '@/mcp-server/*', '@/tef/preview-store', '@/tef/token', '@/tef/audit-chain', '@lymatrix/vertical-*', 'next', 'next/*'],
@@ -76,7 +98,20 @@ export default defineConfig([
                 '@/agent-runtime/*',
                 '@/*',
                 '@prisma/*',
+                '@prisma/client',
                 '@modelcontextprotocol/*',
+                '@lymatrix/tef-mcp-kit',
+                '@lymatrix/tef-mcp-kit/*',
+                '@lymatrix/tef-mcp-kit*',
+                '@lymatrix/tef-runtime',
+                '@lymatrix/tef-runtime/*',
+                '@lymatrix/tef-runtime*',
+                '@lymatrix/vertical-*',
+                'node:fs',
+                'node:fs/promises',
+                'node:child_process',
+                'pg',
+                'ioredis',
                 'next',
                 'next/*',
               ],
@@ -96,7 +131,7 @@ export default defineConfig([
         {
           patterns: [
             {
-              group: ['@/contracts/*', '@/agent-runtime/*', '@lymatrix/vertical-*', 'next', 'next/*'],
+              group: ['@/contracts/*', '@/agent-runtime/*', '@lymatrix/vertical-*', '@lymatrix/tef-runtime', '@lymatrix/tef-runtime/*', '@lymatrix/tef-runtime*', 'next', 'next/*'],
               message: 'tef-mcp-kit must not depend on verticals, runtime or Next.js.',
             },
           ],
@@ -113,7 +148,7 @@ export default defineConfig([
         {
           patterns: [
             {
-              group: ['@/agent-runtime/*', '@/app/*', 'next', 'next/*'],
+              group: ['@/agent-runtime/*', '@/app/*', '@lymatrix/tef-runtime', '@lymatrix/tef-runtime/*', '@lymatrix/tef-runtime*', 'next', 'next/*'],
               message: 'The CRM vertical must not depend on the runtime or the app.',
             },
           ],
