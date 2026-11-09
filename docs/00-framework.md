@@ -651,6 +651,7 @@ sequenceDiagram
 │   ├── tef-core/                  # 纯治理核心包（无 IO、无垂直依赖）
 │   │   ├── package.json
 │   │   └── src/
+│   │       ├── business-gateway.ts # 业务数据访问端口（B2 HTTP 网关的替换点）
 │   │       ├── canonical.ts       # 规范化 JSON
 │   │       ├── contract-engine.ts # 预览与执行前重校验
 │   │       ├── contract-registry.ts # 进程内契约注册表
@@ -690,6 +691,7 @@ sequenceDiagram
 │       ├── package.json
 │       └── src/
 │           ├── server.ts          # CRM MCP Server（注册查询/订单工具与契约）
+│           ├── gateway/           # PrismaCrmGateway：BusinessGateway 的进程内实现
 │           ├── tools/             # query / order 工具
 │           ├── contracts/credit-order/ # 赊账订单契约与适配器
 │           └── index.ts           # 包导出
@@ -764,17 +766,19 @@ sequenceDiagram
 |------|------|----------|------|
 | 框架核心包 | 纯治理原语，无 IO 与垂直依赖 | `packages/tef-core/src/` | `canonical`、`hashing`、`risk`、`contract-engine` 测试随包迁移 |
 | 框架类型 | 契约、风险、信封、TaskState 类型 | `packages/tef-core/src/types.ts` | 由各模块测试间接覆盖 |
+| 业务网关端口 | 只读业务数据访问端口；Phase B2 的 HTTP 网关替换点，本阶段仍用进程内 Prisma 实现 | `packages/tef-core/src/business-gateway.ts` | 由垂直与集成测试间接覆盖 |
+| CRM 业务网关 | `BusinessGateway` 的进程内 Prisma 实现：显式租户绑定、响应字段映射 | `verticals/crm-erp-mcp/src/gateway/prisma-gateway.ts` | `prisma-gateway.test.ts`（2） |
 | MCP Kit | 通用 MCP Server 工厂、治理工具、契约运行时与状态存储 | `packages/tef-mcp-kit/src/` | `audit-chain.test.ts`（25）、`preview-store.test.ts`（10）、`token.test.ts`（26）随包迁移 |
 | Agent Runtime | 意图解析、模型客户端、TaskState 与编排 | `packages/tef-runtime/src/` | `intent.test.ts`（17）、`intent.model.test.ts`（3）、`LLMClient.test.ts`（11）随包迁移 |
-| CRM 垂直包 | CRM 查询/订单工具与赊账订单契约 | `verticals/crm-erp-mcp/src/` | `create-order.test.ts`（52）、`compensate-order.test.ts`（33）随包迁移 |
+| CRM 垂直包 | CRM 查询/订单工具与赊账订单契约 | `verticals/crm-erp-mcp/src/` | `create-order.test.ts`（53）、`compensate-order.test.ts`（34）、`prisma-gateway.test.ts`（2）随包迁移 |
 | 契约引擎 | 预览、阻断、重校验 | `packages/tef-core/src/contract-engine.ts` | `packages/tef-core/src/contract-engine.test.ts`（21） |
 | 风险路由 | L0/L1/L2/Block 定级 | `packages/tef-core/src/risk.ts` | `packages/tef-core/src/risk.test.ts`（19） |
 | 预览快照 | 保存、读取、一次性消费、撤销 | `packages/tef-mcp-kit/src/preview-store.ts`（`src/tef/preview-store.ts` 为 shim） | `preview-store.test.ts`（10） |
 | 令牌 | 签发、验签、批准、拒绝、消费、撤销 | `packages/tef-mcp-kit/src/token.ts`（`src/tef/token.ts` 为 shim） | `token.test.ts`（26） |
 | 哈希 | 意图哈希、证据摘要、链哈希、HMAC | `packages/tef-core/src/hashing.ts`、`packages/tef-core/src/canonical.ts` | `packages/tef-core/src/hashing.test.ts`（17）、`packages/tef-core/src/canonical.test.ts`（15） |
 | 审计链 | 追加、校验、回放 | `packages/tef-mcp-kit/src/audit-chain.ts`（`src/tef/audit-chain.ts` 为 shim） | `audit-chain.test.ts`（25） |
-| 赊账订单契约 | 前置条件、不变量、权限、风险、副作用、补偿、diff | `verticals/crm-erp-mcp/src/contracts/credit-order/create-order.ts`（`src/contracts/credit-order/create-order.ts` 为 shim） | `create-order.test.ts`（52） |
-| 补偿契约 | 已提交订单的补偿预览与执行 | `verticals/crm-erp-mcp/src/contracts/credit-order/compensate-order.ts`（`src/contracts/credit-order/compensate-order.ts` 为 shim） | `compensate-order.test.ts`（33） |
+| 赊账订单契约 | 前置条件、不变量、权限、风险、副作用、补偿、diff | `verticals/crm-erp-mcp/src/contracts/credit-order/create-order.ts`（`src/contracts/credit-order/create-order.ts` 为 shim） | `create-order.test.ts`（53） |
+| 补偿契约 | 已提交订单的补偿预览与执行 | `verticals/crm-erp-mcp/src/contracts/credit-order/compensate-order.ts`（`src/contracts/credit-order/compensate-order.ts` 为 shim） | `compensate-order.test.ts`（34） |
 | 通用契约运行时 | preview/execute 共用逻辑与垂直适配器注入 | `packages/tef-mcp-kit/src/tools/contract.ts`（`src/mcp-server/tools/contract.ts` 为 shim） | 由 MCP、契约与集成测试覆盖 |
 | 意图解析 | 模型解析与确定性回退、补偿意图 | `packages/tef-runtime/src/intent.ts`（`src/agent-runtime/intent.ts` 为 shim） | `intent.test.ts`（17）、`intent.model.test.ts`（3） |
 | 模型客户端 | OpenAI 兼容调用、瞬时错误重试、配置检查 | `packages/tef-runtime/src/LLMClient.ts`（`src/lib/ai/LLMClient.ts` 为 shim） | `LLMClient.test.ts`（11） |
@@ -782,7 +786,9 @@ sequenceDiagram
 | 确认执行计划 | 根据契约选择执行工具与成功状态 | `src/app/api/agent/confirm/execute-plan.ts` | `execute-plan.test.ts`（3） |
 | 闭环集成 | 真实数据库端到端、攻击场景与补偿 | `tests/integration/` | 27（需 `TEF_DB_TESTS=1`） |
 
-> 另有遗留测试 `src/agents/SubAgent.validation.test.ts`（2 个）计入 277 个单元测试总数；它属于旧投票路径，不在 TEF 模块映射内。
+> 另有遗留测试 `src/agents/SubAgent.validation.test.ts`（2 个）计入 281 个单元测试总数；它属于旧投票路径，不在 TEF 模块映射内。
+>
+> `BusinessGateway` 是 Phase B2 CRM HTTP 网关的端口；Phase B1 仍使用进程内 Prisma 实现（`PrismaCrmGateway`），垂直查询工具与契约 `loadEvidence` 均经该端口读取业务数据。
 
 ---
 
@@ -808,10 +814,10 @@ sequenceDiagram
 
 | 层级 | 范围 | 数量 | 运行条件 |
 |------|------|------|----------|
-| 单元测试 | 契约引擎、风险、哈希、快照、令牌、审计链、意图、MCP、创建与补偿契约、确认执行计划、包边界检查 | 277 | `npm test` 默认运行 |
+| 单元测试 | 契约引擎、风险、哈希、快照、令牌、审计链、意图、MCP、创建与补偿契约、业务网关、确认执行计划、包边界检查 | 281 | `npm test` 默认运行 |
 | 数据库集成测试 | Phase 0 闭环/攻击场景（19）+ Phase 1 补偿闭环（8） | 27 | `TEF_DB_TESTS=1` 且 `DATABASE_URL` 可用 |
 
-本地实测（2026-11-09）：277 个单元测试通过；设置 `TEF_DB_TESTS=1` 后 304 个测试全部通过；typecheck 通过；build 通过；lint 为 0 错误、28 警告（集中在遗留代码）。
+本地实测（2026-11-09）：281 个单元测试通过；设置 `TEF_DB_TESTS=1` 后 308 个测试全部通过；typecheck 通过；build 通过；lint 为 0 错误、28 警告（集中在遗留代码）。
 
 ### 9.3 CI 流水线
 
@@ -880,7 +886,7 @@ npm run rls:verify
 
 | 阶段 | 目标 | 状态（2026-11-09） |
 |------|------|--------------------|
-| **Phase 0** | 跑通赊账订单闭环：租户、契约引擎、查询工具、预览/执行、令牌、快照、审计 | **已完成**。多租户、契约引擎、13 个 MCP 工具、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、TaskState、最小 Agent Runtime、确认 UI 全部可运行；当前全量 304 个测试（277 单元 + 27 真实数据库）在 CI 中持续验证 |
+| **Phase 0** | 跑通赊账订单闭环：租户、契约引擎、查询工具、预览/执行、令牌、快照、审计 | **已完成**。多租户、契约引擎、13 个 MCP 工具、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、TaskState、最小 Agent Runtime、确认 UI 全部可运行；当前全量 308 个测试（281 单元 + 27 真实数据库）在 CI 中持续验证 |
 | **Phase 1** | 完善写入协议：L1 自动执行、冲突恢复、补偿、澄清 | **已完成主要项**。L1 自动执行、澄清（上限 3 轮）、`CONFLICT` 检测与旧令牌作废、`compensate_order` 契约与完整补偿运行时（preview → L2 → 人工确认 → execute）均已实现并有测试；崩溃恢复与并发压测未完成 |
 | **Phase 2** | 评测体系：300–500 条样本、拦截率、误拒率、P95、成本、可选验证器 | **未开始** |
 | **Phase 3** | 框架化与行业扩展：行业插件、计量计费、角色细化、SDK、生产部署 | **未开始** |

@@ -1,5 +1,7 @@
 # Phase B1：BusinessGateway 端口与垂直读路径改造实施计划
 
+> **执行状态**：Phase B1 已完成（2026-11-09）。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在 `tef-core` 定义业务数据访问端口 `BusinessGateway`，用 Prisma 实现进程内版本，并让 CRM 垂直的查询工具与契约 `loadEvidence` 全部通过端口访问业务数据；为 Phase B2 的 CRM HTTP 网关与 Phase C 的跨服务执行做准备。
