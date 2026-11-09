@@ -47,7 +47,7 @@
 
 CRM-ERP 是框架的第一个验证垂直，不是项目最终形态。框架核心不得依赖 CRM 字段、订单模型或义乌规则；垂直能力通过契约与实体适配器注入。
 
-- 框架核心：`packages/tef-core/`（纯治理）+ `src/mcp-server/`（工具层）
+- 框架核心：`packages/tef-core/`（纯治理）、`src/tef/`（IO 模块与迁移 shim）、`src/mcp-server/`（工具层）
 - 垂直实现：`src/contracts/credit-order/`
 - 接入与运行时：`src/app/`、`src/agent-runtime/`
 

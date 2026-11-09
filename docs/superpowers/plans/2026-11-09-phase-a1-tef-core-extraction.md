@@ -1,5 +1,7 @@
 # Phase A1：Monorepo 骨架与 tef-core 提取实施计划
 
+> **执行状态**：Phase A1 已完成（2026-11-09，commits 8640c1a..1a0d333）。本计划保留为执行记录；A2–D 见设计文档 §8。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 建立 npm workspaces 骨架，把不依赖 IO 的治理核心迁入 `@lymatrix/tef-core`，同时保持现有 295 个测试全部通过、运行时行为不变。

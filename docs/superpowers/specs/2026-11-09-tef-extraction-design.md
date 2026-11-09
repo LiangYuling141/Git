@@ -1,6 +1,6 @@
 # TEF 框架剥离与 P1/P2 收尾设计
 
-> 状态：已评审，待实施
+> 状态：实施中（Phase A1 已完成，A2–D 待实施）
 > 日期：2026-11-09
 > 范围：框架与 CRM-ERP 解耦、P1 收尾、P2 准备
 > 权威架构：[14-unified-architecture.md](../../technical/14-unified-architecture.md)
@@ -333,6 +333,8 @@ EXECUTING → SUCCEEDED
 | B7 | Docker Compose 三进程启动 | 一条命令跑通闭环 |
 
 迁移期保留进程内适配器供给现有集成测试；HTTP 模式由新增 e2e 测试覆盖。稳定后切换默认。
+
+B1 补充（来自最终评审）：core 边界目前靠 ESLint 的 alias 规则，无法拦截相对路径（如 `../../src/lib/prisma`）与 `node:fs`、`pg`、`ioredis` 等直接 IO 导入。A2 必须引入目录级约束（`no-restricted-paths`、`dependency-cruiser` 或等价方案），并加入一个 CI 探针测试：在 core 内临时写入违规导入时必须报错。
 
 ### 8.3 Phase C：P1 收尾
 
