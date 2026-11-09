@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
 import { EffectExecutionError, executeEffects } from '@lymtrix/tef-core';
 import { createCreditOrderAdapters } from '@lymtrix/vertical-crm-erp';
+import { effectsRequestSchema } from '@/lib/internal-effects-schema';
 import { authorizeInternalRequest, internalAuthStatus } from '@/lib/internal-auth';
 import { withTenantScope } from '@/tef/tenant-scope';
 
@@ -13,60 +13,11 @@ import { withTenantScope } from '@/tef/tenant-scope';
  * 调用方可以用同一个 idempotencyKey 安全重试；重复 key 直接返回首次响应，
  * 不重新执行 effects（docs/technical/14-unified-architecture.md §4.4）。
  *
- * entity / type 是垂直白名单：未知组合在触库前被 zod 拒绝，避免通过
- * 任意实体名调用到未授权的适配器。
+ * entity / type 白名单与越权字段守卫集中在 @/lib/internal-effects-schema：
+ * 未知组合在触库前被 zod 拒绝，避免通过任意实体名调用到未授权的适配器。
  */
 
 const TOOL_NAME = 'internal.effects.execute';
-
-/**
- * payload 里的 tenantId / id 是越权字段：update 适配器会把 payload 直接展开进
- * Prisma data，若不在这里拒绝，调用方就能改写租户归属或主键。create 同样拒绝，
- * 主键与租户只能由服务端事务上下文决定。
- */
-const effectSchema = z
-  .object({
-    type: z.enum(['create', 'update', 'reserve', 'release']),
-    entity: z.enum(['order', 'payment', 'product', 'customer']),
-    as: z.string().optional(),
-    payload: z.record(z.string(), z.unknown()),
-    target: z.string().optional(),
-    increment: z.record(z.string(), z.number()).optional(),
-    bind: z.record(z.string(), z.object({ fromRef: z.string(), field: z.string() })).optional(),
-  })
-  .superRefine((effect, ctx) => {
-    for (const key of ['tenantId', 'id'] as const) {
-      if (Object.prototype.hasOwnProperty.call(effect.payload, key)) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['payload', key],
-          message: `payload.${key} is not allowed; tenant and primary key are server-controlled`,
-        });
-      }
-      // bind 会把前序 refs 的字段值写进 payload；若允许绑定 tenantId / id，
-      // 越权字段会在执行期绕过 payload 校验，因此必须在入口一并拒绝。
-      for (const [bindKey, binding] of Object.entries(effect.bind ?? {})) {
-        if (binding.field === key) {
-          ctx.addIssue({
-            code: 'custom',
-            path: ['bind', bindKey, 'field'],
-            message: `bind.${bindKey}.field cannot be ${key}; tenant and primary key are server-controlled`,
-          });
-        }
-      }
-    }
-  });
-
-const bodySchema = z.object({
-  tenantId: z.string().min(1),
-  idempotencyKey: z.string().min(1),
-  previewId: z.string().min(1).optional(),
-  traceId: z.string().min(1).optional(),
-  // B2 只接受该字段；证据版本比较与 CONFLICT 语义在 Phase C 落地。
-  expectedEvidenceVersion: z.string().min(1).optional(),
-  // 空 effects 批次没有业务意义，只会生成无用的幂等记录；直接判为非法请求。
-  effects: z.array(effectSchema).min(1),
-});
 
 function structuredError(
   code: 'VALIDATION_ERROR' | 'CONFLICT' | 'INTERNAL',
@@ -103,7 +54,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 });
   }
 
-  const parsed = bodySchema.safeParse(await request.json().catch(() => null));
+  const parsed = effectsRequestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return structuredError('VALIDATION_ERROR', parsed.error.message, 400);
   }

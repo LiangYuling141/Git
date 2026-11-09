@@ -40,7 +40,7 @@
 
 > **基线说明**：上表记录的是 **Phase A 前基线**的耦合证据。A1/A2 完成后，表中列出的 `src/` 路径均已变为迁移 shim，真实实现已迁移到 `packages/`（`tef-core`、`tef-mcp-kit`、`tef-runtime`）与 `verticals/crm-erp-mcp/`。
 
-当前验证基线：typecheck 通过，`TEF_DB_TESTS=1 npm test` 共 370 个测试通过（314 单元 + 56 真实数据库集成）。
+当前验证基线：typecheck 通过，`TEF_DB_TESTS=1 npm test` 共 373 个测试通过（317 单元 + 56 真实数据库集成）。
 
 ## 3. 设计原则与硬边界
 
@@ -330,7 +330,7 @@ EXECUTING → SUCCEEDED
 |------|------|------|
 | B1（已完成） | `BusinessGateway` 端口、`PrismaCrmGateway` 进程内实现、查询工具与契约 `loadEvidence` 改造、租户与 fail-closed 测试 | 既有 308 项测试通过；端口无垂直依赖；租户不匹配显式拒绝 |
 | B1.5（已完成） | `BusinessGateway` 泛型化（`query` + `executeEffects`）与 CRM DTO 下沉；垂直包以 `CrmBusinessGateway` 扩展类型化读方法 | 既有 309 项测试通过；`tef-core` 不含 CRM 字段；`requireCrmGateway` 对不完整实现 fail-closed |
-| B2（已完成） | CRM 内部 HTTP 网关（`query`、`effects:execute`）+ `HttpCrmGateway` + 切换工厂；evidence 由垂直从 query 结果组合，不单独开端点 | 新增 29 项内部网关集成测试（鉴权、租户隔离、effect 白名单、幂等重放、越权 payload 与 malformed effects、并发幂等与功能开关）与 28 项 `HttpCrmGateway` 单元测试；默认 `TEF_CRM_GATEWAY=prisma`，全量 370 项测试通过。已知限制：HTTP 读仍在本地租户事务内发起网络 IO；HTTP 通道已暴露 effects:execute（默认关闭），但契约执行仍走本地 Prisma 适配器，尚未接入 `executeContract`；effect 跨服务执行、预审计与补偿留待 Phase C，完成前禁止在生产启用 HTTP 模式 |
+| B2（已完成） | CRM 内部 HTTP 网关（`query`、`effects:execute`）+ `HttpCrmGateway` + 切换工厂；evidence 由垂直从 query 结果组合，不单独开端点 | 新增 29 项内部网关集成测试（鉴权、租户隔离、effect 白名单、幂等重放、越权 payload 与 malformed effects、并发幂等与功能开关）与 28 项 `HttpCrmGateway` 单元测试；默认 `TEF_CRM_GATEWAY=prisma`，全量 373 项测试通过。已知限制：HTTP 读仍在本地租户事务内发起网络 IO；HTTP 通道已暴露 effects:execute（默认关闭），但契约执行仍走本地 Prisma 适配器，尚未接入 `executeContract`；effect 跨服务执行、预审计与补偿留待 Phase C，完成前禁止在生产启用 HTTP 模式 |
 | B3 | `TefStateStore`/`Clock` 端口、TEF 与 Runtime 独立 schema、TEF Server 进程、JWT/对话/确认 API、Docker Compose | 治理状态可在独立库运行；会话恢复测试通过；三进程一条命令启动 |
 | B4 | 三进程 e2e 闭环与文档 | e2e 对话闭环通过；架构、API、运维文档与实现一致 |
 

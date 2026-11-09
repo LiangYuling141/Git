@@ -424,15 +424,26 @@ describe('effects:execute', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('2xx 响应结构非法时抛 INTERNAL，不把垃圾响应当成成功', async () => {
+  it('2xx 响应结构非法时抛 INTERNAL，ok:false 时保留错误详情', async () => {
     stubFetch(jsonResponse({ ok: true }));
-    const gateway = createGateway();
+    const invalidGateway = createGateway();
 
     await expectTefError(
-      () => gateway.executeEffects(effectsInput()),
+      () => invalidGateway.executeEffects(effectsInput()),
       'INTERNAL',
       'invalid effects response',
     );
+
+    stubFetch(
+      jsonResponse({ ok: false, refs: {}, error: { code: 'CONFLICT', message: 'stock changed' } }),
+    );
+    const failedGateway = createGateway();
+
+    await expect(failedGateway.executeEffects(effectsInput())).resolves.toEqual({
+      ok: false,
+      refs: {},
+      error: { code: 'CONFLICT', message: 'stock changed' },
+    });
   });
 });
 

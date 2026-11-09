@@ -768,8 +768,8 @@ sequenceDiagram
 | 框架类型 | 契约、风险、信封、TaskState 类型 | `packages/tef-core/src/types.ts` | 由各模块测试间接覆盖 |
 | 业务网关端口 | 垂直中立的泛型 `query(operation, params)` + `executeEffects`，不含 CRM 字段；Phase B2 的 HTTP 网关替换点，默认仍用进程内 Prisma 实现 | `packages/tef-core/src/business-gateway.ts` | 由 `prisma-gateway.test.ts`（5）直接覆盖 |
 | CRM 业务网关 | `CrmBusinessGateway` 的进程内 Prisma 实现：在核心泛型端口上扩展 CRM 类型化读方法，显式租户绑定、响应字段映射 | `verticals/crm-erp-mcp/src/gateway/prisma-gateway.ts` | `prisma-gateway.test.ts`（5） |
-| HTTP 业务网关 | `HttpCrmGateway`：把查询与 `executeEffects` 翻译为 CRM 内部 HTTP 调用，租户绑定校验先于 fetch，非 2xx 映射为 `TefError` 或 `{ ok:false, error }` | `verticals/crm-erp-mcp/src/gateway/http-gateway.ts`、`factory.ts` | `http-gateway.test.ts`（26） |
-| CRM 内部 HTTP 网关 | `POST /api/internal/v1/query` 与 `/api/internal/v1/effects/execute`：服务令牌鉴权、`withTenantScope`、effect 白名单、幂等记录与业务写入同事务 | `src/app/api/internal/v1/query/route.ts`、`src/app/api/internal/v1/effects/execute/route.ts` | `tests/integration/internal-gateway.test.ts`（24，需 `TEF_DB_TESTS=1`） |
+| HTTP 业务网关 | `HttpCrmGateway`：把查询与 `executeEffects` 翻译为 CRM 内部 HTTP 调用，租户绑定校验先于 fetch，非 2xx 映射为 `TefError` 或 `{ ok:false, error }` | `verticals/crm-erp-mcp/src/gateway/http-gateway.ts`、`factory.ts` | `http-gateway.test.ts`（28） |
+| CRM 内部 HTTP 网关 | `POST /api/internal/v1/query` 与 `/api/internal/v1/effects/execute`：服务令牌鉴权、`withTenantScope`、effect 白名单、幂等记录与业务写入同事务 | `src/app/api/internal/v1/query/route.ts`、`src/app/api/internal/v1/effects/execute/route.ts` | `tests/integration/internal-gateway.test.ts`（29，需 `TEF_DB_TESTS=1`） |
 | MCP Kit | 通用 MCP Server 工厂、治理工具、契约运行时与状态存储 | `packages/tef-mcp-kit/src/` | `audit-chain.test.ts`（25）、`preview-store.test.ts`（10）、`token.test.ts`（26）随包迁移 |
 | Agent Runtime | 意图解析、模型客户端、TaskState 与编排 | `packages/tef-runtime/src/` | `intent.test.ts`（17）、`intent.model.test.ts`（3）、`LLMClient.test.ts`（11）随包迁移 |
 | CRM 垂直包 | CRM 查询/订单工具与赊账订单契约 | `verticals/crm-erp-mcp/src/` | `create-order.test.ts`（53）、`compensate-order.test.ts`（34）随包迁移 |
@@ -786,9 +786,9 @@ sequenceDiagram
 | 模型客户端 | OpenAI 兼容调用、瞬时错误重试、配置检查 | `packages/tef-runtime/src/LLMClient.ts`（`src/lib/ai/LLMClient.ts` 为 shim） | `LLMClient.test.ts`（11） |
 | MCP Server | 工具注册、可见性、角色 scope | `packages/tef-mcp-kit/src/server.ts`、`verticals/crm-erp-mcp/src/server.ts`（`src/mcp-server/server.ts` 为 shim） | `src/mcp-server/server.test.ts`（14） |
 | 确认执行计划 | 根据契约选择执行工具与成功状态 | `src/app/api/agent/confirm/execute-plan.ts` | `execute-plan.test.ts`（3） |
-| 闭环集成 | 真实数据库端到端、攻击场景、补偿与内部网关 | `tests/integration/` | 51（需 `TEF_DB_TESTS=1`） |
+| 闭环集成 | 真实数据库端到端、攻击场景、补偿与内部网关 | `tests/integration/` | 56（需 `TEF_DB_TESTS=1`） |
 
-> 另有遗留测试 `src/agents/SubAgent.validation.test.ts`（2 个）计入 314 个单元测试总数；它属于旧投票路径，不在 TEF 模块映射内。
+> 另有遗留测试 `src/agents/SubAgent.validation.test.ts`（2 个）计入 317 个单元测试总数；它属于旧投票路径，不在 TEF 模块映射内。
 >
 > `BusinessGateway` 是 Phase B2 CRM HTTP 网关的端口：核心只定义泛型 `query` + `executeEffects`，不含 CRM 字段；CRM DTO 与类型化读方法通过垂直包的 `CrmBusinessGateway extends BusinessGateway` 扩展。Phase B2 默认仍使用进程内 Prisma 实现（`PrismaCrmGateway`），仅显式设置 `TEF_CRM_GATEWAY=http` 时切换为 `HttpCrmGateway`；垂直查询工具与契约 `loadEvidence` 均经该端口读取业务数据。
 
@@ -816,10 +816,10 @@ sequenceDiagram
 
 | 层级 | 范围 | 数量 | 运行条件 |
 |------|------|------|----------|
-| 单元测试 | 契约引擎、风险、哈希、快照、令牌、审计链、意图、MCP、创建与补偿契约、Prisma/HTTP 业务网关、确认执行计划、包边界检查 | 310 | `npm test` 默认运行 |
-| 数据库集成测试 | Phase 0 闭环/攻击场景（19）+ Phase 1 补偿闭环（8）+ 内部 HTTP 网关（24） | 51 | `TEF_DB_TESTS=1` 且 `DATABASE_URL` 可用 |
+| 单元测试 | 契约引擎、风险、哈希、快照、令牌、审计链、意图、MCP、创建与补偿契约、Prisma/HTTP 业务网关、确认执行计划、包边界检查 | 317 | `npm test` 默认运行 |
+| 数据库集成测试 | Phase 0 闭环/攻击场景（19）+ Phase 1 补偿闭环（8）+ 内部 HTTP 网关（29） | 56 | `TEF_DB_TESTS=1` 且 `DATABASE_URL` 可用 |
 
-本地实测（2026-11-09）：314 个单元测试通过；设置 `TEF_DB_TESTS=1` 后 370 个测试全部通过；typecheck 通过；build 通过；lint 为 0 错误、28 警告（集中在遗留代码）。
+本地实测（2026-11-09）：317 个单元测试通过；设置 `TEF_DB_TESTS=1` 后 373 个测试全部通过；typecheck 通过；build 通过；lint 为 0 错误、28 警告（集中在遗留代码）。
 
 ### 9.3 CI 流水线
 
@@ -892,7 +892,7 @@ npm run rls:verify
 
 | 阶段 | 目标 | 状态（2026-11-09） |
 |------|------|--------------------|
-| **Phase 0** | 跑通赊账订单闭环：租户、契约引擎、查询工具、预览/执行、令牌、快照、审计 | **已完成**。多租户、契约引擎、13 个 MCP 工具、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、TaskState、最小 Agent Runtime、确认 UI 全部可运行；当前全量 370 个测试（314 单元 + 56 真实数据库）在 CI 中持续验证 |
+| **Phase 0** | 跑通赊账订单闭环：租户、契约引擎、查询工具、预览/执行、令牌、快照、审计 | **已完成**。多租户、契约引擎、13 个 MCP 工具、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、TaskState、最小 Agent Runtime、确认 UI 全部可运行；当前全量 373 个测试（317 单元 + 56 真实数据库）在 CI 中持续验证 |
 | **Phase 1** | 完善写入协议：L1 自动执行、冲突恢复、补偿、澄清 | **已完成主要项**。L1 自动执行、澄清（上限 3 轮）、`CONFLICT` 检测与旧令牌作废、`compensate_order` 契约与完整补偿运行时（preview → L2 → 人工确认 → execute）均已实现并有测试；崩溃恢复与并发压测未完成 |
 | **Phase B2** | CRM 内部 HTTP 网关：`query`、`effects:execute`、`HttpCrmGateway` 与切换工厂 | **已完成**。内部端点使用服务令牌鉴权、租户绑定、effect 白名单与同事务幂等；默认仍为进程内 Prisma，HTTP 通道含 query 与默认关闭的 effects:execute，但契约执行仍走本地适配器并受已知限制约束（见 §11），跨服务 effects 执行留待 Phase C |
 | **Phase 2** | 评测体系：300–500 条样本、拦截率、误拒率、P95、成本、可选验证器 | **未开始** |

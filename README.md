@@ -5,7 +5,7 @@
 
 LyMtrix-TEF 是一个面向 AI Agent 的可信执行框架。它不试图让模型输出变得确定，而是让模型产生的**副作用**变得确定：任何写操作都必须经过契约校验、证据加载、风险定级、预览快照、一次性令牌确认和幂等执行，否则被阻断、拒绝或转人工。
 
-**当前状态（2026-11-09）**：Phase 0 闭环、Phase 1 补偿运行时与 Phase B2 CRM 内部 HTTP 网关已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime、确认 UI 与补偿闭环全部可运行；B2 新增 `/api/internal/v1/query` 与 `/api/internal/v1/effects/execute` 内部端点及 `HttpCrmGateway`，默认仍走进程内 Prisma 网关。370 个测试通过（314 单元 + 56 个对真实 PostgreSQL 的闭环、攻击场景、补偿与内部网关集成测试）。尚未达到生产可用：评测体系（Phase 2）、遗留代码清理、崩溃恢复、并发压测与跨服务 effects 执行（Phase C）仍未完成。成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
+**当前状态（2026-11-09）**：Phase 0 闭环、Phase 1 补偿运行时与 Phase B2 CRM 内部 HTTP 网关已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime、确认 UI 与补偿闭环全部可运行；B2 新增 `/api/internal/v1/query` 与 `/api/internal/v1/effects/execute` 内部端点及 `HttpCrmGateway`，默认仍走进程内 Prisma 网关。373 个测试通过（317 单元 + 56 个对真实 PostgreSQL 的闭环、攻击场景、补偿与内部网关集成测试）。尚未达到生产可用：评测体系（Phase 2）、遗留代码清理、崩溃恢复、并发压测与跨服务 effects 执行（Phase C）仍未完成。成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
 
 ---
 
@@ -312,7 +312,7 @@ CRM 应用暴露两个仅内网可达的 Route Handler，业务 MCP 可以通过
 | `POST /api/internal/v1/effects/execute` | `{ tenantId, idempotencyKey, previewId, traceId, expectedEvidenceVersion?, effects }` | `{ ok, refs, replayed? }` 或 `{ ok:false, error:{ code, message } }` |
 
 - 鉴权：`Authorization: Bearer $TEF_CRM_SERVICE_TOKEN`；未配置令牌时 fail-closed 返回 503，令牌错误返回 401。`/api/internal/*` 不走会话 Cookie，由 `src/proxy.ts` 直接放行后在路由内做服务令牌校验。
-- 租户：请求体必须显式携带 `tenantId`，服务端在 `withTenantScope` 事务内设置 RLS 变量；`payload.tenantId` / `payload.id` 以及 `bind.*.field` 指向这两个字段时均在 zod 层直接拒绝。
+- 租户：请求体必须显式携带 `tenantId`，服务端在 `withTenantScope` 事务内设置 RLS 变量；`payload.tenantId` / `payload.id` 以及 bind 的目标字段（`bind.tenantId` / `bind.id`）均在 zod 层直接拒绝；来源 ref 的字段名不受限制，因此 `bind: { orderId: { fromRef: 'order', field: 'id' } }` 合法。
 - 幂等：`effects:execute` 的幂等记录与业务写入同事务提交；同一 `idempotencyKey` 重放返回首次响应并标记 `replayed: true`。并发同 key 时后提交者收到 Prisma P2002，整个事务回滚后读取先提交者的记录按重放返回。
 - 默认模式：`TEF_CRM_GATEWAY` 未设置、为空或为 `prisma` 时使用进程内 `PrismaCrmGateway`；设置为 `http` 时使用 `HttpCrmGateway`，通过 `TEF_CRM_API_BASE` 调用上述端点。未知非空值直接报错，不静默回落。默认值保证现有部署行为不变。
 - 写入开关：`/api/internal/v1/effects/execute` 默认关闭。`TEF_CRM_EFFECTS_ENABLED` 未设置或不为 `1` 时，即使服务令牌正确也返回 404；Phase C 接入预览、一次性令牌与审计前，仅允许在受控环境显式启用。

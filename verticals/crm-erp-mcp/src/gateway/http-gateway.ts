@@ -90,6 +90,10 @@ function toEffectsFailure(payload: unknown, status: number): EffectsExecuteResul
  * 也可能返回任意 200 页面。这里只做端口语义的最小校验，不认识的附加字段
  * （如 replayed）按布尔值透传；结构不符则抛 INTERNAL，避免把垃圾响应当成
  * “副作用已成功”继续执行。
+ *
+ * 2xx 也可能承载业务失败（`{ ok: false, error }`）：此时必须保留 error 的
+ * code/message，否则调用方只看到 `ok: false`，无法区分可补偿的 CONFLICT
+ * 与需要人工介入的 INTERNAL。
  */
 function parseEffectsResponse(payload: unknown): EffectsExecuteResult {
   const body = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null;
@@ -102,6 +106,20 @@ function parseEffectsResponse(payload: unknown): EffectsExecuteResult {
     refs: refs as Record<string, Record<string, unknown>>,
   };
   if (typeof body.replayed === 'boolean') result.replayed = body.replayed;
+  if (!body.ok) {
+    const detail =
+      body.error && typeof body.error === 'object' && !Array.isArray(body.error)
+        ? (body.error as Record<string, unknown>)
+        : {};
+    const message =
+      typeof detail.message === 'string' && detail.message
+        ? detail.message
+        : 'CRM effects gateway reported failure';
+    result.error = {
+      code: detail.code === 'CONFLICT' ? 'CONFLICT' : 'INTERNAL',
+      message,
+    };
+  }
   return result;
 }
 

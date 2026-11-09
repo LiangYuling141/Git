@@ -1,6 +1,6 @@
 # Phase B2：CRM 通用 HTTP 网关与 HttpCrmGateway 实施计划
 
-> 状态：已完成（2026-11-09，最终评审修复后）。全量 370 项测试通过（314 单元 + 56 真实数据库集成）。
+> 状态：已完成（2026-11-09，最终评审修复后）。全量 373 项测试通过（317 单元 + 56 真实数据库集成）。
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 
