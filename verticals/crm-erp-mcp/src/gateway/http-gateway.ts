@@ -1,4 +1,9 @@
-import { TefError, type ErrorCode } from '@lymtrix/tef-core';
+import {
+  TefError,
+  type EffectsExecuteRequest,
+  type EffectsExecuteResult,
+  type ErrorCode,
+} from '@lymtrix/tef-core';
 import type {
   CrmBusinessGateway,
   CustomerRecord,
@@ -58,13 +63,39 @@ function toTefError(payload: unknown, status: number): TefError {
   return new TefError(code, message);
 }
 
+/**
+ * effects 路由把执行失败表达为结构化结果而不是 HTTP 异常语义：
+ * 调用方需要区分“可重试/可补偿的业务冲突”和“内部错误”。端口类型只允许
+ * CONFLICT / INTERNAL 两个错误码，因此 400 校验错误也收敛为 INTERNAL，
+ * 服务端 message 仍原样保留，便于定位。
+ */
+function toEffectsFailure(payload: unknown, status: number): EffectsExecuteResult {
+  const body = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const detail =
+    body.error && typeof body.error === 'object' ? (body.error as Record<string, unknown>) : {};
+  const message =
+    typeof detail.message === 'string' && detail.message
+      ? detail.message
+      : typeof body.message === 'string' && body.message
+        ? body.message
+        : `CRM effects gateway error ${status}`;
+  const code = detail.code === 'CONFLICT' || status === 409 ? 'CONFLICT' : 'INTERNAL';
+  return { ok: false, refs: {}, error: { code, message } };
+}
+
 export function createHttpCrmGateway(options: HttpCrmGatewayOptions): CrmBusinessGateway {
   const { baseUrl, serviceToken, tenantId } = options;
   if (!baseUrl) throw new TefError('INTERNAL', 'TEF_CRM_API_BASE is not configured');
   if (!serviceToken) throw new TefError('INTERNAL', 'TEF_CRM_SERVICE_TOKEN is not configured');
   if (!tenantId) throw new TefError('INTERNAL', 'HttpCrmGateway tenantId is not configured');
 
-  const call = async <T>(path: string, body: Record<string, unknown>): Promise<T> => {
+  interface RawResponse {
+    ok: boolean;
+    status: number;
+    payload: unknown;
+  }
+
+  const post = async (path: string, body: Record<string, unknown>): Promise<RawResponse> => {
     let response: Response;
     try {
       response = await fetch(`${baseUrl.replace(/\/+$/, '')}${path}`, {
@@ -78,8 +109,13 @@ export function createHttpCrmGateway(options: HttpCrmGatewayOptions): CrmBusines
       throw new TefError('INTERNAL', `CRM gateway request failed: ${detail}`);
     }
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw toTefError(payload, response.status);
+    return { ok: response.ok, status: response.status, payload };
+  };
+
+  const call = async <T>(path: string, body: Record<string, unknown>): Promise<T> => {
+    const { ok, status, payload } = await post(path, body);
+    if (!ok) {
+      throw toTefError(payload, status);
     }
     return payload as T;
   };
@@ -116,8 +152,21 @@ export function createHttpCrmGateway(options: HttpCrmGatewayOptions): CrmBusines
     getOrder(input: { tenantId: string; orderId?: string; orderNo?: string }) {
       return gateway.query<OrderRecord | null>({ tenantId: input.tenantId, operation: CRM_QUERY.orderGet, params: input });
     },
-    async executeEffects(): Promise<never> {
-      throw new TefError('INTERNAL', 'HttpCrmGateway.executeEffects is implemented in Task 4');
+    async executeEffects(input: EffectsExecuteRequest): Promise<EffectsExecuteResult> {
+      // 租户校验必须在网络调用之前：错误的闭包绑定不能变成一次跨租户写入请求。
+      assertTenant(input.tenantId);
+      const { ok, status, payload } = await post('/api/internal/v1/effects/execute', {
+        tenantId: input.tenantId,
+        idempotencyKey: input.idempotencyKey,
+        previewId: input.previewId,
+        traceId: input.traceId,
+        expectedEvidenceVersion: input.expectedEvidenceVersion,
+        effects: input.effects,
+      });
+      if (!ok) {
+        return toEffectsFailure(payload, status);
+      }
+      return payload as EffectsExecuteResult;
     },
   } as CrmBusinessGateway;
 

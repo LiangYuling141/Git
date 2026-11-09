@@ -19,15 +19,32 @@ import { withTenantScope } from '@/tef/tenant-scope';
 
 const TOOL_NAME = 'internal.effects.execute';
 
-const effectSchema = z.object({
-  type: z.enum(['create', 'update', 'reserve', 'release']),
-  entity: z.enum(['order', 'payment', 'product', 'customer']),
-  as: z.string().optional(),
-  payload: z.record(z.string(), z.unknown()),
-  target: z.string().optional(),
-  increment: z.record(z.string(), z.number()).optional(),
-  bind: z.record(z.string(), z.object({ fromRef: z.string(), field: z.string() })).optional(),
-});
+/**
+ * payload 里的 tenantId / id 是越权字段：update 适配器会把 payload 直接展开进
+ * Prisma data，若不在这里拒绝，调用方就能改写租户归属或主键。create 同样拒绝，
+ * 主键与租户只能由服务端事务上下文决定。
+ */
+const effectSchema = z
+  .object({
+    type: z.enum(['create', 'update', 'reserve', 'release']),
+    entity: z.enum(['order', 'payment', 'product', 'customer']),
+    as: z.string().optional(),
+    payload: z.record(z.string(), z.unknown()),
+    target: z.string().optional(),
+    increment: z.record(z.string(), z.number()).optional(),
+    bind: z.record(z.string(), z.object({ fromRef: z.string(), field: z.string() })).optional(),
+  })
+  .superRefine((effect, ctx) => {
+    for (const key of ['tenantId', 'id'] as const) {
+      if (Object.prototype.hasOwnProperty.call(effect.payload, key)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['payload', key],
+          message: `payload.${key} is not allowed; tenant and primary key are server-controlled`,
+        });
+      }
+    }
+  });
 
 const bodySchema = z.object({
   tenantId: z.string().min(1),
@@ -35,8 +52,9 @@ const bodySchema = z.object({
   previewId: z.string().min(1).optional(),
   traceId: z.string().min(1).optional(),
   // B2 只接受该字段；证据版本比较与 CONFLICT 语义在 Phase C 落地。
-  expectedEvidenceVersion: z.string().optional(),
-  effects: z.array(effectSchema),
+  expectedEvidenceVersion: z.string().min(1).optional(),
+  // 空 effects 批次没有业务意义，只会生成无用的幂等记录；直接判为非法请求。
+  effects: z.array(effectSchema).min(1),
 });
 
 function structuredError(
@@ -68,7 +86,12 @@ export async function POST(request: Request) {
         where: { tenantId, toolName: TOOL_NAME, idempotencyKey },
       });
       if (existing) {
-        return existing.response;
+        // 与 executeContract 口径一致：重放返回首次响应并显式标记 replayed。
+        const firstResponse =
+          existing.response && typeof existing.response === 'object'
+            ? (existing.response as Record<string, unknown>)
+            : {};
+        return { ...firstResponse, replayed: true };
       }
 
       const adapters = createCreditOrderAdapters(tx, tenantId, {

@@ -1,5 +1,7 @@
 # Phase B2：CRM 通用 HTTP 网关与 HttpCrmGateway 实施计划
 
+> 状态：已完成（2026-11-09）。全量 361 项测试通过（310 单元 + 51 真实数据库集成）。
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** 在 CRM 应用中实现内部 HTTP 网关（query / effects:execute），并在垂直包实现 `HttpCrmGateway`，使业务 MCP 可以在不直连业务库的情况下读取证据与执行副作用；默认仍使用进程内 Prisma 网关，HTTP 模式通过环境变量启用。
@@ -10,7 +12,7 @@
 
 ## Global Constraints
 
-- 不改变默认运行时行为；默认 `TEF_CRM_GATEWAY=prisma`，309 项测试必须继续通过。
+- 不改变默认运行时行为；默认 `TEF_CRM_GATEWAY=prisma`，既有测试必须继续通过（B2 完成时全量 361 项：310 单元 + 51 数据库集成）。
 - 内部网关只接受服务令牌；缺失配置时 fail-closed。
 - 所有 query/effects 必须带 tenantId，并拒绝未知操作/实体/动作。
 - effects 幂等记录与业务写入在同一个 Prisma 事务内提交。
@@ -38,7 +40,7 @@
 - `POST /api/internal/v1/query`：`{ tenantId, operation, params }` → `{ data }`
 - `authorizeInternalRequest(request): string | null`（错误消息或 null）
 
-- [ ] **Step 1：服务令牌鉴权**
+- [x] **Step 1：服务令牌鉴权**
 
 创建 `src/lib/internal-auth.ts`：
 
@@ -56,7 +58,7 @@ export function internalAuthStatus(message: string): number {
 }
 ```
 
-- [ ] **Step 2：query 路由**
+- [x] **Step 2：query 路由**
 
 创建 `src/app/api/internal/v1/query/route.ts`：
 
@@ -98,7 +100,7 @@ export async function POST(request: Request) {
 }
 ```
 
-- [ ] **Step 3：测试**
+- [x] **Step 3：测试**
 
 在 `tests/integration/internal-gateway.test.ts` 中：
 
@@ -108,7 +110,7 @@ export async function POST(request: Request) {
 - 未知 operation → 400。
 - 跨租户 token/tenant 组合不会返回其他租户数据（用 `t_e2e_other` 客户 id 查 `t_yiwu_demo`）。
 
-- [ ] **Step 4：验证**
+- [x] **Step 4：验证**
 
 ```bash
 TEF_DB_TESTS=1 npx vitest run tests/integration/internal-gateway.test.ts
@@ -133,7 +135,7 @@ npm run lint
 - `createHttpCrmGateway({ baseUrl, serviceToken, tenantId }): CrmBusinessGateway`
 - `createCrmGateway(tx, tenantId): CrmBusinessGateway`（按 `TEF_CRM_GATEWAY` 选择）
 
-- [ ] **Step 1：实现 HttpCrmGateway**
+- [x] **Step 1：实现 HttpCrmGateway**
 
 创建 `verticals/crm-erp-mcp/src/gateway/http-gateway.ts`：
 
@@ -214,7 +216,7 @@ export function createHttpCrmGateway(options: HttpCrmGatewayOptions): CrmBusines
 
 > **Task 2 修复（评审）**：发送前用 `sanitizeParams` 清理 `params` 中的 `undefined` 与空字符串——MCP 查询工具以 `''` 表示缺省字段，原样透传会被内部路由的 `min(1)` 判成 400；同时为 fetch 增加 10 秒超时，并把非 2xx 的 `VALIDATION_ERROR` / `PERMISSION_DENIED` / `NOT_FOUND` / `CONFLICT` 映射为同名 `TefError` 错误码。
 
-- [ ] **Step 2：网关工厂**
+- [x] **Step 2：网关工厂**
 
 创建 `verticals/crm-erp-mcp/src/gateway/factory.ts`：
 
@@ -239,11 +241,11 @@ export function createCrmGateway(tx: PrismaTx, tenantId: string): CrmBusinessGat
 export type { BusinessGateway };
 ```
 
-- [ ] **Step 3：切换默认工厂**
+- [x] **Step 3：切换默认工厂**
 
 在 `tools/query.ts` 与 `tools/order.ts` 中，把 `createPrismaCrmGateway` 的默认注入替换为 `createCrmGateway`；显式传入的 `gateway`/`gatewayFactory` 优先。导出 `createCrmGateway` / `createHttpCrmGateway` 到垂直 index。
 
-- [ ] **Step 4：测试**
+- [x] **Step 4：测试**
 
 `http-gateway.test.ts` 用 mock fetch：
 
@@ -252,7 +254,7 @@ export type { BusinessGateway };
 - 租户不一致抛 `PERMISSION_DENIED` 且不 fetch。
 - 6 个类型化方法映射到正确的 operation。
 
-- [ ] **Step 5：验证**
+- [x] **Step 5：验证**
 
 ```bash
 npx vitest run verticals/crm-erp-mcp tests/integration/internal-gateway.test.ts
@@ -274,7 +276,7 @@ TEF_DB_TESTS=1 npm test
 **Interfaces:**
 - `POST /api/internal/v1/effects/execute`：`{ tenantId, idempotencyKey, previewId, traceId, expectedEvidenceVersion?, effects }` → `{ ok, refs }` / `{ ok:false, error }`
 
-- [ ] **Step 1：effect 白名单 schema**
+- [x] **Step 1：effect 白名单 schema**
 
 用 zod 校验 effects：
 
@@ -290,7 +292,7 @@ const effectSchema = z.object({
 });
 ```
 
-- [ ] **Step 2：路由实现**
+- [x] **Step 2：路由实现**
 
 在 `src/app/api/internal/v1/effects/execute/route.ts`：
 
@@ -304,7 +306,7 @@ const effectSchema = z.object({
 - 捕获 `EffectExecutionError`：`CONFLICT` → 409，`INTERNAL` → 500；事务回滚。
 - 返回结构化 JSON。
 
-- [ ] **Step 3：测试**
+- [x] **Step 3：测试**
 
 在 `internal-gateway.test.ts` 增加：
 
@@ -313,7 +315,7 @@ const effectSchema = z.object({
 - `product.update` 增量执行成功，响应含 refs；同 idempotencyKey 重放返回同一响应且库存不再变化。
 - 冲突/失败返回结构化错误。
 
-- [ ] **Step 4：验证**
+- [x] **Step 4：验证**
 
 ```bash
 TEF_DB_TESTS=1 npx vitest run tests/integration/internal-gateway.test.ts
@@ -336,22 +338,22 @@ npm run lint
 - Modify: `docs/superpowers/plans/2026-11-09-phase-b2-crm-http-gateway.md`
 - Modify: `.env.example`
 
-- [ ] **Step 0：effects 路由的纵深防御与测试补强**
+- [x] **Step 0：effects 路由的纵深防御与测试补强**
 
 1. 在 effects 路由的 effect schema 中拒绝 `payload.tenantId` 与 `payload.id`：用 `superRefine` 报 `VALIDATION_ERROR`，防止 update payload 覆写租户归属或主键。补一条集成测试（`payload: { tenantId: 't_e2e_other' }` → 400）。
 2. 幂等重放响应增加 `replayed: true`（与既有 `executeContract` 口径一致）；在既有重放测试中断言。
 3. `expectedEvidenceVersion` 改为 `z.string().min(1).optional()`。
 4. 补 2–3 条 malformed effect 测试（increment 值非数字、bind 字段类型错误、空 effects 数组），不新增 `it` 也可用表驱动并入现有测试；报告实际新增数。
 
-- [ ] **Step 1：实现 executeEffects**
+- [x] **Step 1：实现 executeEffects**
 
 `HttpCrmGateway.executeEffects` 调 `/api/internal/v1/effects/execute`，返回 `EffectsExecuteResult`；非 2xx 映射为 `ok:false` + error code。
 
-- [ ] **Step 2：测试**
+- [x] **Step 2：测试**
 
 增加 HTTP effects 测试（mock fetch）：成功、冲突、租户不一致。
 
-- [ ] **Step 3：文档**
+- [x] **Step 3：文档**
 
 - `.env.example` 增加 `TEF_CRM_GATEWAY`、`TEF_CRM_API_BASE`、`TEF_CRM_SERVICE_TOKEN`。
 - README 与 00-framework 记录内部网关端点、鉴权与默认 prisma 模式。
@@ -359,7 +361,7 @@ npm run lint
 - 设计 spec 更新 B2 状态与测试基线（新增测试后同步）。
 - B2 计划状态标记完成。
 
-- [ ] **Step 4：最终验收**
+- [x] **Step 4：最终验收**
 
 ```bash
 npm run boundaries:check
@@ -387,3 +389,12 @@ Expected: 全部通过；新增测试后基线按实际数量同步到文档。
 - 规格覆盖：对应设计文档 §5.3 的 query / effects:execute 与 §8.2 B2；evidence 由垂直从 query 结果组合，不单独开端点。
 - 占位符：无 TBD/TODO；关键文件给出完整代码。
 - 安全：服务令牌、tenantId 校验、effect 白名单、幂等记录与业务写入同事务。
+
+## 完成记录（2026-11-09）
+
+- 测试基线：任务开始前全量 352 项；完成后 361 项（310 单元 + 51 数据库集成）。
+  - Task 4 单元测试：新增 5 项覆盖（`effects:execute` 成功、CONFLICT、非 2xx 错误映射 2 项、租户不一致），替换原 1 项占位测试，净增 4 项。
+  - Task 4 新增集成测试 5 项：`payload.tenantId` / `payload.id` 越权（2 项）与 malformed effect（increment 非数字、bind 类型错误、空 effects 数组，3 项）。
+- 纵深防御：`payload.tenantId` 与 `payload.id` 由 `superRefine` 在触库前拒绝；空 effects 批次、`expectedEvidenceVersion` 空字符串同样返回 `VALIDATION_ERROR`。
+- 幂等重放：响应在首次结果基础上追加 `replayed: true`；重放测试同时断言首次响应无该标记。
+- 已知限制：HTTP 读仍在本地租户事务内发起网络 IO（B3 移出）；契约执行仍走本地 Prisma 适配器，`HttpCrmGateway.executeEffects` 尚未接入跨服务路径，生产语义仍为只读；effects 跨服务完成前禁止启用 `TEF_CRM_GATEWAY=http`。

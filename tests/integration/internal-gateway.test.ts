@@ -254,6 +254,54 @@ describeDb('内部 HTTP 网关（真实数据库）', () => {
       expect(body.error.code).toBe('VALIDATION_ERROR');
     });
 
+    it.each([
+      ['tenantId', { tenantId: OTHER_TENANT }],
+      ['id', { id: 'p_hijacked' }],
+    ] as const)('payload.%s 是服务端控制字段，返回 400', async (field, payload) => {
+      const response = await effectsPost(
+        effectsRequest({
+          tenantId: TENANT,
+          idempotencyKey: effectsKey(),
+          effects: [{ type: 'update', entity: 'product', target: PRODUCT, payload }],
+        }),
+      );
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { ok: boolean; error: { code: string; message: string } };
+      expect(body.ok).toBe(false);
+      expect(body.error.code).toBe('VALIDATION_ERROR');
+      expect(body.error.message).toContain(`payload.${field}`);
+    });
+
+    it.each([
+      [
+        'increment 值非数字',
+        { type: 'update', entity: 'product', target: PRODUCT, payload: {}, increment: { availableQty: '5' } },
+      ],
+      [
+        'bind 字段类型错误',
+        {
+          type: 'update',
+          entity: 'product',
+          target: PRODUCT,
+          payload: {},
+          bind: { customerId: { fromRef: 'order', field: 1 } },
+        },
+      ],
+      ['空 effects 数组', null],
+    ] as const)('malformed effect：%s 返回 400', async (_label, effect) => {
+      const response = await effectsPost(
+        effectsRequest({
+          tenantId: TENANT,
+          idempotencyKey: effectsKey(),
+          effects: effect ? [effect] : [],
+        }),
+      );
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as { ok: boolean; error: { code: string } };
+      expect(body.ok).toBe(false);
+      expect(body.error.code).toBe('VALIDATION_ERROR');
+    });
+
     it('product.update 增量执行成功并返回 refs', async () => {
       const key = effectsKey();
       try {
@@ -315,7 +363,8 @@ describeDb('内部 HTTP 网关（真实数据库）', () => {
 
         const first = await effectsPost(effectsRequest(body));
         expect(first.status).toBe(200);
-        const firstBody = await first.json();
+        const firstBody = (await first.json()) as { ok: boolean; refs: unknown; replayed?: boolean };
+        expect(firstBody.replayed).toBeUndefined();
         await expect(readProduct()).resolves.toEqual({
           availableQty: PRODUCT_AVAILABLE_QTY - 5,
           reservedQty: 5,
@@ -323,7 +372,8 @@ describeDb('内部 HTTP 网关（真实数据库）', () => {
 
         const replay = await effectsPost(effectsRequest(body));
         expect(replay.status).toBe(200);
-        await expect(replay.json()).resolves.toEqual(firstBody);
+        // 重放命中幂等记录：响应与首次一致，但显式标记 replayed。
+        await expect(replay.json()).resolves.toEqual({ ...firstBody, replayed: true });
 
         // 重放命中幂等记录，不再执行 effects，库存保持首次执行后的值。
         await expect(readProduct()).resolves.toEqual({

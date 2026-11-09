@@ -336,21 +336,90 @@ describe('类型化方法映射', () => {
     }
   });
 
-  it('executeEffects 在 Task 4 实现前显式拒绝，不发请求', async () => {
-    const fetchMock = stubFetch(jsonResponse({ data: null }));
+});
+
+describe('effects:execute', () => {
+  function effectsInput(tenantId = BOUND_TENANT) {
+    return {
+      tenantId,
+      idempotencyKey: 'idem_effects_1',
+      previewId: 'pv_effects_1',
+      traceId: 'tr_effects_1',
+      expectedEvidenceVersion: 'ev_effects_1',
+      effects: [
+        {
+          type: 'update' as const,
+          entity: 'product',
+          target: 'p_xmas_ball',
+          payload: {},
+          increment: { availableQty: -5, reservedQty: 5 },
+        },
+      ],
+    };
+  }
+
+  it('调用 /api/internal/v1/effects/execute，原样返回 refs 与重放标记', async () => {
+    const fetchMock = stubFetch(
+      jsonResponse({ ok: true, refs: { product: { id: 'p_xmas_ball' } }, replayed: true }),
+    );
+    const gateway = createGateway();
+    const input = effectsInput();
+
+    const result = await gateway.executeEffects(input);
+
+    expect(result).toEqual({
+      ok: true,
+      refs: { product: { id: 'p_xmas_ball' } },
+      replayed: true,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE_URL}/api/internal/v1/effects/execute`);
+    expect(sentInit(fetchMock).method).toBe('POST');
+    expect(sentInit(fetchMock).headers).toEqual({
+      'content-type': 'application/json',
+      authorization: `Bearer ${SERVICE_TOKEN}`,
+    });
+    expect(sentBody(fetchMock)).toEqual(input);
+  });
+
+  it('409 CONFLICT 映射为 ok:false，不抛异常', async () => {
+    stubFetch(
+      jsonResponse(
+        { ok: false, error: { code: 'CONFLICT', message: 'target "p_missing" not found' } },
+        409,
+      ),
+    );
+    const gateway = createGateway();
+
+    await expect(gateway.executeEffects(effectsInput())).resolves.toEqual({
+      ok: false,
+      refs: {},
+      error: { code: 'CONFLICT', message: 'target "p_missing" not found' },
+    });
+  });
+
+  it.each([
+    [500, 'INTERNAL', 'internal gateway error'],
+    [400, 'VALIDATION_ERROR', 'payload.id is not allowed'],
+  ] as const)('非 2xx（%s %s）映射为 ok:false INTERNAL，并保留服务端 message', async (status, code, message) => {
+    stubFetch(jsonResponse({ ok: false, error: { code, message } }, status));
+    const gateway = createGateway();
+
+    await expect(gateway.executeEffects(effectsInput())).resolves.toEqual({
+      ok: false,
+      refs: {},
+      error: { code: 'INTERNAL', message },
+    });
+  });
+
+  it('租户不一致时抛 PERMISSION_DENIED，且不发请求', async () => {
+    const fetchMock = stubFetch(jsonResponse({ ok: true, refs: {} }));
     const gateway = createGateway();
 
     await expectTefError(
-      () =>
-        gateway.executeEffects({
-          tenantId: BOUND_TENANT,
-          idempotencyKey: 'idem_1',
-          previewId: 'prev_1',
-          traceId: 'tr_1',
-          effects: [],
-        }),
-      'INTERNAL',
-      'HttpCrmGateway.executeEffects is implemented in Task 4',
+      () => gateway.executeEffects(effectsInput(OTHER_TENANT)),
+      'PERMISSION_DENIED',
+      'gateway tenant mismatch',
     );
     expect(fetchMock).not.toHaveBeenCalled();
   });
