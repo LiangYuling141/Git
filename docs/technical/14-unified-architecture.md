@@ -251,7 +251,9 @@ Phase C 起，副作用不再与治理写入共享一个事务，执行被拆成
 
 补偿动作本身必须幂等、可重试。
 
-> 系统保证 **at-most-once 副作用**：执行器幂等记录 + 执行尝试唯一键 + 对账同一 key 重放。跨进程/跨服务场景不宣称 exactly-once。
+> 系统保证 **按幂等键计的 at-most-once 副作用**：执行器幂等记录 + 执行尝试唯一键 + 对账同一 key 重放。调用方在 `EXECUTION_IN_PROGRESS` / `EXECUTION_UNKNOWN` 时必须用**同一个幂等键**重试或等待对账；换 key 会被视为新操作，不在保证范围内。跨进程/跨服务场景不宣称 exactly-once。
+
+> **Phase C 已知限制**：对账重放当前不重新执行 `contractEngine.revalidate`，生产/B3 需在执行器侧增加按 attempt 查找并重校验后再执行；进程内 Prisma 的提交确认歧义只有在执行器抛出 `EffectsExecutionUnknownError` 时才会保守地收敛为 `unknown`；对账扫描存在批次饥饿；证据版本冲突尚未参与执行判定；HTTP effects 的超时/5xx 已在网关与内部路由映射为 `EXECUTION_UNKNOWN`，但真实跨服务接线仍属 B3。
 
 > **审计链的 `pending`**：预审计先于副作用提交；崩溃会留下 `pending` 事件，对账补写结果事件后闭合。哈希链校验把 `pending` 视为合法结果类型。
 
@@ -367,6 +369,8 @@ interface Effect {
 | `CONFLICT` | 并发冲突 / 令牌已使用 / 前置条件失效 | 重新预览，不复用令牌 |
 | `NEEDS_CONFIRMATION` | 需要人工确认 | 展示 diff 并等待确认 |
 | `RATE_LIMITED` | 频率超限 | 退避后重试 |
+| `EXECUTION_IN_PROGRESS` | 同幂等键的执行仍在进行中 | 保留 pending 状态，用**同一幂等键**重试，不重新预览 |
+| `EXECUTION_UNKNOWN` | 副作用可能已提交但结果未知 | 保留 pending 状态，用**同一幂等键**重试或等待对账，不换 key |
 | `INTERNAL` | 服务端错误 | 不重试写操作，返回审计 ID |
 
 ### 6.4 工具可见性隔离

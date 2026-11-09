@@ -302,8 +302,13 @@ function storedFailureEnvelope(attempt: ExistingAttempt): Envelope {
  * 已有执行尝试时的状态映射。
  *
  * - succeeded 但查不到幂等记录：说明治理状态不一致，交给人工对账，不能假装重放；
- * - executing / unknown：副作用可能已经发生，必须用同一幂等键等待对账收敛；
+ * - executing：副作用正在执行，重复请求必须用同一幂等键等待，不能重新预览；
+ * - unknown：副作用可能已经发生，用同一幂等键等待对账收敛；
  * - failed：返回首次失败响应，保持确定性（不盲目重试）。
+ *
+ * executing / unknown 必须返回机器可识别的错误码和 attemptId：Runtime 与确认
+ * 路由据此保留 pending 状态与幂等键。返回泛化的 INTERNAL/CONFLICT 会让调用方
+ * 误以为操作可以重新开始，从而用新幂等键制造第二次副作用。
  */
 function existingAttemptEnvelope(attempt: ExistingAttempt): Envelope {
   if (attempt.status === 'succeeded') {
@@ -312,8 +317,21 @@ function existingAttemptEnvelope(attempt: ExistingAttempt): Envelope {
       { traceId: attempt.traceId },
     );
   }
-  if (attempt.status === 'executing' || attempt.status === 'unknown') {
-    return conflict('execution in progress or awaiting reconciliation', { traceId: attempt.traceId });
+  if (attempt.status === 'executing') {
+    return fail(
+      'EXECUTION_IN_PROGRESS',
+      'execution is already in progress; retry with the same idempotency key instead of creating a new preview',
+      [],
+      { data: { attemptId: attempt.attemptId, retryWithSameKey: true }, traceId: attempt.traceId },
+    );
+  }
+  if (attempt.status === 'unknown') {
+    return fail(
+      'EXECUTION_UNKNOWN',
+      'execution outcome is unknown; reconciliation is required before retrying with the same idempotency key',
+      [],
+      { data: { attemptId: attempt.attemptId, retryWithSameKey: true }, traceId: attempt.traceId },
+    );
   }
   return storedFailureEnvelope(attempt);
 }
@@ -644,6 +662,9 @@ async function settlementRacedEnvelope(
   const current = await tx.executionAttempt.findFirst({ where: { attemptId, tenantId } });
   const stored = storedEnvelope(current?.result);
   if (stored) return replayIdempotent(stored);
+  // 没抢到结算权且没有已存结果：按当前尝试状态映射。仍为 executing/unknown
+  // 时必须返回与 Phase 1 相同的机器可识别错误码，而不是泛化为 CONFLICT。
+  if (current) return existingAttemptEnvelope(current);
 
   return conflict('execution attempt was settled concurrently; reconciliation required', { traceId });
 }
@@ -868,7 +889,9 @@ export async function settleUnknown(
     );
   }
 
-  return fail('INTERNAL', `${message}; retry with the same idempotency key after reconciliation`);
+  return fail('EXECUTION_UNKNOWN', `${message}; retry with the same idempotency key after reconciliation`, [], {
+    data: { attemptId: attempt.attemptId, retryWithSameKey: true },
+  });
 }
 
 export async function executeContract(

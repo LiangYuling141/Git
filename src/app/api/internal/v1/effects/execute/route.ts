@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { EffectsExecutionUnknownError } from '@lymtrix/tef-core';
 import { executeCrmEffectsInProcess } from '@lymtrix/vertical-crm-erp';
 import { effectsRequestSchema } from '@/lib/internal-effects-schema';
 import { authorizeInternalRequest, internalAuthStatus } from '@/lib/internal-auth';
@@ -16,7 +17,7 @@ import { authorizeInternalRequest, internalAuthStatus } from '@/lib/internal-aut
  */
 
 function structuredError(
-  code: 'VALIDATION_ERROR',
+  code: 'VALIDATION_ERROR' | 'EXECUTION_UNKNOWN',
   message: string,
   status: number,
 ): NextResponse {
@@ -44,16 +45,27 @@ export async function POST(request: Request) {
   const { tenantId, idempotencyKey, previewId, traceId, expectedEvidenceVersion, effects } =
     parsed.data;
 
-  const result = await executeCrmEffectsInProcess({
-    tenantId,
-    idempotencyKey,
-    // schema 允许省略这两个字段，端口类型要求字符串；空串由执行器归一为 null，
-    // 与抽取前适配器收到的 `previewId ?? null` 完全一致。
-    previewId: previewId ?? '',
-    traceId: traceId ?? '',
-    expectedEvidenceVersion,
-    effects,
-  });
+  let result: Awaited<ReturnType<typeof executeCrmEffectsInProcess>>;
+  try {
+    result = await executeCrmEffectsInProcess({
+      tenantId,
+      idempotencyKey,
+      // schema 允许省略这两个字段，端口类型要求字符串；空串由执行器归一为 null，
+      // 与抽取前适配器收到的 `previewId ?? null` 完全一致。
+      previewId: previewId ?? '',
+      traceId: traceId ?? '',
+      expectedEvidenceVersion,
+      effects,
+    });
+  } catch (error) {
+    // 执行器无法确认副作用是否已提交（超时、连接中断、结算竞争读取失败）。
+    // 必须返回结构化的 EXECUTION_UNKNOWN + 503，让调用方把尝试收敛为 unknown
+    // 并用同一幂等键对账；若退化成 500/INTERNAL，调用方可能误判为确定失败。
+    if (error instanceof EffectsExecutionUnknownError) {
+      return structuredError('EXECUTION_UNKNOWN', error.message, 503);
+    }
+    throw error;
+  }
 
   if (result.ok) {
     return NextResponse.json(result);

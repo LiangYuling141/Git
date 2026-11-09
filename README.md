@@ -5,7 +5,7 @@
 
 LyMtrix-TEF 是一个面向 AI Agent 的可信执行框架。它不试图让模型输出变得确定，而是让模型产生的**副作用**变得确定：任何写操作都必须经过契约校验、证据加载、风险定级、预览快照、一次性令牌确认和幂等执行，否则被阻断、拒绝或转人工。
 
-**当前状态（2026-11-10）**：Phase 0 闭环、Phase 1 补偿运行时、Phase B2 CRM 内部 HTTP 网关与 Phase C 执行状态机已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime、确认 UI 与补偿闭环全部可运行；B2 新增 `/api/internal/v1/query` 与 `/api/internal/v1/effects/execute` 内部端点及 `HttpCrmGateway`，默认仍走进程内 Prisma 网关；Phase C 新增 `execution_attempts` 两阶段执行状态机、`pending` 预审计、结果审计、UNKNOWN 对账与故障注入测试，保证副作用 at-most-once。395 个测试通过（321 单元 + 74 个对真实 PostgreSQL 的闭环、攻击场景、补偿、状态机与对账集成测试）。尚未达到生产可用：评测体系（Phase 2/D）、遗留代码清理、跨服务 HTTP effects 接线（Phase B3）与生产级压测仍未完成。成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
+**当前状态（2026-11-10）**：Phase 0 闭环、Phase 1 补偿运行时、Phase B2 CRM 内部 HTTP 网关与 Phase C 执行状态机已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime、确认 UI 与补偿闭环全部可运行；B2 新增 `/api/internal/v1/query` 与 `/api/internal/v1/effects/execute` 内部端点及 `HttpCrmGateway`，默认仍走进程内 Prisma 网关；Phase C 新增 `execution_attempts` 两阶段执行状态机、`pending` 预审计、结果审计、UNKNOWN 对账与故障注入测试，保证副作用 at-most-once。414 个测试通过（339 单元 + 75 个对真实 PostgreSQL 的闭环、攻击场景、补偿、状态机与对账集成测试）。尚未达到生产可用：评测体系（Phase 2/D）、遗留代码清理、跨服务 HTTP effects 接线（Phase B3）与生产级压测仍未完成。成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
 
 ---
 
@@ -266,7 +266,7 @@ Agent Runtime 不持有数据库凭据，不直接执行写操作；TaskState �
 |------|------------|--------------------|
 | Phase 0 | 多租户底座 + 契约引擎 + 跑通"赊账订单"闭环：查询客户、查额度、查库存、预览订单、执行订单 | **已完成**，CI 每次推送对真实 PostgreSQL 复跑闭环与攻击场景 |
 | Phase 1 | L1 自动执行路径、dry-run/diff、确认令牌、幂等、冲突恢复、补偿、审计事件 | **已完成**：L1 路径、diff、令牌、幂等、审计事件、`CONFLICT` 检测与旧令牌作废、`compensate_order` 契约与完整补偿运行时（preview → L2 → 人工确认 → execute）均已实现并有测试 |
-| Phase C（P1 收尾） | 执行状态机、`execution_attempts`、预审计 `pending`、UNKNOWN 对账、故障注入与并发 | **已完成**：两阶段执行 + 三阶段语义、进程内幂等执行器、对账补写结果审计、11 项故障注入/恢复测试；保证 at-most-once 副作用 |
+| Phase C（P1 收尾） | 执行状态机、`execution_attempts`、预审计 `pending`、UNKNOWN 对账、故障注入与并发 | **已完成**：两阶段执行 + 三阶段语义、进程内幂等执行器、对账补写结果审计、12 项故障注入/恢复测试；保证按幂等键计的 at-most-once 副作用 |
 | Phase 2 / D | 300-500 条评测集、危险写入拦截率、误拒率、P95、成本 | 评测未开始；指标埋点、fixture 与 eval harness 属 Phase D |
 | Phase 3 | 参考垂直插件、计量计费与配额、角色细化、生产部署、软著/专利/论文材料 | 未开始 |
 

@@ -25,10 +25,17 @@ export function conflict(message: string, extra: Omit<Partial<Envelope>, 'status
   return { status: 'conflict', error: { code: 'CONFLICT', message }, ...extra };
 }
 
-export function fail(code: ErrorCode, message: string, checks: Check[] = []): Envelope {
+export function fail(
+  code: ErrorCode,
+  message: string,
+  checks: Check[] = [],
+  extra: Omit<Partial<Envelope>, 'status' | 'error'> = {},
+): Envelope {
   const error: ToolError = { code, message };
   if (checks.length > 0) error.checks = checks;
-  return { status: 'error', error };
+  // extra 用于携带机器可读的恢复信息（例如 attemptId / retryWithSameKey），
+  // 让 Runtime 不需要解析 message 就能判断“必须用同一幂等键重试”。
+  return { status: 'error', error, ...extra };
 }
 
 export function failedChecksToError(checks: Check[]): ToolError & { code: ErrorCode } {

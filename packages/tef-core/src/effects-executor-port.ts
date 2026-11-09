@@ -7,8 +7,10 @@ import type { EffectsExecuteRequest, EffectsExecuteResult } from './business-gat
  * Phase 3 结算结果。默认实现是垂直包提供的进程内 CRM 执行器；后续独立存储
  * 或跨服务执行时可以替换实现，而状态机与幂等语义不变。
  *
- * 端口不抛业务错误：CONFLICT 与 INTERNAL 都以结构化结果返回，调用方不需要
- * 用 try/catch 区分“可补偿的业务冲突”和“需要人工介入的内部错误”。
+ * 端口不抛确定性业务错误：CONFLICT 与 INTERNAL 都以结构化结果返回，调用方
+ * 不需要用 try/catch 区分“可补偿的业务冲突”和“需要人工介入的内部错误”。
+ * 唯一例外是 EffectsExecutionUnknownError：副作用可能已提交但结果无法确认时
+ * 抛出，调用方必须把尝试收敛为 unknown 并用同一幂等键对账。
  */
 export interface EffectsExecutor {
   execute(input: EffectsExecuteRequest): Promise<EffectsExecuteResult>;

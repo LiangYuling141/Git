@@ -288,6 +288,8 @@ L2 必须人工确认；确认令牌一次性、绑定用户/会话/操作哈希
 | `CONFLICT` | 并发冲突或重复操作 | 重新读取状态后再决定 |
 | `NEEDS_CONFIRMATION` | 需要人工确认 | 展示 diff 并等待确认 |
 | `RATE_LIMITED` | 频率超限 | 退避后重试 |
+| `EXECUTION_IN_PROGRESS` | 同幂等键的执行仍在进行中 | 保留 pending，用同一幂等键重试 |
+| `EXECUTION_UNKNOWN` | 副作用可能已提交但结果未知 | 保留 pending，用同一幂等键重试或等待对账 |
 | `INTERNAL` | 服务端错误 | 不重试写操作，返回审计 ID |
 
 ---

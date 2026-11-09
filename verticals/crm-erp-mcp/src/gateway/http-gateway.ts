@@ -1,4 +1,5 @@
 import {
+  EffectsExecutionUnknownError,
   TefError,
   type EffectsExecuteRequest,
   type EffectsExecuteResult,
@@ -63,13 +64,13 @@ function toTefError(payload: unknown, status: number): TefError {
   return new TefError(code, message);
 }
 
-/**
- * effects 路由把执行失败表达为结构化结果而不是 HTTP 异常语义：
- * 调用方需要区分“可重试/可补偿的业务冲突”和“内部错误”。端口类型只允许
- * CONFLICT / INTERNAL 两个错误码，因此 400 校验错误也收敛为 INTERNAL，
- * 服务端 message 仍原样保留，便于定位。
- */
-function toEffectsFailure(payload: unknown, status: number): EffectsExecuteResult {
+interface EffectsErrorDetail {
+  code?: string;
+  message: string;
+}
+
+/** 同时兼容 `{ error: { code, message } }` 与 `{ error, message }` 两种历史形状。 */
+function effectsErrorDetail(payload: unknown, status: number): EffectsErrorDetail {
   const body = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
   const detail =
     body.error && typeof body.error === 'object' ? (body.error as Record<string, unknown>) : {};
@@ -79,8 +80,32 @@ function toEffectsFailure(payload: unknown, status: number): EffectsExecuteResul
       : typeof body.message === 'string' && body.message
         ? body.message
         : `CRM effects gateway error ${status}`;
+  return {
+    code: typeof detail.code === 'string' ? detail.code : typeof body.error === 'string' ? body.error : undefined,
+    message,
+  };
+}
+
+/**
+ * effects 路由把执行失败表达为结构化结果而不是 HTTP 异常语义：
+ * 调用方需要区分“可重试/可补偿的业务冲突”和“内部错误”。端口类型只允许
+ * CONFLICT / INTERNAL 两个错误码，因此 400 校验错误也收敛为 INTERNAL，
+ * 服务端 message 仍原样保留，便于定位。
+ */
+function toEffectsFailure(payload: unknown, status: number): EffectsExecuteResult {
+  const detail = effectsErrorDetail(payload, status);
   const code = detail.code === 'CONFLICT' || status === 409 ? 'CONFLICT' : 'INTERNAL';
-  return { ok: false, refs: {}, error: { code, message } };
+  return { ok: false, refs: {}, error: { code, message: detail.message } };
+}
+
+/**
+ * 503 / EXECUTION_UNKNOWN 表示副作用可能已提交但结果无法确认。
+ *
+ * 这是端口约定里唯一允许抛出的情况：状态机必须把尝试收敛为 unknown，并等待
+ * 对账用同一幂等键收敛，不能返回确定失败诱导调用方换 key 重试。
+ */
+export function isEffectsExecutionUnknown(payload: unknown, status: number): boolean {
+  return status === 503 || effectsErrorDetail(payload, status).code === 'EXECUTION_UNKNOWN';
 }
 
 /**
@@ -204,6 +229,9 @@ export function createHttpCrmGateway(options: HttpCrmGatewayOptions): CrmBusines
         effects: input.effects,
       });
       if (!ok) {
+        if (isEffectsExecutionUnknown(payload, status)) {
+          throw new EffectsExecutionUnknownError(effectsErrorDetail(payload, status).message);
+        }
         return toEffectsFailure(payload, status);
       }
       return parseEffectsResponse(payload);

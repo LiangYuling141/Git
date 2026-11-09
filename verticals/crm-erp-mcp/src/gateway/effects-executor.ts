@@ -21,11 +21,11 @@ import { createCreditOrderAdapters } from '../contracts/credit-order';
  * 并发同 key 时后提交者命中唯一索引 P2002，整个事务回滚，再由新事务读取先提交者
  * 的记录按重放返回，调用方无需感知竞态。
  *
- * 端口约定：不向调用方抛业务错误。EffectExecutionError 的 CONFLICT / INTERNAL
- * 与未知异常都收敛为结构化结果，未知异常只返回通用文案，避免泄露 SQL 或堆栈。
- * 唯一例外是 EffectsExecutionUnknownError：当冲突后重读幂等记录本身失败时，
- * 无法判断副作用是否已提交，必须让状态机/对账把尝试收敛为 unknown，而不是
- * 返回一个确定的 CONFLICT/INTERNAL 诱导调用方换 key 重试。
+ * 端口约定：确定性业务失败不抛异常。EffectExecutionError 的 CONFLICT / INTERNAL
+ * 与 P2002（事务已回滚）都收敛为结构化结果，未知异常只返回通用文案，避免
+ * 泄露 SQL 或堆栈。唯一例外是 EffectsExecutionUnknownError：冲突后重读幂等记录
+ * 失败，或出现无法证明事务已回滚的驱动/连接异常时，必须让状态机/对账把尝试
+ * 收敛为 unknown，而不是返回确定的 CONFLICT/INTERNAL 诱导调用方换 key 重试。
  */
 
 const TOOL_NAME = 'internal.effects.execute';
@@ -136,7 +136,12 @@ async function executeWithinTenantScope(
   });
 }
 
-/** 执行一批声明式 effects；业务失败以 `{ ok:false, error }` 返回，不抛出。 */
+/**
+ * 执行一批声明式 effects。
+ *
+ * 确定性失败以 `{ ok:false, error }` 返回；无法确认提交结果时抛
+ * `EffectsExecutionUnknownError`，由状态机/对账收敛为 unknown。
+ */
 export async function executeCrmEffectsInProcess(
   input: EffectsExecuteRequest,
 ): Promise<EffectsExecuteResult> {
@@ -165,11 +170,16 @@ export async function executeCrmEffectsInProcess(
       return structuredFailure('INTERNAL', 'internal gateway error');
     }
     // 不把内部异常信息返回给调用方，避免泄露 SQL、堆栈或实现细节。
+    // 但也不能返回 INTERNAL：驱动/连接错误无法证明事务未提交，按“结果未知”
+    // 保守处理，让状态机用同一幂等键交给对账收敛。EffectExecutionError 与
+    // P2002（事务已回滚）已在上面按确定性失败处理。
     console.error(
       '[internal.effects.execute] unhandled error:',
       error instanceof Error ? error.message : error,
     );
-    return structuredFailure('INTERNAL', 'internal gateway error');
+    throw new EffectsExecutionUnknownError(
+      'effects execution outcome is unknown; reconciliation required',
+    );
   }
 }
 

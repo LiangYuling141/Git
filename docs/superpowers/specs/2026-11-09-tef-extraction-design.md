@@ -40,7 +40,7 @@
 
 > **基线说明**：上表记录的是 **Phase A 前基线**的耦合证据。A1/A2 完成后，表中列出的 `src/` 路径均已变为迁移 shim，真实实现已迁移到 `packages/`（`tef-core`、`tef-mcp-kit`、`tef-runtime`）与 `verticals/crm-erp-mcp/`。
 
-当前验证基线（2026-11-10）：typecheck、lint、boundaries:check、secrets:check、build 通过；`TEF_DB_TESTS=1 npm test` 共 395 个测试通过（321 单元 + 74 真实数据库集成）。
+当前验证基线（2026-11-10）：typecheck、lint、boundaries:check、secrets:check、build 通过；`TEF_DB_TESTS=1 npm test` 共 414 个测试通过（339 单元 + 75 真实数据库集成）。
 
 ## 3. 设计原则与硬边界
 
@@ -349,7 +349,7 @@ B1 补充（来自最终评审）：core 边界目前靠 ESLint 的 alias 规则
 5. 崩溃恢复：执行任务（副作用）可通过对账恢复；TaskState 会话级恢复仍未完整验证。
 6. 审计链完整性：`pending` 预审计 + `${attemptId}:result` 补写事件纳入链校验，恢复测试验证链通过。
 
-验收结论：上述自动化测试通过（395 项：321 单元 + 74 数据库）；生产级压测脚本与 P95/成本数据未完成，归入 Phase D/工业级阶段。
+验收结论：上述自动化测试通过（414 项：339 单元 + 75 数据库）；生产级压测脚本与 P95/成本数据未完成，归入 Phase D/工业级阶段。
 
 已知限制：无法重建的尝试可能长期占用扫描批次（需要 `reconcileBlockedAt` 或游标，B3）；失败审计结果类型在契约与工具注册处有重复推导（新增契约时统一）；跨服务 HTTP effects 尚未接入 `executeContract`（B3）。
 

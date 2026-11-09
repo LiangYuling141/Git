@@ -83,6 +83,66 @@ function envelopeData(envelope: Envelope): Record<string, unknown> {
   return asRecord(envelope.data);
 }
 
+const TERMINAL_TASK_STATUSES: readonly TaskStatus[] = [
+  'completed',
+  'failed',
+  'compensated',
+  'compensation_failed',
+];
+
+/**
+ * 只有未终结的任务才允许复用已持久化的幂等键。
+ *
+ * 复用场景是“上一次执行结果未知，用户重试同一操作”：TaskState 里已有
+ * executing/unknown 尝试对应的 key，必须原样再发一次，才能命中 Phase 1 的
+ * 尝试检查或对账重放。任务已终结时保留旧 key 只是历史记录，新操作必须换 key，
+ * 否则会把上一单的成功响应当成新单重放。
+ */
+function reusableIdempotencyKey(taskState: TaskState): string | undefined {
+  if (TERMINAL_TASK_STATUSES.includes(taskState.status)) return undefined;
+  return taskState.idempotencyKey ?? undefined;
+}
+
+/**
+ * 待对账时显式保留 pending 字段。
+ *
+ * TaskStatePatch 是合并写入，理论上省略字段即可保留；这里显式写回是为了让
+ * “未知结果不清 pending”成为可测试的契约，而不是依赖存储实现细节。
+ */
+function pendingFields(taskState: TaskState): TaskStatePatch {
+  const pending = taskState.pendingPreview;
+  if (!pending) return {};
+  return {
+    pendingPreviewId: pending.previewId,
+    pendingIntentHash: pending.intentHash,
+    pendingContract: pending.contract,
+    pendingContractVersion: pending.contractVersion,
+    pendingExpiresAt: pending.expiresAt,
+  };
+}
+
+/**
+ * 执行结果未知时的统一出口。
+ *
+ * 执行层已用 EXECUTION_IN_PROGRESS / EXECUTION_UNKNOWN 明确标注“副作用可能
+ * 已经发生”。Runtime 必须保留幂等键与 pending 状态，提示用户用同一操作重试；
+ * 若清掉 pending 并生成新 key，下一次执行会绕过原来的 attempt，产生第二次副作用。
+ */
+function executionPendingResult(
+  executed: Envelope,
+  idempotencyKey: string,
+  meta: { taskState: TaskState; traceId: string; toolCalls: ToolCallRecord[]; intentSource: 'model' | 'deterministic' },
+): AgentTurnResult | null {
+  const code = executed.error?.code;
+  if (code !== 'EXECUTION_IN_PROGRESS' && code !== 'EXECUTION_UNKNOWN') return null;
+  return finish(
+    'executing',
+    '执行结果待对账，请稍后使用同一操作重试；不要重新预览。',
+    { idempotencyKey, ...pendingFields(meta.taskState) },
+    { ...meta, envelope: executed },
+  );
+}
+
 /**
  * 澄清回填（§7.3）。用户可以用序号、也可以用更完整的名称来消歧。
  * 只回填槽位，不重新猜测其它字段。
@@ -426,7 +486,8 @@ async function handleCompensateOrder(
         pendingContractVersion: '1.0',
         pendingExpiresAt: preview.expiresAt ? new Date(preview.expiresAt) : null,
         activeOrderId: orderId,
-        idempotencyKey: randomUUID(),
+        // 同一任务重试时复用已持久化的 key；新任务才生成新 key。
+        idempotencyKey: reusableIdempotencyKey(meta.taskState) ?? randomUUID(),
         clarificationRounds: 0,
       },
       { ...meta, envelope: preview },
@@ -435,7 +496,7 @@ async function handleCompensateOrder(
 
   // 补偿契约恒为 L2；这里保留防御分支，契约若降级也不至于静默不执行。
   if (preview.status === 'ok' && preview.confirmationToken) {
-    const idempotencyKey = randomUUID();
+    const idempotencyKey = reusableIdempotencyKey(meta.taskState) ?? randomUUID();
     const executed = await session.callTool('order.execute_compensate', {
       confirmation_token: preview.confirmationToken,
       idempotency_key: idempotencyKey,
@@ -447,11 +508,14 @@ async function handleCompensateOrder(
   return finish('failed', preview.error?.message ?? '补偿预览未成功。', {}, { ...meta, envelope: preview });
 }
 
-function reportCompensation(
+export function reportCompensation(
   executed: Envelope,
   idempotencyKey: string,
-  meta: { traceId: string; toolCalls: ToolCallRecord[]; intentSource: 'model' | 'deterministic' },
+  meta: { taskState: TaskState; traceId: string; toolCalls: ToolCallRecord[]; intentSource: 'model' | 'deterministic' },
 ): AgentTurnResult {
+  const pending = executionPendingResult(executed, idempotencyKey, meta);
+  if (pending) return pending;
+
   if (executed.status === 'ok') {
     return finish(
       'compensated',
@@ -590,16 +654,18 @@ async function handleCreateOrder(
         pendingContractVersion: '1.0',
         pendingExpiresAt: preview.expiresAt ? new Date(preview.expiresAt) : null,
         activeCustomerId: customerId,
-        idempotencyKey: randomUUID(),
+        // 待确认期间重复预览同一任务时不能换 key，否则确认后会绕过原尝试。
+        idempotencyKey: reusableIdempotencyKey(meta.taskState) ?? randomUUID(),
         clarificationRounds: 0,
       },
       { ...meta, envelope: preview },
     );
   }
 
-  // 5. L1：令牌签发即生效，Runtime 可以直接执行（仍然幂等 + 留审计）
+  // 5. L1：令牌签发即生效，Runtime 可以直接执行（仍然幂等 + 留审计）。
+  // 结果未知后的重试必须复用 TaskState 中的 key，否则会创建第二次副作用。
   if (preview.status === 'ok' && preview.confirmationToken) {
-    const idempotencyKey = randomUUID();
+    const idempotencyKey = reusableIdempotencyKey(meta.taskState) ?? randomUUID();
     const executed = await session.callTool('order.execute_create', {
       confirmation_token: preview.confirmationToken,
       idempotency_key: idempotencyKey,
@@ -611,11 +677,16 @@ async function handleCreateOrder(
   return finish('failed', preview.error?.message ?? '预览未成功。', {}, { ...meta, envelope: preview });
 }
 
-function reportExecution(
+export function reportExecution(
   executed: Envelope,
   idempotencyKey: string,
-  meta: { traceId: string; toolCalls: ToolCallRecord[]; intentSource: 'model' | 'deterministic' },
+  meta: { taskState: TaskState; traceId: string; toolCalls: ToolCallRecord[]; intentSource: 'model' | 'deterministic' },
 ): AgentTurnResult {
+  // 机器可识别的执行状态优先于通用 status 分支：这两个错误码表示副作用可能
+  // 已经发生，必须在清空 pending 之前截获。
+  const pending = executionPendingResult(executed, idempotencyKey, meta);
+  if (pending) return pending;
+
   if (executed.status === 'ok') {
     const data = envelopeData(executed);
     const reply = [

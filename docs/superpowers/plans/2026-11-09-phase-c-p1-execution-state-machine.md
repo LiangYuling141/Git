@@ -1,6 +1,6 @@
 # Phase C：P1 收尾——执行状态机、故障注入与并发实施计划
 
-> **状态：已完成（2026-11-10）。** 五个任务全部落地；最终基线 `TEF_DB_TESTS=1 npm test` 共 395 项测试通过（321 单元 + 74 真实数据库），typecheck、lint、boundaries:check、secrets:check、build 全部通过。已知限制与后续项见文末“完成状态与已知限制”。
+> **状态：已完成（2026-11-10）。** 五个任务全部落地；最终基线（含最终评审修复）`TEF_DB_TESTS=1 npm test` 共 414 项测试通过（339 单元 + 75 真实数据库），typecheck、lint、boundaries:check、secrets:check、build 全部通过。已知限制与后续项见文末“完成状态与已知限制”。
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 
@@ -386,23 +386,27 @@ Expected: 全部通过；文档计数与实际一致。
 2. **Phase 2（副作用）**：通过注入的 `EffectsExecutor` 执行声明式 effects；执行器幂等键为 `scopedExecutorIdempotencyKey(toolName, idempotencyKey)`，与工具名作用域绑定，保证同一业务操作至多产生一次副作用。
 3. **Phase 3（事务二）**：条件结算尝试，写结果审计（`${attemptId}:result`，确定性 eventId）与幂等记录；失败按 `failed` 结算，结果未知按 `unknown` 保留。
 
-对账 `reconcileExecutions` 扫描 `unknown` 与超过静默期的 `executing` 尝试，用同一执行器幂等键重放：成功补写结果审计与幂等记录，确定失败补写失败审计，仍未知保持 `unknown`。因此系统保证 **at-most-once 副作用**，不宣称 exactly-once。
+对账 `reconcileExecutions` 扫描 `unknown` 与超过静默期的 `executing` 尝试，用同一执行器幂等键重放：成功补写结果审计与幂等记录，确定失败补写失败审计，仍未知保持 `unknown`。因此系统保证**按幂等键计**的副作用 at-most-once，不宣称 exactly-once；`unknown` 必须用同一幂等键重试，换 key 属于新操作。
+
+前台工具层对 `executing` 返回 `EXECUTION_IN_PROGRESS`、对 `unknown` 返回 `EXECUTION_UNKNOWN`，`data` 携带 `{ attemptId, retryWithSameKey: true }`。Runtime 与确认路由识别这两个错误码后进入 `executing` 状态，保留 pending 预览与幂等键，提示用户用同一操作重试；不得清空 pending 或生成新 key。
 
 ### 已知限制
 
 - **无法重建的尝试会占用扫描批次**：预览快照或契约缺失的尝试每次对账都计入 `unknown`，且按 `updatedAt` 升序可能长期占据 `limit` 名额，挤压后续可收敛记录。需要 `reconcileBlockedAt` 或游标分页，留待 B3 存储拆分时处理。
 - **失败审计结果类型有重复推导**：契约侧通过 `contract.auditResult` 推导（`compensated` → `compensation_failed`），工具注册侧则传入字面量（`verticals/crm-erp-mcp/src/tools/order.ts`）。新增契约时需统一为单一来源，避免两侧漂移。
 - **证据版本冲突尚未参与执行判定**：`expectedEvidenceVersion` 目前只透传 `evidenceDigest`，进程内执行器不比较；版本不一致 → `CONFLICT` 的流程需第二证据版本来源，推迟到 B3/跨服务执行。
-- **跨服务 HTTP effects 未接线**：`HttpCrmGateway.executeEffects` 尚未接入 `executeContract`，契约执行仍走本地 Prisma 适配器；B3 完成前禁止生产启用 `TEF_CRM_GATEWAY=http` 或 `TEF_CRM_EFFECTS_ENABLED=1`。接线时必须把网络超时与 5xx 映射为 `EffectsExecutionUnknownError`（当前 `toEffectsFailure` 固定映射为 `INTERNAL`），否则“可能已提交”会被误结算为确定失败。
+- **对账重放未重新执行 `contractEngine.revalidate`**：对账直接按 attempt 持久化的 effects 与证据重放。生产/B3 必须在执行器侧增加按 attempt 查找，并在真正执行前重新校验前置条件，否则可能执行一个在当前数据状态下已不再合法的操作。
+- **提交确认歧义只在执行器标注时保守处理**：进程内 Prisma 只有在执行器抛出 `EffectsExecutionUnknownError`（驱动/连接异常、冲突后重读失败）时才收敛为 `unknown`；执行器未标注而事务实际已提交的极端场景无法被本地状态机识别。执行器现在对“既非 `EffectExecutionError` 也非 P2002”的异常抛出该错误，`EffectExecutionError` 与 P2002（事务已回滚）仍是确定性失败。
+- **跨服务 HTTP effects 未接线**：内部 effects 路由已把 `EffectsExecutionUnknownError` 映射为 503 / `EXECUTION_UNKNOWN`，`HttpCrmGateway` 也把 503 / `EXECUTION_UNKNOWN` 抛回状态机；但 `HttpCrmGateway.executeEffects` 尚未接入 `executeContract`，契约执行仍走本地 Prisma 适配器。B3 完成前禁止生产启用 `TEF_CRM_GATEWAY=http` 或 `TEF_CRM_EFFECTS_ENABLED=1`。
 - **TaskState 会话级崩溃恢复未完整验证**：Phase C 覆盖的是执行尝试（副作用）的对账恢复；对话会话从 TaskState 恢复的多轮验证仍属后续工作。
 - **模型成本指标与完整评测未做**：属 Phase D（指标埋点、fixture、eval harness 与种子样本）。
 - **未做生产级压测**：已有同幂等键、库存不超卖、并发对账等确定性并发测试，但没有持续性负载与 P95/成本压测。
 
 ### 验证记录（2026-11-10）
 
-- `TEF_DB_TESTS=1 npm test`：395 项通过（321 单元 + 74 真实数据库）。
+- `TEF_DB_TESTS=1 npm test`：414 项通过（339 单元 + 75 真实数据库），其中 19 项为最终评审修复新增。
 - `npm run typecheck`、`npm run lint`、`npm run boundaries:check`、`npm run secrets:check`、`npm run build`：全部通过。
-- Phase C 新增/改写测试：执行状态机与结算、进程内执行器幂等与并发、对账故障注入（`tests/integration/execution-recovery.test.ts` 11 项）、执行结算（2 项）、执行器单测（4 + 3 项）。
+- Phase C 新增/改写测试：执行状态机与结算、进程内执行器幂等与并发、对账故障注入（`tests/integration/execution-recovery.test.ts` 12 项）、执行结算（2 项）、执行器单测（4 + 5 项）；最终评审修复新增 Runtime 执行结果映射（6 项）、确认结果映射（5 项）、effects 路由未知映射（3 项）、HTTP 网关 unknown 映射（2 项）与同 key 重试集成测试（1 项）。
 
 ---
 

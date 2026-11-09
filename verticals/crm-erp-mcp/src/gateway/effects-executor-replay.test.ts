@@ -64,4 +64,23 @@ describe('executeCrmEffectsInProcess：冲突后的幂等重读', () => {
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe('CONFLICT');
   });
+
+  it('EffectExecutionError INTERNAL 仍是确定性失败，不升级为 unknown', async () => {
+    withTenantScopeMock.mockRejectedValueOnce(
+      new EffectExecutionError('INTERNAL', 'no adapter registered for entity "invoice"'),
+    );
+
+    const result = await executeCrmEffectsInProcess(baseRequest());
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('INTERNAL');
+  });
+
+  it('无法证明事务已回滚的驱动/连接异常抛 EffectsExecutionUnknownError', async () => {
+    withTenantScopeMock.mockRejectedValueOnce(new Error('connection reset by peer'));
+
+    await expect(executeCrmEffectsInProcess(baseRequest())).rejects.toBeInstanceOf(
+      EffectsExecutionUnknownError,
+    );
+  });
 });

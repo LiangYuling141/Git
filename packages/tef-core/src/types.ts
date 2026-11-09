@@ -205,6 +205,10 @@ export type ErrorCode =
   | 'CONFLICT'
   | 'NEEDS_CONFIRMATION'
   | 'RATE_LIMITED'
+  // 执行状态机专用：副作用可能已经发生，调用方必须用同一个幂等键重试或等待对账，
+  // 绝不能重新预览/换 key。它们与 INTERNAL 的区别是“可恢复但不可重开新执行”。
+  | 'EXECUTION_IN_PROGRESS'
+  | 'EXECUTION_UNKNOWN'
   | 'INTERNAL';
 
 export type EnvelopeStatus = 'ok' | 'needs_confirmation' | 'blocked' | 'conflict' | 'error';

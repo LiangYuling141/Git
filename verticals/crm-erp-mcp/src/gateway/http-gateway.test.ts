@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { TefError } from '@lymtrix/tef-core';
+import { EffectsExecutionUnknownError, TefError } from '@lymtrix/tef-core';
 import type { PrismaTx } from '@lymtrix/tef-mcp-kit';
 import { createHttpCrmGateway } from './http-gateway';
 import { createCrmGateway } from './factory';
@@ -410,6 +410,35 @@ describe('effects:execute', () => {
       refs: {},
       error: { code: 'INTERNAL', message },
     });
+  });
+
+  it('503 EXECUTION_UNKNOWN 抛 EffectsExecutionUnknownError，交给状态机收敛为 unknown', async () => {
+    stubFetch(
+      jsonResponse(
+        { ok: false, error: { code: 'EXECUTION_UNKNOWN', message: 'commit outcome is unknown' } },
+        503,
+      ),
+    );
+    const gateway = createGateway();
+
+    const error = await gateway.executeEffects(effectsInput()).then(
+      () => {
+        throw new Error('expected executeEffects to reject with the unknown outcome');
+      },
+      (reason: unknown) => reason,
+    );
+
+    expect(error).toBeInstanceOf(EffectsExecutionUnknownError);
+    expect((error as Error).message).toBe('commit outcome is unknown');
+  });
+
+  it('503 非法结构化响应同样按 unknown 处理，而不是 INTERNAL', async () => {
+    stubFetch(new Response('upstream unavailable', { status: 503 }));
+    const gateway = createGateway();
+
+    await expect(gateway.executeEffects(effectsInput())).rejects.toBeInstanceOf(
+      EffectsExecutionUnknownError,
+    );
   });
 
   it('租户不一致时抛 PERMISSION_DENIED，且不发请求', async () => {

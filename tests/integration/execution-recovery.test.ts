@@ -137,6 +137,13 @@ function readResultAudit(attemptId: string) {
   );
 }
 
+/** 读取预览对应的确认令牌，用于断言重试路径没有消费新令牌。 */
+function readTokenByPreview(previewId: string) {
+  return withTenantScope(TENANT, (tx) =>
+    tx.confirmationToken.findFirst({ where: { tenantId: TENANT, previewId } }),
+  );
+}
+
 async function readProduct(): Promise<{ availableQty: number; reservedQty: number }> {
   const product = await withTenantScope(TENANT, (tx) =>
     tx.product.findFirst({ where: { tenantId: TENANT, sku: SKU } }),
@@ -182,7 +189,9 @@ async function captureUnknownAttempt(
   )) as Envelope;
 
   expect(envelope.status).toBe('error');
-  expect(envelope.error?.code).toBe('INTERNAL');
+  expect(envelope.error?.code).toBe('EXECUTION_UNKNOWN');
+  // 机器可读的恢复信息：Runtime/确认路由据此保留 pending 状态与幂等键。
+  expect(envelope.data).toMatchObject({ attemptId: expect.any(String), retryWithSameKey: true });
   expect(calls).toHaveLength(1);
 
   const attempt = await readAttemptByKey(idempotencyKey);
@@ -333,8 +342,9 @@ describeDb('对账与故障注入（真实数据库）', () => {
     )) as Envelope;
 
     expect(first.status).toBe('error');
-    expect(first.error?.code).toBe('INTERNAL');
+    expect(first.error?.code).toBe('EXECUTION_UNKNOWN');
     expect(first.error?.message).toContain('reconciliation');
+    expect(first.data).toMatchObject({ retryWithSameKey: true });
 
     const attempt = await readAttemptByKey(idempotencyKey);
     expect(attempt?.status).toBe('unknown');
@@ -375,6 +385,48 @@ describeDb('对账与故障注入（真实数据库）', () => {
         scopedExecutorIdempotencyKey(CREATE_TOOL, idempotencyKey),
       ),
     ).toBe(1);
+  });
+
+  it('执行结果未知后：同 key 重试返回 EXECUTION_UNKNOWN，且不消耗新令牌', async () => {
+    await resetFixture();
+    const traceId = nextTrace();
+    const idempotencyKey = `idem_recovery_repeat_${traceId}`;
+    const { token, previewId } = await previewAndApprove(traceId);
+
+    const failingExecutor: EffectsExecutor = {
+      async execute() {
+        throw new EffectsExecutionUnknownError('simulated timeout before effects');
+      },
+    };
+
+    const first = (await orderExecuteCreate(
+      agentPrincipal,
+      { confirmation_token: token, idempotency_key: idempotencyKey },
+      { traceId, secret, effectsExecutor: failingExecutor },
+    )) as Envelope;
+
+    expect(first.status).toBe('error');
+    expect(first.error?.code).toBe('EXECUTION_UNKNOWN');
+    expect((await readTokenByPreview(previewId))?.status).toBe('used');
+
+    // 为“用户重新确认”准备一枚全新的令牌：同 key 的重试必须在消费令牌之前
+    // 就被 unknown attempt 挡下，否则会白白作废一枚有效令牌。
+    const retryTrace = nextTrace();
+    const fresh = await previewAndApprove(retryTrace);
+    const repeated = (await orderExecuteCreate(
+      agentPrincipal,
+      { confirmation_token: fresh.token, idempotency_key: idempotencyKey },
+      { traceId: retryTrace, secret, effectsExecutor: failingExecutor },
+    )) as Envelope;
+
+    expect(repeated.status).toBe('error');
+    expect(repeated.error?.code).toBe('EXECUTION_UNKNOWN');
+    expect(repeated.data).toMatchObject({ retryWithSameKey: true });
+    expect((await readTokenByPreview(fresh.previewId))?.status).toBe('approved');
+
+    // 同 key 不会创建第二个尝试，尝试保持 unknown 等待对账。
+    expect(await countAttemptsByKey(idempotencyKey)).toBe(1);
+    expect((await readAttemptByKey(idempotencyKey))?.status).toBe('unknown');
   });
 
   it('确定性失败：对账把尝试结算为 failed，写失败审计与 CONFLICT 幂等记录', async () => {
@@ -734,9 +786,13 @@ describeDb('对账与故障注入（真实数据库）', () => {
         { traceId: loserTrace, secret, effectsExecutor: executor },
       )) as Envelope;
 
-      expect(loser.status).toBe('conflict');
-      expect(loser.error?.code).toBe('CONFLICT');
+      // 并发输家看到的是尚未结算的 executing 尝试：必须返回机器可识别的
+      // EXECUTION_IN_PROGRESS，而不是泛化的 CONFLICT，避免 Runtime 清空
+      // pending 后用新 key 重试。
+      expect(loser.status).toBe('error');
+      expect(loser.error?.code).toBe('EXECUTION_IN_PROGRESS');
       expect(loser.error?.message).toContain('in progress');
+      expect(loser.data).toMatchObject({ retryWithSameKey: true });
     } finally {
       release();
     }

@@ -239,7 +239,7 @@ stateDiagram-v2
   RolledBack --> [*]
 ```
 
-> 状态机自 Phase C 起以 `execution_attempts` 持久化：`executing / succeeded / failed / unknown`。`executing` 与 `unknown` 都表示副作用可能已经发生，只允许对账用同一幂等键收敛，不允许调用方换 key 重试。
+> 状态机自 Phase C 起以 `execution_attempts` 持久化：`executing / succeeded / failed / unknown`。`executing` 与 `unknown` 都表示副作用可能已经发生，只允许对账用同一幂等键收敛，不允许调用方换 key 重试。工具层分别返回 `EXECUTION_IN_PROGRESS` 与 `EXECUTION_UNKNOWN`，并带 `retryWithSameKey: true`，让 Runtime 无需解析文案就能保留幂等键与 pending 状态。
 
 ### 4.2 确认令牌
 
@@ -302,11 +302,19 @@ Phase C 起，一次写入拆成“两阶段执行 + 三个阶段”，不再假
 | 并发 | 两个对账/前台同时结算时只有一个条件更新胜者，失败方按数据库实际终态归类 |
 | 异常隔离 | 单条尝试的上下文读取或结算异常只记日志并计为 `unknown`，不中断整批 |
 
+失败语义：
+
+- `executing` 的重复请求返回 `EXECUTION_IN_PROGRESS`，`unknown` 返回 `EXECUTION_UNKNOWN`，`data` 携带 `{ attemptId, retryWithSameKey: true }`；两者都必须在消费令牌之前返回。
+- Runtime 与确认路由识别这两个错误码后保留 pending 预览与幂等键，提示“用同一操作重试”，不得清空 pending 或生成新 key。
+
 已知限制：
 
+- **对账重放不重新执行 `contractEngine.revalidate`**：对账直接使用 attempt 持久化的 effects 与快照证据重放。生产/B3 必须在执行器侧增加按 attempt 查找，并在真正执行前重新校验前置条件，否则对账可能执行一个在当前数据状态下已不再合法的操作。
+- **提交确认歧义只在执行器主动标注时保守处理**：进程内 Prisma 只有在执行器抛出 `EffectsExecutionUnknownError`（驱动/连接异常、冲突后重读失败）时才把结果收敛为 `unknown`；执行器未抛出而事务实际已提交的极端场景无法被本地状态机识别。
 - 无法重建的尝试（快照/契约缺失、绑定不一致）每轮都会重新扫描并占用 `limit` 名额，长期可能挤压后续可收敛记录；需要 `reconcileBlockedAt` 或游标分页，留待 B3。
 - 证据版本冲突尚未参与执行判定，需第二证据版本来源后启用。
-- 对账保证副作用 at-most-once，不宣称 exactly-once。
+- HTTP effects 路由已把 `EffectsExecutionUnknownError` 映射为 503 / `EXECUTION_UNKNOWN`，`HttpCrmGateway` 也把 503 / `EXECUTION_UNKNOWN` 抛回状态机；但 `HttpCrmGateway.executeEffects` 尚未接入 `executeContract`，真实跨服务接线留待 B3。
+- 对账保证**按幂等键计**的副作用 at-most-once，不宣称 exactly-once；`unknown` 必须用同一幂等键重试，换 key 不受该保证覆盖。
 
 ---
 

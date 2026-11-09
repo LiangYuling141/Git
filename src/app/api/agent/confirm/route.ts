@@ -6,7 +6,7 @@ import { taskStateStore } from '@/tef/task-state';
 import { resolveTenantContext } from '@/tef/tenant';
 import { loadTokenSecret } from '@/tef/token';
 import type { Envelope, TenantRole } from '@/tef/types';
-import { resolveExecutionPlan } from './execute-plan';
+import { resolveConfirmationOutcome, resolveExecutionPlan } from './execute-plan';
 
 /**
  * 人工确认入口（治理工具 + 确认后的执行）。
@@ -148,51 +148,35 @@ export async function POST(request: Request) {
     await agent.close();
   }
 
-  const nextStatus =
-    executed.status === 'ok' ? plan.successStatus : executed.status === 'conflict' ? 'conflict' : 'failed';
+  const outcome = resolveConfirmationOutcome(executed, plan, contractOperation);
   if (state) {
     await taskStateStore
       .update(
         tenant.tenantId,
         conversationId,
-        {
-          status: nextStatus,
-          pendingPreviewId: null,
-          pendingIntentHash: null,
-          pendingContract: null,
-          pendingContractVersion: null,
-          pendingExpiresAt: null,
-          intent: null,
-          activeOrderId: ((executed.data as Record<string, unknown> | undefined)?.orderId as string) ?? null,
-        },
+        outcome.clearPending
+          ? {
+              status: outcome.nextStatus,
+              pendingPreviewId: null,
+              pendingIntentHash: null,
+              pendingContract: null,
+              pendingContractVersion: null,
+              pendingExpiresAt: null,
+              intent: null,
+              activeOrderId: outcome.activeOrderId,
+            }
+          : // 执行结果待对账：只推进状态并保留幂等键，pending 预览与过期时间
+            // 必须原样保留。用户下一步仍用同一确认操作重试，不重新预览。
+            { status: outcome.nextStatus, idempotencyKey },
         state.version,
       )
       .catch(() => null);
   }
 
-  const data = (executed.data ?? {}) as Record<string, unknown>;
-  const reply =
-    executed.status === 'ok'
-      ? contractOperation === 'compensate_order'
-        ? [
-            '已批准并执行补偿。订单已取消，收款计划已作废，库存与信用额度已恢复。',
-            `审计事件 ${String(executed.auditId ?? '')}`,
-          ].join('\n')
-        : [
-            '已批准并执行。',
-            `订单 ${String(data.orderNo ?? '')}：总额 ¥${Number(data.totalAmount ?? 0).toFixed(2)}，定金 ¥${Number(
-              data.deposit ?? 0,
-            ).toFixed(2)}，余款 ¥${Number(data.balance ?? 0).toFixed(2)}（${String(data.termsDays ?? 0)} 天账期）`,
-            `审计事件 ${String(executed.auditId ?? '')}`,
-          ].join('\n')
-      : executed.status === 'conflict'
-        ? `已批准，但执行时发生冲突，未产生写入：${executed.error?.message ?? ''}\n旧令牌已作废，请重新预览。`
-        : `已批准，但执行失败：${executed.error?.message ?? ''}`;
-
   return NextResponse.json({
-    status: nextStatus,
+    status: outcome.nextStatus,
     approved: true,
-    reply,
+    reply: outcome.reply,
     risk: executed.risk,
     reasons: executed.reasons,
     traceId: executed.traceId,
