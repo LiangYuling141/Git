@@ -416,3 +416,4 @@ interface EvalSample {
 - [../plans/2026-11-09-phase-a1-tef-core-extraction.md](../plans/2026-11-09-phase-a1-tef-core-extraction.md) — Phase A1 实施计划：monorepo 骨架与 tef-core 提取
 - [../plans/2026-11-09-phase-a2-mcp-kit-runtime.md](../plans/2026-11-09-phase-a2-mcp-kit-runtime.md) — Phase A2 实施计划：tef-mcp-kit、CRM 垂直 MCP 与 tef-runtime 提取
 - [../plans/2026-11-09-phase-b1-business-gateway.md](../plans/2026-11-09-phase-b1-business-gateway.md) — Phase B1 实施计划：BusinessGateway 端口与垂直读路径改造
+- [../plans/2026-11-09-phase-b1-5-port-neutrality.md](../plans/2026-11-09-phase-b1-5-port-neutrality.md) — Phase B1.5 实施计划：BusinessGateway 端口垂直中立化
