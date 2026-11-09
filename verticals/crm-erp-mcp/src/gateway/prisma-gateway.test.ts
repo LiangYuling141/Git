@@ -35,7 +35,7 @@ async function expectPermissionDenied(call: () => Promise<unknown>): Promise<voi
 }
 
 describe('租户绑定：调用方 tenantId 必须与工厂闭包一致', () => {
-  it('7 个方法在 tenantId 不匹配时全部抛 PERMISSION_DENIED，且不触碰事务', async () => {
+  it('全部公开方法在 tenantId 不匹配时抛 PERMISSION_DENIED，且不触碰事务', async () => {
     const { tx, touched } = untouchableTx();
     const gateway = createPrismaCrmGateway(tx, BOUND_TENANT);
 
@@ -46,6 +46,15 @@ describe('租户绑定：调用方 tenantId 必须与工厂闭包一致', () => 
       ['getProducts', () => gateway.getProducts({ tenantId: OTHER_TENANT, skus: ['SKU-1'] })],
       ['searchProducts', () => gateway.searchProducts({ tenantId: OTHER_TENANT, term: '圣诞' })],
       ['getOrder', () => gateway.getOrder({ tenantId: OTHER_TENANT, orderId: 'ord_1' })],
+      [
+        'query',
+        () =>
+          gateway.query({
+            tenantId: OTHER_TENANT,
+            operation: CRM_QUERY.customerGet,
+            params: { customerId: 'c_1' },
+          }),
+      ],
       [
         'executeEffects',
         () =>

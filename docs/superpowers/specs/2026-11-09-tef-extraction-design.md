@@ -1,6 +1,6 @@
 # TEF 框架剥离与 P1/P2 收尾设计
 
-> 状态：实施中（Phase A1、A2、B1 已完成，B2–D 待实施）
+> 状态：实施中（Phase A1、A2、B1、B1.5 已完成，B2–D 待实施）
 > 日期：2026-11-09
 > 范围：框架与 CRM-ERP 解耦、P1 收尾、P2 准备
 > 权威架构：[14-unified-architecture.md](../../technical/14-unified-architecture.md)
@@ -40,7 +40,7 @@
 
 > **基线说明**：上表记录的是 **Phase A 前基线**的耦合证据。A1/A2 完成后，表中列出的 `src/` 路径均已变为迁移 shim，真实实现已迁移到 `packages/`（`tef-core`、`tef-mcp-kit`、`tef-runtime`）与 `verticals/crm-erp-mcp/`。
 
-当前验证基线：typecheck 通过，`TEF_DB_TESTS=1 npm test` 共 308 个测试通过（281 单元 + 27 真实数据库集成）。
+当前验证基线：typecheck 通过，`TEF_DB_TESTS=1 npm test` 共 309 个测试通过（282 单元 + 27 真实数据库集成）。
 
 ## 3. 设计原则与硬边界
 
@@ -113,13 +113,15 @@ prisma/
 
 | 包 | 负责 | 不负责 |
 |----|------|--------|
-| `tef-core` | 契约引擎、风险模型、哈希/规范化、令牌语义、审计链、端口定义 | 任何 IO、Prisma、Next.js、业务字段 |
+| `tef-core` | 契约引擎、风险模型、哈希/规范化、令牌语义、审计链、垂直中立端口定义（泛型 `query` + `executeEffects`） | 任何 IO、Prisma、Next.js、业务字段 |
 | `tef-mcp-kit` | `createTefMcpServer`、契约工具运行时、preview/token/idempotency/audit 存储、Principal、工具可见性 | 业务规则、业务库 |
 | `tef-runtime` | 输入规范化、上下文装配、意图解析、LLM 客户端、TaskState、MCP 编排 | 写权限、治理状态 |
 | `tef-server` | 会话与鉴权、对话 API、确认 API、多租户路由、业务 MCP 连接管理 | 业务逻辑、工具实现 |
 | `tef-sdk` | 对话 API 客户端、确认 API 客户端、MCP 信封类型 | 运行时逻辑 |
-| `verticals/crm-erp-mcp` | CRM 查询工具、`create_order`/`compensate_order` 契约、业务网关客户端 | 业务数据库、UI |
+| `verticals/crm-erp-mcp` | CRM 查询工具、`create_order`/`compensate_order` 契约、业务网关客户端；CRM DTO 与 `CrmBusinessGateway` 类型化扩展 | 业务数据库、UI |
 | `apps/crm-erp` | UI、业务 REST API、业务库事务、幂等 effects 执行 | 契约、风险、令牌、审计 |
+
+> 核心端口 `BusinessGateway` 不含 CRM 字段，只定义泛型 `query(operation, params)` 与 `executeEffects`；垂直 DTO 与类型化读方法通过 `CrmBusinessGateway extends BusinessGateway` 在 CRM 包内扩展。
 
 ### 4.4 旧代码映射
 
@@ -327,13 +329,14 @@ EXECUTING → SUCCEEDED
 | 步骤 | 交付 | 验收 |
 |------|------|------|
 | B1（已完成） | `BusinessGateway` 端口、`PrismaCrmGateway` 进程内实现、查询工具与契约 `loadEvidence` 改造、租户与 fail-closed 测试 | 既有 308 项测试通过；端口无垂直依赖；租户不匹配显式拒绝 |
+| B1.5（已完成） | `BusinessGateway` 泛型化（`query` + `executeEffects`）与 CRM DTO 下沉；垂直包以 `CrmBusinessGateway` 扩展类型化读方法 | 既有 309 项测试通过；`tef-core` 不含 CRM 字段；`requireCrmGateway` 对不完整实现 fail-closed |
 | B2 | CRM 通用 HTTP 网关（`query`、`evidence:load`、`effects:execute`）+ `HttpCrmGateway` + 可复用一致性测试套件 | 进程内与 HTTP 实现运行同一套端口一致性测试；HTTP 模式覆盖现有契约测试 |
 | B3 | `TefStateStore`/`Clock` 端口、TEF 与 Runtime 独立 schema、TEF Server 进程、JWT/对话/确认 API、Docker Compose | 治理状态可在独立库运行；会话恢复测试通过；三进程一条命令启动 |
 | B4 | 三进程 e2e 闭环与文档 | e2e 对话闭环通过；架构、API、运维文档与实现一致 |
 
 迁移期保留进程内适配器供给现有集成测试；HTTP 模式由新增 e2e 测试覆盖。稳定后切换默认。
 
-> **B1 交接说明**：B1 实际交付为 `BusinessGateway` 端口、`PrismaCrmGateway` 读路径实现、查询工具与契约 `loadEvidence` 的网关化，以及租户绑定与 fail-closed 回归测试（基线 308）。原计划中的 `TefStateStore` 与 `Clock` 端口推迟到 B3。B2 启动前必须先确定三件事：`expectedEvidenceVersion` 的来源与冲突语义、effects 执行的结构化错误契约（`CONFLICT`/`INTERNAL`/`IN_PROGRESS` 等），以及 `BusinessGateway` 端口保持垂直中立（不引入 CRM 专属字段）的裁决。
+> **B1 交接说明**：B1 实际交付为 `BusinessGateway` 端口、`PrismaCrmGateway` 读路径实现、查询工具与契约 `loadEvidence` 的网关化，以及租户绑定与 fail-closed 回归测试（基线 308）。原计划中的 `TefStateStore` 与 `Clock` 端口推迟到 B3。B2 启动前必须先确定三件事：`expectedEvidenceVersion` 的来源与冲突语义、effects 执行的结构化错误契约（`CONFLICT`/`INTERNAL`/`IN_PROGRESS` 等），以及 `BusinessGateway` 端口保持垂直中立（不引入 CRM 专属字段）的裁决（B1.5 已裁决并实施：核心端口泛型化，CRM DTO 与类型化读方法由垂直包 `CrmBusinessGateway` 扩展）。
 
 B1 补充（来自最终评审）：core 边界目前靠 ESLint 的 alias 规则，无法拦截相对路径（如 `../../src/lib/prisma`）与 `node:fs`、`pg`、`ioredis` 等直接 IO 导入。A2 必须引入目录级约束（`no-restricted-paths`、`dependency-cruiser` 或等价方案），并加入一个 CI 探针测试：在 core 内临时写入违规导入时必须报错。
 

@@ -10,5 +10,10 @@ import type { CrmBusinessGateway } from './types';
 export function requireCrmGateway(ctx: Pick<ExecContext, 'gateway'>): CrmBusinessGateway {
   const gateway = ctx.gateway as CrmBusinessGateway | undefined;
   if (!gateway) throw new TefError('INTERNAL', 'BusinessGateway is not configured');
+  // 只实现泛型 query 的网关在类型上满足核心端口，但契约依赖类型化读方法。
+  // 这里 fail-closed，避免契约内部因 undefined 方法调用抛出原生 TypeError。
+  if (typeof gateway.getCustomer !== 'function') {
+    throw new TefError('INTERNAL', 'CRM BusinessGateway implementation is incomplete');
+  }
   return gateway;
 }
