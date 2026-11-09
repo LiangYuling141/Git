@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ExecContext } from '@lymatrix/tef-core';
+import { TefError, type ExecContext } from '@lymatrix/tef-core';
 import { createOrderContract } from './create-order';
 import type { CreateOrderEvidence, CreateOrderParams, CustomerEvidence, ProductEvidence } from './types';
 
@@ -486,5 +486,32 @@ describe('audit（§10.2：审计事件不得存直接个人信息）', () => {
       creditUsed: 47000,
       inventory: { 'XMAS-BALL-01': 15000 },
     });
+  });
+});
+
+describe('loadEvidence（fail-closed）', () => {
+  it('缺少 ctx.gateway 时抛 INTERNAL，且在访问 ctx.db 之前', async () => {
+    let dbTouched = false;
+    const db = new Proxy(
+      {},
+      {
+        get() {
+          dbTouched = true;
+          throw new Error('ctx.db must not be touched');
+        },
+      },
+    ) as never;
+
+    const error = await createOrderContract.loadEvidence(normalized(), ctx({ db })).then(
+      () => {
+        throw new Error('expected loadEvidence to reject, but it resolved');
+      },
+      (reason: unknown) => reason,
+    );
+
+    expect(error).toBeInstanceOf(TefError);
+    expect((error as TefError).code).toBe('INTERNAL');
+    expect((error as TefError).message).toBe('BusinessGateway is not configured');
+    expect(dbTouched).toBe(false);
   });
 });
