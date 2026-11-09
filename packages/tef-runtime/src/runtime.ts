@@ -133,18 +133,24 @@ function isExecutableContract(contract: string | undefined | null): boolean {
   return typeof contract === 'string' && Object.hasOwn(EXECUTION_TOOLS, contract);
 }
 
-function executionToolFor(contract: string): string | null {
-  return EXECUTION_TOOLS[contract] ?? null;
+/**
+ * 契约 → 执行工具名。
+ *
+ * 用 `Object.hasOwn` 而不是直接下标：`EXECUTION_TOOLS['constructor']` 会返回
+ * Object 构造函数这类原型成员，把它当成工具名会绕过白名单。未知契约返回 null。
+ */
+export function executionToolFor(contract: string): string | null {
+  return Object.hasOwn(EXECUTION_TOOLS, contract) ? EXECUTION_TOOLS[contract] : null;
 }
 
 /**
  * 单次执行使用的幂等键。
  *
- * 重试路径必须传入持久化的 key；否则只有未结算标记存在时才复用旧 key，
- * 其余情况一律生成新 key（新操作不能复用上一单的幂等记录）。
+ * 只有未结算标记存在时才复用旧 key；其余情况一律生成新 key
+ * （新操作不能复用上一单的幂等记录）。
  */
-function idempotencyKeyFor(taskState: TaskState, override?: string): string {
-  return override ?? unresolvedIdempotencyKey(taskState) ?? randomUUID();
+function idempotencyKeyFor(taskState: TaskState): string {
+  return unresolvedIdempotencyKey(taskState) ?? randomUUID();
 }
 
 /**
@@ -425,25 +431,22 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
       );
     }
 
-    // 只有未结算执行才允许把旧 key 作为重试锚点；新操作一律换 key。
-    const retryIdempotencyKey = unresolvedIdempotencyKey(taskState);
-
     const contract = intent.contract;
     if (contract === 'compensate_order') {
-      return await handleCompensateOrder(
-        session,
-        intent.slots,
-        { taskState, traceId, toolCalls, intentSource },
-        retryIdempotencyKey,
-      );
+      return await handleCompensateOrder(session, intent.slots, {
+        taskState,
+        traceId,
+        toolCalls,
+        intentSource,
+      });
     }
     if (contract === 'create_order') {
-      return await handleCreateOrder(
-        session,
-        intent.slots as OrderSlots,
-        { taskState, traceId, toolCalls, intentSource },
-        retryIdempotencyKey,
-      );
+      return await handleCreateOrder(session, intent.slots as OrderSlots, {
+        taskState,
+        traceId,
+        toolCalls,
+        intentSource,
+      });
     }
     return await handleQuery(session, contract, intent.slots, { traceId, toolCalls, intentSource, taskState });
   } finally {
@@ -734,7 +737,6 @@ async function handleCompensateOrder(
   session: TefClientSession,
   slots: Record<string, unknown>,
   meta: ExecutionReportMeta,
-  idempotencyKeyOverride?: string,
 ): Promise<AgentTurnResult> {
   const reason = typeof slots.reason === 'string' ? slots.reason : undefined;
   let orderId = typeof slots.orderId === 'string' ? slots.orderId : undefined;
@@ -813,7 +815,7 @@ async function handleCompensateOrder(
         pendingExpiresAt: preview.expiresAt ? new Date(preview.expiresAt) : null,
         activeOrderId: orderId,
         // 重试路径沿用未结算执行的 key；新操作生成新 key。
-        idempotencyKey: idempotencyKeyFor(meta.taskState, idempotencyKeyOverride),
+        idempotencyKey: idempotencyKeyFor(meta.taskState),
         clarificationRounds: 0,
       },
       { ...meta, envelope: preview },
@@ -822,7 +824,7 @@ async function handleCompensateOrder(
 
   // 补偿契约恒为 L2；这里保留防御分支，契约若降级也不至于静默不执行。
   if (preview.status === 'ok' && preview.confirmationToken) {
-    const idempotencyKey = idempotencyKeyFor(meta.taskState, idempotencyKeyOverride);
+    const idempotencyKey = idempotencyKeyFor(meta.taskState);
     const executed = await session.callTool('order.execute_compensate', {
       confirmation_token: preview.confirmationToken,
       idempotency_key: idempotencyKey,
@@ -877,7 +879,6 @@ async function handleCreateOrder(
   session: TefClientSession,
   slots: OrderSlots,
   meta: ExecutionReportMeta,
-  idempotencyKeyOverride?: string,
 ): Promise<AgentTurnResult> {
   let { customerId, sku } = slots;
 
@@ -1014,7 +1015,7 @@ async function handleCreateOrder(
         pendingExpiresAt: preview.expiresAt ? new Date(preview.expiresAt) : null,
         activeCustomerId: customerId,
         // 重试路径沿用未结算执行的 key；新操作生成新 key。
-        idempotencyKey: idempotencyKeyFor(meta.taskState, idempotencyKeyOverride),
+        idempotencyKey: idempotencyKeyFor(meta.taskState),
         clarificationRounds: 0,
       },
       { ...meta, envelope: preview },
@@ -1024,7 +1025,7 @@ async function handleCreateOrder(
   // 5. L1：令牌签发即生效，Runtime 可以直接执行（仍然幂等 + 留审计）。
   // 结果未知后的重试必须复用 TaskState 中的 key，否则会创建第二次副作用。
   if (preview.status === 'ok' && preview.confirmationToken) {
-    const idempotencyKey = idempotencyKeyFor(meta.taskState, idempotencyKeyOverride);
+    const idempotencyKey = idempotencyKeyFor(meta.taskState);
     const executed = await session.callTool('order.execute_create', {
       confirmation_token: preview.confirmationToken,
       idempotency_key: idempotencyKey,

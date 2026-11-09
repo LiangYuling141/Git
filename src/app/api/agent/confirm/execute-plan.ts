@@ -11,10 +11,15 @@ export interface ExecutionPlan {
   successStatus: Extract<TaskStatus, 'completed' | 'compensated'>;
 }
 
-export function resolveExecutionPlan(contractOperation: string | undefined): ExecutionPlan {
-  return contractOperation === 'compensate_order'
-    ? { tool: 'order.execute_compensate', successStatus: 'compensated' }
-    : { tool: 'order.execute_create', successStatus: 'completed' };
+export function resolveExecutionPlan(contractOperation: string | undefined): ExecutionPlan | null {
+  if (contractOperation === 'create_order') {
+    return { tool: 'order.execute_create', successStatus: 'completed' };
+  }
+  if (contractOperation === 'compensate_order') {
+    return { tool: 'order.execute_compensate', successStatus: 'compensated' };
+  }
+  // 未知契约 fail closed：绝不能把不认识的契约默认当成 create_order。
+  return null;
 }
 
 /**

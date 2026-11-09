@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Envelope, TaskState } from '@lymtrix/tef-core';
 import type { TefClientSession } from '@lymtrix/tef-mcp-kit';
-import { reportCompensation, reportExecution, runAgentTurn } from './runtime';
+import { executionToolFor, reportCompensation, reportExecution, runAgentTurn } from './runtime';
 import type { TaskStatePatch } from './task-state';
 
 /**
@@ -679,4 +679,18 @@ describe('Runtime：未结算执行的跨轮次生命周期', () => {
     expect(next.patch.idempotencyKey).toBeNull();
     expect(next.patch.pendingExecutionAttemptId).toBeNull();
   });
+});
+
+describe('Runtime：执行工具名只来自契约白名单', () => {
+  it('白名单契约映射到唯一工具', () => {
+    expect(executionToolFor('create_order')).toBe('order.execute_create');
+    expect(executionToolFor('compensate_order')).toBe('order.execute_compensate');
+  });
+
+  it.each(['constructor', 'toString', 'hasOwnProperty', '__proto__', 'refund_order', ''])(
+    '非白名单契约 %j 返回 null，绝不返回原型成员或函数对象',
+    (contract) => {
+      expect(executionToolFor(contract)).toBeNull();
+    },
+  );
 });

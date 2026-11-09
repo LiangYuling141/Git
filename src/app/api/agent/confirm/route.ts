@@ -1,9 +1,9 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { verifyTokenString } from '@lymtrix/tef-mcp-kit/token';
+import { verifyTokenString, type TokenClaims } from '@lymtrix/tef-mcp-kit/token';
 import { connectTefClient } from '@/mcp-server';
 import { prisma } from '@/lib/prisma';
-import { taskStateStore } from '@/tef/task-state';
+import { taskStateStore, type TaskStatePatch } from '@/tef/task-state';
 import { resolveTenantContext } from '@/tef/tenant';
 import { loadTokenSecret } from '@/tef/token';
 import type { Envelope, TaskState, TenantRole } from '@/tef/types';
@@ -48,18 +48,53 @@ function authoritativeUnresolvedContract(state: TaskState | null): string | null
 }
 
 /**
- * 只读取令牌里的契约声明，用于与 marker 的权威契约交叉校验。
+ * 读取并验签请求令牌声明，用于契约交叉校验与 marker 权威状态写入。
  *
  * 传入 epoch 时间是为了跳过过期检查：marker 重试可能使用已过期但已消费的
  * 令牌，Phase 1 会先查 attempt 再决定是否消费；令牌生命周期仍由工具层判定。
- * 这里只关心签名是否有效以及令牌属于哪个契约。
+ * 签名无效或格式错误返回 null，调用方必须 fail closed。
  */
-function requestTokenContract(token: string, secret: string): string | null {
+function requestTokenClaims(token: string, secret: string): TokenClaims | null {
   try {
-    return verifyTokenString(token, secret, new Date(0)).contract ?? null;
+    return verifyTokenString(token, secret, new Date(0));
   } catch {
     return null;
   }
+}
+
+/**
+ * 当前待确认操作的契约。
+ *
+ * 新批准路径用它和请求令牌声明交叉校验：旧确认卡片（例如 compensate）
+ * 不能在新预览（例如 create）之后驱动执行。intent 与预览同轮写入，
+ * 是当前操作最完整的快照；缺失时才回退到 pending 预览。
+ */
+function currentOperationContract(state: TaskState | null): string | null {
+  const intent = state?.intent;
+  if (intent?.kind === 'operation' && typeof intent.contract === 'string' && intent.contract) {
+    return intent.contract;
+  }
+  const previewContract = state?.pendingPreview?.contract;
+  return typeof previewContract === 'string' && previewContract ? previewContract : null;
+}
+
+/**
+ * 结果未知时 marker 的权威操作字段，必须与本次实际执行的令牌同源。
+ *
+ * 重试选择执行工具只认 marker 的 intent；若写入 marker 时沿用上一轮操作的
+ * intent/pending 快照，令牌命名空间与工具就会错位。slots 只在与令牌契约
+ * 一致时沿用当前状态，跨契约时丢弃，绝不携带其他操作的业务参数。
+ */
+function authoritativePendingPatch(claims: TokenClaims | null, state: TaskState | null): TaskStatePatch {
+  if (!claims) return {};
+  const sameContractIntent =
+    state?.intent?.kind === 'operation' && state.intent.contract === claims.contract ? state.intent : null;
+  return {
+    intent: { kind: 'operation', contract: claims.contract, slots: sameContractIntent?.slots ?? {} },
+    pendingPreviewId: claims.previewId || state?.pendingPreview?.previewId || null,
+    pendingContract: claims.contract,
+    pendingContractVersion: claims.contractVersion || null,
+  };
 }
 
 export async function POST(request: Request) {
@@ -139,6 +174,8 @@ export async function POST(request: Request) {
   let executionToken: string;
   /** 本次执行应调用的契约；未结算重试只认 marker 的 intent。 */
   let contractOperation: string;
+  /** 新批准路径验签后的请求令牌声明；marker 重试不依赖它。 */
+  let requestClaims: TokenClaims | null = null;
 
   if (unresolvedAttemptId) {
     // 跳过人工批准：Phase 1 先检查 attempt 再消费令牌，已使用/已批准的
@@ -161,7 +198,7 @@ export async function POST(request: Request) {
     // 不能用旧快照或跨操作令牌把写入送进错误的幂等命名空间。
     const candidateToken = requestToken || state?.pendingConfirmationToken || null;
     if (candidateToken) {
-      const claimed = requestTokenContract(candidateToken, secret);
+      const claimed = requestTokenClaims(candidateToken, secret)?.contract ?? null;
       if (claimed && claimed !== authoritative) {
         return NextResponse.json(
           {
@@ -196,13 +233,55 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'validation', message: '需要 confirmationToken' }, { status: 400 });
     }
     executionToken = requestToken;
-    // 新批准路径以令牌声明的契约为准（它绑定预览快照）；令牌无法解析时
-    // 回退到 pending 快照与 intent。绝不能默认成 create_order。
-    contractOperation =
-      requestTokenContract(requestToken, secret) ??
-      state?.pendingPreview?.contract ??
-      (state?.intent?.kind === 'operation' ? state.intent.contract : undefined) ??
-      'create_order';
+
+    if (action === 'approve') {
+      // 新批准路径必须能验签：不可验签的令牌不能驱动执行命名空间。
+      const claims = requestTokenClaims(requestToken, secret);
+      if (!claims) {
+        return NextResponse.json(
+          {
+            error: 'CONFLICT',
+            message: '无法验证确认令牌，已阻止执行。请刷新确认页并使用当前预览重新确认。',
+            traceId: state?.traceId ?? null,
+          },
+          { status: 409 },
+        );
+      }
+
+      // 旧确认卡片可能在新预览之后才被点击：令牌契约与当前待确认操作不一致时，
+      // 绝不能用旧令牌挑一个执行工具并写入 marker，否则 intent 与尝试会分属
+      // 两个命名空间，重试要么死锁要么重复写入。
+      const pendingContract = currentOperationContract(state);
+      if (pendingContract && claims.contract !== pendingContract) {
+        return NextResponse.json(
+          {
+            error: 'CONFLICT',
+            message: `确认卡片已过期：令牌对应 ${claims.contract}，当前待确认操作是 ${pendingContract}。已阻止执行，请刷新确认页并使用当前预览。`,
+            traceId: state?.traceId ?? null,
+          },
+          { status: 409 },
+        );
+      }
+
+      // 工具名只能来自白名单；未知契约 fail closed，绝不能默认成 create_order。
+      if (!Object.hasOwn(EXECUTION_TOOLS, claims.contract)) {
+        return NextResponse.json(
+          {
+            error: 'CONFLICT',
+            message: `无法识别的操作契约 ${claims.contract || '(空)'}，已阻止执行。请刷新确认页后重新发起。`,
+            traceId: state?.traceId ?? null,
+          },
+          { status: 409 },
+        );
+      }
+
+      requestClaims = claims;
+      contractOperation = claims.contract;
+    } else {
+      // 拒绝不产生写入；契约只用于保持响应结构一致，不参与工具选择。
+      contractOperation = requestTokenClaims(requestToken, secret)?.contract ?? currentOperationContract(state) ?? '';
+    }
+
     const human = await connectTefClient({ principal: humanPrincipal, traceId: `tr_confirm_${Date.now()}`, secret });
     try {
       decision = await human.callTool(action === 'approve' ? 'confirmation.approve' : 'confirmation.reject', {
@@ -264,7 +343,21 @@ export async function POST(request: Request) {
     });
   }
 
+  // 未知契约必须 fail closed：为不认识的契约默认选择 create_order 会把写入
+  // 送进错误的幂等命名空间。正常情况下上面的白名单/权威 intent 已保证可达性。
   const plan = resolveExecutionPlan(contractOperation);
+  if (!plan) {
+    return NextResponse.json(
+      {
+        status: 'conflict',
+        approved: false,
+        error: 'CONFLICT',
+        message: `无法识别操作契约 ${contractOperation || '(空)'}，已阻止执行。请刷新确认页后重新发起。`,
+        traceId,
+      },
+      { status: 409 },
+    );
+  }
 
   // 重试必须沿用未结算尝试的 key；没有 key 就无法命中原 attempt，
   // 生成新 key 会绕过 Phase 1 的尝试检查，绝不能静默降级。
@@ -303,6 +396,9 @@ export async function POST(request: Request) {
             idempotencyKey,
             pendingExecutionAttemptId: attemptId,
             pendingConfirmationToken: executionToken,
+            // 新批准路径：marker 的 intent/pending 必须与本次实际执行的令牌同源。
+            // marker 重试：这些字段在首次写入 marker 时已经持久化，保持不动。
+            ...(unresolvedAttemptId ? {} : authoritativePendingPatch(requestClaims, state)),
           },
           state.version,
         )
@@ -394,6 +490,9 @@ export async function POST(request: Request) {
               idempotencyKey,
               pendingExecutionAttemptId: outcome.pendingExecutionAttemptId,
               pendingConfirmationToken: executionToken,
+              // 新批准路径写入令牌声明的权威 intent/pending；marker 重试沿用
+              // 已持久化的权威字段，不能被请求体里的其他令牌改写。
+              ...(unresolvedAttemptId ? {} : authoritativePendingPatch(requestClaims, state)),
             },
         state.version,
       )

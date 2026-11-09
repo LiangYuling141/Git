@@ -17,6 +17,9 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   findSession: vi.fn(),
   resolveTenant: vi.fn(),
+  /** 可注入失败：模拟执行阶段连接服务不可用。 */
+  connect: vi.fn(),
+  failAgentConnect: false,
 }));
 
 vi.mock('next/headers', () => ({
@@ -40,17 +43,7 @@ vi.mock('@/tef/task-state', () => ({
 }));
 
 vi.mock('@/mcp-server', () => ({
-  connectTefClient: async ({ principal }: { principal: { clientKind: string } }) => ({
-    async callTool(tool: string, args: Record<string, unknown>) {
-      mocks.toolCalls.push({ clientKind: principal.clientKind, tool, args });
-      const response = mocks.responses[tool];
-      if (!response) throw new Error(`unexpected tool ${tool}`);
-      return response;
-    },
-    async close() {
-      // no-op
-    },
-  }),
+  connectTefClient: mocks.connect,
 }));
 
 import { POST } from './route';
@@ -131,6 +124,26 @@ beforeEach(() => {
   mocks.update.mockReset();
   mocks.findSession.mockReset();
   mocks.resolveTenant.mockReset();
+  mocks.connect.mockReset();
+  mocks.failAgentConnect = false;
+
+  mocks.connect.mockImplementation(async ({ principal }: { principal: { clientKind: string } }) => {
+    if (mocks.failAgentConnect && principal.clientKind === 'agent') {
+      mocks.failAgentConnect = false;
+      throw new Error('connect refused');
+    }
+    return {
+      async callTool(tool: string, args: Record<string, unknown>) {
+        mocks.toolCalls.push({ clientKind: principal.clientKind, tool, args });
+        const response = mocks.responses[tool];
+        if (!response) throw new Error(`unexpected tool ${tool}`);
+        return response;
+      },
+      async close() {
+        // no-op
+      },
+    };
+  });
 
   mocks.findSession.mockResolvedValue({
     id: 's_confirm',
@@ -290,6 +303,7 @@ describe('确认路由：未结算执行的重试', () => {
   });
 
   it('正常首次批准仍先调用 confirmation.approve，再复用持久化 key 执行', async () => {
+    const token = signedToken('create_order');
     mocks.load.mockResolvedValue(makeState());
     mocks.responses['confirmation.approve'] = {
       status: 'ok',
@@ -300,7 +314,7 @@ describe('确认路由：未结算执行的重试', () => {
     mocks.responses['order.execute_create'] = SUCCESS;
 
     const response = await POST(
-      post({ confirmationToken: 'ct_fresh', action: 'approve', conversationId: 'conv_confirm' }),
+      post({ confirmationToken: token, action: 'approve', conversationId: 'conv_confirm' }),
     );
     const payload = await response.json();
 
@@ -309,9 +323,10 @@ describe('确认路由：未结算执行的重试', () => {
       'order.execute_create',
     ]);
     expect(mocks.toolCalls[0].clientKind).toBe('confirmation-ui');
+    expect(mocks.toolCalls[0].args.confirmation_token).toBe(token);
     expect(mocks.toolCalls[1].clientKind).toBe('agent');
     expect(mocks.toolCalls[1].args).toEqual({
-      confirmation_token: 'ct_fresh',
+      confirmation_token: token,
       idempotency_key: 'idem_confirm',
     });
     expect(payload.status).toBe('completed');
@@ -482,5 +497,181 @@ describe('确认路由：未结算执行的重试', () => {
       confirmation_token: 'ct_stored',
       idempotency_key: 'idem_confirm',
     });
+  });
+});
+
+describe('确认路由：旧确认卡片与令牌验签', () => {
+  it('新 create 预览之后点击旧 compensate 卡片：409 CONFLICT，零工具调用，不写 marker', async () => {
+    // 当前操作是 create（intent 与 pendingPreview 同为 create），旧卡片令牌声明 compensate。
+    mocks.load.mockResolvedValue(makeState());
+
+    const response = await POST(
+      post({
+        confirmationToken: signedToken('compensate_order'),
+        action: 'approve',
+        conversationId: 'conv_confirm',
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.error).toBe('CONFLICT');
+    expect(payload.message).toContain('刷新确认页');
+    expect(payload.message).toContain('create_order');
+    expect(payload.message).toContain('compensate_order');
+    // 连 confirmation.approve 都不应调用：旧令牌不能被消费，marker 也不能被改写。
+    expect(mocks.toolCalls).toHaveLength(0);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it('新批准路径的令牌无法验签：409 CONFLICT，零工具调用，不写 marker', async () => {
+    mocks.load.mockResolvedValue(makeState());
+
+    const response = await POST(
+      post({ confirmationToken: 'ct_not_signed', action: 'approve', conversationId: 'conv_confirm' }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.error).toBe('CONFLICT');
+    expect(payload.message).toContain('无法验证确认令牌');
+    expect(mocks.toolCalls).toHaveLength(0);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it('新批准结果未知：marker 写回令牌声明的 intent/pending，后续重试使用正确工具', async () => {
+    const token = signedToken('compensate_order');
+    mocks.load.mockResolvedValueOnce(
+      makeState({
+        status: 'awaiting_confirmation',
+        intent: {
+          kind: 'operation',
+          contract: 'compensate_order',
+          slots: { orderId: 'o_1', reason: '客户取消' },
+        },
+        pendingPreview: {
+          previewId: 'pv_current_comp',
+          intentHash: 'ih_current_comp',
+          contract: 'compensate_order',
+          contractVersion: '1.0',
+          expiresAt: new Date('2026-11-10T00:15:00.000Z'),
+        },
+      }),
+    );
+    mocks.responses['confirmation.approve'] = {
+      status: 'ok',
+      diff: [],
+      auditId: 'aud_approve',
+      traceId: 'tr_approved',
+    };
+    mocks.responses['order.execute_compensate'] = {
+      status: 'error',
+      error: { code: 'EXECUTION_UNKNOWN', message: 'commit outcome unknown' },
+      traceId: 'tr_exec',
+    };
+
+    const response = await POST(
+      post({ confirmationToken: token, action: 'approve', conversationId: 'conv_confirm' }),
+    );
+    const payload = await response.json();
+
+    expect(payload.status).toBe('executing');
+    expect(mocks.toolCalls.map((call) => call.tool)).toEqual([
+      'confirmation.approve',
+      'order.execute_compensate',
+    ]);
+
+    const patch = mocks.update.mock.calls[0][2];
+    expect(patch).toMatchObject({
+      status: 'executing',
+      idempotencyKey: 'idem_confirm',
+      pendingExecutionAttemptId: 'pending:idem_confirm',
+      pendingConfirmationToken: token,
+      // marker 的权威 intent 必须来自令牌声明，而不是上一轮残留。
+      intent: {
+        kind: 'operation',
+        contract: 'compensate_order',
+        slots: { orderId: 'o_1', reason: '客户取消' },
+      },
+      pendingPreviewId: 'pv_signed',
+      pendingContract: 'compensate_order',
+      pendingContractVersion: '1.0',
+    });
+
+    // 模拟 marker 持久化后用户再次点击同一确认操作：只能用 marker 的 intent 选工具。
+    mocks.load.mockResolvedValueOnce(
+      makeState({
+        status: 'executing',
+        pendingExecutionAttemptId: patch.pendingExecutionAttemptId,
+        pendingConfirmationToken: patch.pendingConfirmationToken,
+        idempotencyKey: patch.idempotencyKey,
+        intent: patch.intent,
+        pendingPreview: {
+          previewId: patch.pendingPreviewId,
+          intentHash: 'ih_signed',
+          contract: patch.pendingContract,
+          contractVersion: patch.pendingContractVersion,
+          expiresAt: new Date('2030-01-01T00:00:00.000Z'),
+        },
+      }),
+    );
+    mocks.toolCalls.length = 0;
+    mocks.responses['order.execute_compensate'] = {
+      status: 'ok',
+      data: { orderId: 'o_1' },
+      auditId: 'aud_exec',
+      traceId: 'tr_exec',
+    };
+
+    const retry = await POST(post({ action: 'approve', conversationId: 'conv_confirm' }));
+    const retryPayload = await retry.json();
+
+    expect(retry.status).toBe(200);
+    expect(retryPayload.status).toBe('compensated');
+    expect(mocks.toolCalls.map((call) => call.tool)).toEqual(['order.execute_compensate']);
+    expect(mocks.toolCalls[0].args).toEqual({
+      confirmation_token: token,
+      idempotency_key: 'idem_confirm',
+    });
+  });
+
+  it('新批准执行客户端连接失败：409 非终结 executing，写入权威 marker，不清空现场', async () => {
+    const token = signedToken('create_order');
+    mocks.load.mockResolvedValue(makeState());
+    mocks.responses['confirmation.approve'] = {
+      status: 'ok',
+      diff: [],
+      auditId: 'aud_approve',
+      traceId: 'tr_approved',
+    };
+    mocks.failAgentConnect = true;
+
+    const response = await POST(
+      post({ confirmationToken: token, action: 'approve', conversationId: 'conv_confirm' }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.status).toBe('executing');
+    expect(payload.reply).toContain('待对账');
+    // 只有人工批准调用；执行客户端连接失败，没有执行工具调用。
+    expect(mocks.toolCalls.map((call) => call.tool)).toEqual(['confirmation.approve']);
+
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+    const patch = mocks.update.mock.calls[0][2];
+    expect(patch).toMatchObject({
+      status: 'executing',
+      idempotencyKey: 'idem_confirm',
+      pendingExecutionAttemptId: 'pending:idem_confirm',
+      pendingConfirmationToken: token,
+      intent: { kind: 'operation', contract: 'create_order', slots: {} },
+      pendingPreviewId: 'pv_signed',
+      pendingContract: 'create_order',
+      pendingContractVersion: '1.0',
+    });
+    // 现场不能被清空：marker、intent、幂等键都必须保留。
+    expect(patch.pendingExecutionAttemptId).not.toBeNull();
+    expect(patch.intent).not.toBeNull();
+    expect(patch.idempotencyKey).toBe('idem_confirm');
   });
 });

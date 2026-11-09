@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { Envelope } from '@/tef/types';
-import { resolveConfirmationOutcome, resolveExecutionPlan } from './execute-plan';
+import { resolveConfirmationOutcome, resolveExecutionPlan, type ExecutionPlan } from './execute-plan';
+
+/** 已知契约必须有计划；用断言收窄类型，失败时直接暴露契约映射回归。 */
+function planFor(contract: string): ExecutionPlan {
+  const plan = resolveExecutionPlan(contract);
+  if (!plan) throw new Error(`expected an execution plan for ${contract}`);
+  return plan;
+}
 
 describe('确认路由的执行计划', () => {
   it('创建订单 → order.execute_create，成功后 completed', () => {
@@ -10,11 +17,11 @@ describe('确认路由的执行计划', () => {
     });
   });
 
-  it('缺省契约按创建订单处理', () => {
-    expect(resolveExecutionPlan(undefined)).toEqual({
-      tool: 'order.execute_create',
-      successStatus: 'completed',
-    });
+  it('未知或缺失契约 fail closed：返回 null，不默认创建订单', () => {
+    expect(resolveExecutionPlan(undefined)).toBeNull();
+    expect(resolveExecutionPlan('')).toBeNull();
+    expect(resolveExecutionPlan('refund_order')).toBeNull();
+    expect(resolveExecutionPlan('constructor')).toBeNull();
   });
 
   it('补偿订单 → order.execute_compensate，成功后 compensated', () => {
@@ -26,8 +33,8 @@ describe('确认路由的执行计划', () => {
 });
 
 describe('确认路由的执行结果映射', () => {
-  const createPlan = resolveExecutionPlan('create_order');
-  const compensatePlan = resolveExecutionPlan('compensate_order');
+  const createPlan = planFor('create_order');
+  const compensatePlan = planFor('compensate_order');
 
   const pendingEnvelope = (code: 'EXECUTION_IN_PROGRESS' | 'EXECUTION_UNKNOWN'): Envelope => ({
     status: 'error',
