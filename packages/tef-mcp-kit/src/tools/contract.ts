@@ -288,14 +288,20 @@ function storedEnvelope(value: unknown): Envelope | null {
   return null;
 }
 
-/** 已结算失败尝试的响应：优先返回 Phase 3 存储的原始信封。 */
+/**
+ * 已结算失败尝试的响应：优先返回 Phase 3 存储的原始信封。
+ *
+ * 没有存储信封时（历史数据）仍要携带 `attemptStatus: 'failed'`：这是路由
+ * 区分“确定失败、可安全清 marker”与“结果未知、必须保留 marker”的机读信号。
+ */
 function storedFailureEnvelope(attempt: ExistingAttempt): Envelope {
   const stored = storedEnvelope(attempt.result);
   if (stored) return stored;
+  const data = { attemptId: attempt.attemptId, attemptStatus: 'failed' };
   if (attempt.errorCode === 'CONFLICT') {
-    return conflict(attempt.errorMessage ?? 'execution failed', { traceId: attempt.traceId });
+    return conflict(attempt.errorMessage ?? 'execution failed', { traceId: attempt.traceId, data });
   }
-  return fail('INTERNAL', attempt.errorMessage ?? 'execution failed');
+  return fail('INTERNAL', attempt.errorMessage ?? 'execution failed', [], { data });
 }
 
 /**
@@ -785,7 +791,13 @@ export async function settleFailure(
   message: string,
 ): Promise<Envelope> {
   const settledAt = actor.now ?? new Date();
-  const response = code === 'CONFLICT' ? conflict(message, { traceId: actor.traceId }) : fail('INTERNAL', message);
+  // attempt 在这条路径上被原子推进为 failed；把该事实写进机读字段，调用方
+  // 无需解析错误码或 message 就能判断“原尝试已确定失败，可以清理现场”。
+  const failureData = { attemptId: attempt.attemptId, attemptStatus: 'failed' };
+  const response =
+    code === 'CONFLICT'
+      ? conflict(message, { traceId: actor.traceId, data: failureData })
+      : fail('INTERNAL', message, [], { data: failureData });
   const auditSpec = attempt.contract.audit(
     attempt.snapshot.normalizedArgs as never,
     attempt.revalidated.evidence,

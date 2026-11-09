@@ -1,3 +1,4 @@
+import { executionToolFor } from '@lymtrix/tef-runtime/runtime';
 import type { Envelope, ErrorCode, TaskStatus } from '@/tef/types';
 
 /**
@@ -11,12 +12,21 @@ export interface ExecutionPlan {
   successStatus: Extract<TaskStatus, 'completed' | 'compensated'>;
 }
 
+/**
+ * 契约白名单与 Runtime 共用同一份映射（`executionToolFor`），避免路由里的
+ * 重试白名单和 Runtime 的工具选择漂移。未知契约一律 fail closed。
+ */
+export function isExecutableContract(contract: string | null | undefined): contract is string {
+  return typeof contract === 'string' && executionToolFor(contract) !== null;
+}
+
 export function resolveExecutionPlan(contractOperation: string | undefined): ExecutionPlan | null {
-  if (contractOperation === 'create_order') {
-    return { tool: 'order.execute_create', successStatus: 'completed' };
+  const tool = contractOperation ? executionToolFor(contractOperation) : null;
+  if (tool === 'order.execute_create') {
+    return { tool, successStatus: 'completed' };
   }
-  if (contractOperation === 'compensate_order') {
-    return { tool: 'order.execute_compensate', successStatus: 'compensated' };
+  if (tool === 'order.execute_compensate') {
+    return { tool, successStatus: 'compensated' };
   }
   // 未知契约 fail closed：绝不能把不认识的契约默认当成 create_order。
   return null;

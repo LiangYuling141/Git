@@ -9,6 +9,7 @@ import { loadTokenSecret } from '@/tef/token';
 import type { Envelope, TaskState, TenantRole } from '@/tef/types';
 import {
   EXECUTION_PENDING_REPLY,
+  isExecutableContract,
   resolveConfirmationOutcome,
   resolveExecutionPlan,
 } from './execute-plan';
@@ -27,24 +28,18 @@ import {
 
 const APPROVER_ROLES: TenantRole[] = ['owner'];
 
-/** 未结算执行可重试的契约白名单；工具名只能由 marker 的 intent 契约映射。 */
-const EXECUTION_TOOLS: Record<string, 'order.execute_create' | 'order.execute_compensate'> = {
-  create_order: 'order.execute_create',
-  compensate_order: 'order.execute_compensate',
-};
-
 /**
  * 未结算执行的权威契约。
  *
  * marker 写入时 Runtime 会把当前操作的 intent 一并持久化；它才是重试时
  * “这笔未结算写入到底是什么操作”的事实源。`pendingPreview.contract` 可能是
- * 更早操作残留的旧快照，绝不能用来选择执行工具。
+ * 更早操作残留的旧快照，绝不能用来选择执行工具。契约白名单与 Runtime 共用
+ * `executionToolFor`，避免两处映射漂移。
  */
 function authoritativeUnresolvedContract(state: TaskState | null): string | null {
   const intent = state?.intent;
   if (!intent || intent.kind !== 'operation') return null;
-  const contract = intent.contract;
-  return typeof contract === 'string' && Object.hasOwn(EXECUTION_TOOLS, contract) ? contract : null;
+  return isExecutableContract(intent.contract) ? intent.contract : null;
 }
 
 /**
@@ -89,11 +84,19 @@ function authoritativePendingPatch(claims: TokenClaims | null, state: TaskState 
   if (!claims) return {};
   const sameContractIntent =
     state?.intent?.kind === 'operation' && state.intent.contract === claims.contract ? state.intent : null;
+  // pending 快照必须与本次执行的令牌同源：previewId / intentHash / expiresAt
+  // 都优先取令牌声明，只有令牌未携带时才回退到当前状态。
+  const tokenExpiresAt = claims.expiresAt ? new Date(claims.expiresAt) : null;
   return {
     intent: { kind: 'operation', contract: claims.contract, slots: sameContractIntent?.slots ?? {} },
     pendingPreviewId: claims.previewId || state?.pendingPreview?.previewId || null,
+    pendingIntentHash: claims.intentHash || state?.pendingPreview?.intentHash || null,
     pendingContract: claims.contract,
     pendingContractVersion: claims.contractVersion || null,
+    pendingExpiresAt:
+      tokenExpiresAt && !Number.isNaN(tokenExpiresAt.getTime())
+        ? tokenExpiresAt
+        : (state?.pendingPreview?.expiresAt ?? null),
   };
 }
 
@@ -170,7 +173,7 @@ export async function POST(request: Request) {
 
   let decision: Envelope | null = null;
   let traceId: string;
-  /** 本次执行使用的令牌：重试时优先请求体，其次服务端持久化值。 */
+  /** 本次执行使用的令牌：重试时优先可验签的服务端持久化值，其次可验签的请求令牌。 */
   let executionToken: string;
   /** 本次执行应调用的契约；未结算重试只认 marker 的 intent。 */
   let contractOperation: string;
@@ -194,39 +197,49 @@ export async function POST(request: Request) {
       );
     }
 
-    // 纵深防御：请求/服务端令牌声明的契约必须与 marker 的权威契约一致。
-    // 不能用旧快照或跨操作令牌把写入送进错误的幂等命名空间。
-    const candidateToken = requestToken || state?.pendingConfirmationToken || null;
-    if (candidateToken) {
-      const claimed = requestTokenClaims(candidateToken, secret)?.contract ?? null;
-      if (claimed && claimed !== authoritative) {
-        return NextResponse.json(
-          {
-            status: 'executing',
-            approved: true,
-            reply: '执行结果待对账，但请求令牌与原操作契约不一致，需人工对账后再试。',
-            traceId: state?.traceId ?? null,
-          },
-          { status: 409 },
-        );
-      }
-    }
+    // 令牌选择必须 fail closed：请求体里的非空字符串不代表可用令牌。
+    // 服务端持久化令牌与 marker 同源，优先使用；只有它缺失或不可验签时，
+    // 才回退到可验签的请求令牌。两者都无法验签时直接返回非终结 executing，
+    // 不调用任何工具、不更新 TaskState，等待人工对账。
+    const persistedToken = state?.pendingConfirmationToken || null;
+    const persistedClaims = persistedToken ? requestTokenClaims(persistedToken, secret) : null;
+    const incomingClaims = requestToken ? requestTokenClaims(requestToken, secret) : null;
 
-    // 空字符串令牌必须回退到服务端持久化值，而不是被 `??` 当成有效值。
-    const storedToken = requestToken || state?.pendingConfirmationToken || null;
-    if (!storedToken) {
+    if (persistedToken && persistedClaims) {
+      executionToken = persistedToken;
+    } else if (requestToken && incomingClaims) {
+      executionToken = requestToken;
+    } else {
       return NextResponse.json(
         {
           status: 'executing',
           approved: true,
-          reply: '执行结果待对账，但缺少确认令牌，需人工对账后再试。',
+          reply: '执行结果待对账，但缺少确认令牌或令牌无法验证，需人工对账后再试。',
+          traceId: state?.traceId ?? null,
+        },
+        { status: 409 },
+      );
+    }
+
+    // 纵深防御：任何可验签的令牌声明的契约都必须与 marker 的权威契约一致。
+    // 请求令牌可能来自旧确认卡片，服务端令牌也可能与 intent 漂移；两者都不能
+    // 把写入送进错误的幂等命名空间。
+    const executionClaims = persistedToken && persistedClaims ? persistedClaims : incomingClaims;
+    if (
+      (incomingClaims && incomingClaims.contract !== authoritative) ||
+      (executionClaims && executionClaims.contract !== authoritative)
+    ) {
+      return NextResponse.json(
+        {
+          status: 'executing',
+          approved: true,
+          reply: '执行结果待对账，但确认令牌与原操作契约不一致，需人工对账后再试。',
           traceId: state?.traceId ?? null,
         },
         { status: 409 },
       );
     }
     contractOperation = authoritative;
-    executionToken = storedToken;
     traceId = state?.traceId ?? `tr_exec_${Date.now()}`;
   } else {
     if (!requestToken) {
@@ -263,8 +276,9 @@ export async function POST(request: Request) {
         );
       }
 
-      // 工具名只能来自白名单；未知契约 fail closed，绝不能默认成 create_order。
-      if (!Object.hasOwn(EXECUTION_TOOLS, claims.contract)) {
+      // 工具名只能来自与 Runtime 共用的白名单；未知契约 fail closed，
+      // 绝不能默认成 create_order。
+      if (!isExecutableContract(claims.contract)) {
         return NextResponse.json(
           {
             error: 'CONFLICT',
@@ -446,19 +460,40 @@ export async function POST(request: Request) {
     );
   }
 
-  // 未结算重试返回 CONFLICT：不能据此断言原 attempt 已失败，也不能清空
-  // marker/key/token。保持非终结状态等待对账或人工处理。
-  if (unresolvedAttemptId && executed.status === 'conflict') {
-    return keepUnresolved(
-      '执行结果待对账：重试返回冲突，但不能确认原尝试已经失败。请等待对账或人工处理；不要重新预览。',
-      200,
-      {
-        risk: executed.risk,
-        reasons: executed.reasons,
-        auditId: executed.auditId,
-        error: executed.error,
-      },
-    );
+  // marker 重试的非成功结果必须保守处理：只有工具层明确记录该 attempt 已
+  // 确定失败（data.attemptStatus === 'failed'）时才能清 marker。VALIDATION_ERROR
+  // / INTERNAL 等错误可能发生在原 attempt 仍将提交的并发窗口，清 marker 或换 key
+  // 会让下一次重新预览产生第二次副作用。
+  if (unresolvedAttemptId && executed.status !== 'ok') {
+    const extra = {
+      risk: executed.risk,
+      reasons: executed.reasons,
+      auditId: executed.auditId,
+      error: executed.error,
+    };
+    // 未结算重试返回 CONFLICT：不能据此断言原 attempt 已失败，也不能清空
+    // marker/key/token。保持非终结状态等待对账或人工处理。
+    if (executed.status === 'conflict' || executed.error?.code === 'CONFLICT') {
+      return keepUnresolved(
+        '执行结果待对账：重试返回冲突，但不能确认原尝试已经失败。请等待对账或人工处理；不要重新预览。',
+        200,
+        extra,
+      );
+    }
+    const code = executed.error?.code;
+    if (code === 'EXECUTION_IN_PROGRESS' || code === 'EXECUTION_UNKNOWN') {
+      return keepUnresolved(EXECUTION_PENDING_REPLY, 409, extra);
+    }
+    const data = (executed.data ?? {}) as Record<string, unknown>;
+    if (data.attemptStatus !== 'failed') {
+      return keepUnresolved(
+        '执行结果待对账：执行返回错误，但无法确认原尝试已经失败。请等待对账或人工处理；不要重新预览。',
+        409,
+        extra,
+      );
+    }
+    // attemptStatus === 'failed'：工具层已确认该 attempt 失败，允许走下面的
+    // 终结路径清空 marker/key/token。
   }
 
   const outcome = resolveConfirmationOutcome(executed, plan, contractOperation, idempotencyKey);
