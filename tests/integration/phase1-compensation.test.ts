@@ -207,7 +207,11 @@ describeDb('Phase 1 补偿闭环（真实数据库）', () => {
           'order.execute_compensate',
         ]),
       );
-      const compensationEvent = trace.data.events.find((event) => event.tool === 'order.execute_compensate');
+      // Phase C 起一次执行会产生两条事件：预审计 pending 与结果审计 compensated。
+      // 这里按结果过滤，保留“成功补偿必须留下 allow/compensated 审计”的断言。
+      const compensationEvent = trace.data.events.find(
+        (event) => event.tool === 'order.execute_compensate' && event.result === 'compensated',
+      );
       expect(compensationEvent?.result).toBe('compensated');
       expect(compensationEvent?.decision).toBe('allow');
     } finally {

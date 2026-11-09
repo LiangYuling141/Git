@@ -6,7 +6,7 @@ import { envelopeToToolResult, fail } from './envelope';
 import type { Principal } from './principal';
 import { auditTrace, policyGet } from './tools/audit';
 import { confirmationApprove, confirmationReject } from './tools/confirmation';
-import type { ContractWriteOptions } from './tools/contract';
+import type { ContractToolOptions } from './tools/contract';
 
 export interface TefServerOptions {
   principal: Principal;
@@ -19,7 +19,7 @@ export interface VerticalToolContext {
   principal: Principal;
   traceId: string;
   register: (tool: string) => boolean;
-  writeOptions: ContractWriteOptions;
+  writeOptions: ContractToolOptions;
   queryOptions: { traceId: string };
 }
 
@@ -31,7 +31,9 @@ export function createTefServer(
 ): McpServer {
   const { principal, traceId } = options;
   const secret = options.secret ?? loadTokenSecret();
-  const writeOptions = { traceId, secret };
+  // 执行器由垂直在工具层补齐（ContractToolOptions.effectsExecutor），
+  // 通用 kit 不提供任何垂直实现，也不允许在这里静默降级。
+  const writeOptions: ContractToolOptions = { traceId, secret };
   const queryOptions = { traceId };
 
   const server = new McpServer({ name: 'lymtrix-tef', version: '0.1.0' });

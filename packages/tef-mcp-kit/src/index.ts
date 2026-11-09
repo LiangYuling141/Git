@@ -11,7 +11,14 @@ export { buildExecContext, type Principal, type ExecContextOptions } from './pri
 export { envelopeToToolResult, errorToEnvelope, ok, fail, blocked, conflict, needsConfirmation } from './envelope';
 export { auditTrace, policyGet } from './tools/audit';
 export { confirmationApprove, confirmationReject } from './tools/confirmation';
-export { previewContract, executeContract, type ContractWriteOptions, type AdapterFactory } from './tools/contract';
+export {
+  previewContract,
+  executeContract,
+  type ContractWriteOptions,
+  type ContractWriteBaseOptions,
+  type ContractToolOptions,
+  type AdapterFactory,
+} from './tools/contract';
 export { previewStore } from './preview-store';
 export { tokenStore, loadTokenSecret } from './token';
 export { auditChain } from './audit-chain';

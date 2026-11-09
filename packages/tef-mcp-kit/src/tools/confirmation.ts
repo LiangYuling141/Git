@@ -7,7 +7,7 @@ import { tokenStore } from '../token';
 import { withTenantScope } from '../tenant-scope';
 import { errorToEnvelope, fail, ok } from '../envelope';
 import type { Principal } from '../principal';
-import type { ContractWriteOptions } from './contract';
+import type { ContractWriteBaseOptions } from './contract';
 
 /**
  * 治理工具（§6.4）。
@@ -22,7 +22,7 @@ import type { ContractWriteOptions } from './contract';
 export async function confirmationApprove(
   principal: Principal,
   args: { confirmation_token?: string },
-  options: ContractWriteOptions,
+  options: ContractWriteBaseOptions,
 ): Promise<Envelope> {
   if (!args.confirmation_token) {
     return fail('VALIDATION_ERROR', 'confirmation.approve requires confirmation_token');
@@ -86,7 +86,7 @@ export async function confirmationApprove(
 export async function confirmationReject(
   principal: Principal,
   args: { confirmation_token?: string; reason?: string },
-  options: ContractWriteOptions,
+  options: ContractWriteBaseOptions,
 ): Promise<Envelope> {
   if (!args.confirmation_token) {
     return fail('VALIDATION_ERROR', 'confirmation.reject requires confirmation_token');
