@@ -118,6 +118,26 @@ function unresolvedOperationIntent(
 }
 
 /**
+ * marker 重试可执行的契约白名单。
+ *
+ * 工具名只能由这里的契约映射决定。绝不能从 `pendingPreview.contract` 推断：
+ * 旧快照可能属于更早的操作（历史上 pending 字段优先保留已有预览），把 create
+ * 令牌发到 compensate 工具会进入错误的幂等命名空间，甚至产生第二次副作用。
+ */
+const EXECUTION_TOOLS: Record<string, string> = {
+  create_order: 'order.execute_create',
+  compensate_order: 'order.execute_compensate',
+};
+
+function isExecutableContract(contract: string | undefined | null): boolean {
+  return typeof contract === 'string' && Object.hasOwn(EXECUTION_TOOLS, contract);
+}
+
+function executionToolFor(contract: string): string | null {
+  return EXECUTION_TOOLS[contract] ?? null;
+}
+
+/**
  * 单次执行使用的幂等键。
  *
  * 重试路径必须传入持久化的 key；否则只有未结算标记存在时才复用旧 key，
@@ -130,20 +150,33 @@ function idempotencyKeyFor(taskState: TaskState, override?: string): string {
 /**
  * 待对账时显式保留 pending 字段。
  *
- * 已有快照必须原样写回；只有首次执行就落到 unknown（TaskState 里还没有
- * pending 快照）时才用本轮产生令牌的预览补齐。TaskStatePatch 是合并写入，
- * 显式写回是为了让“未知结果不清 pending”成为可测试的契约，而不是依赖
- * 存储实现细节。
+ * 本轮产生了执行令牌时，pending 快照必须来自**这份预览**：`pendingPreviewId`、
+ * `pendingContract`、`pendingContractVersion`、`pendingExpiresAt` 与令牌同源。
+ * 若沿用 TaskState 里已有的旧快照，marker 会携带“新 token + 旧契约”，下一次
+ * 重试就可能把 create 令牌发给 compensate 工具。
+ *
+ * 没有新预览时（marker 重试、缺少 key/token 的早退路径）才原样写回已有快照，
+ * 保证“未知结果不清 pending”是显式契约而不是存储实现细节。
  */
 function pendingFields(
   taskState: TaskState,
   operationIntent: IntentResult | null,
   preview?: Envelope,
 ): TaskStatePatch {
-  const pending = taskState.pendingPreview;
   // 服务端重试令牌：本轮预览产生了新令牌就用新的，否则沿用已持久化的令牌。
   // 该字段只用于服务端同 token 重试，绝不下发给模型。
   const pendingConfirmationToken = preview?.confirmationToken ?? taskState.pendingConfirmationToken ?? null;
+  if (preview?.previewId) {
+    return {
+      pendingPreviewId: preview.previewId,
+      pendingIntentHash: '',
+      pendingContract: operationIntent?.kind === 'operation' ? operationIntent.contract : '',
+      pendingContractVersion: '1.0',
+      pendingExpiresAt: preview.expiresAt ? new Date(preview.expiresAt) : null,
+      pendingConfirmationToken,
+    };
+  }
+  const pending = taskState.pendingPreview;
   if (pending) {
     return {
       pendingPreviewId: pending.previewId,
@@ -154,17 +187,7 @@ function pendingFields(
       pendingConfirmationToken,
     };
   }
-  // 首次执行就落到 unknown 时 TaskState 里还没有 pending 快照，
-  // 用本轮产生令牌的预览补齐，保证下一轮可以用同一操作重试。
-  if (!preview?.previewId) return {};
-  return {
-    pendingPreviewId: preview.previewId,
-    pendingIntentHash: '',
-    pendingContract: operationIntent?.kind === 'operation' ? operationIntent.contract : '',
-    pendingContractVersion: '1.0',
-    pendingExpiresAt: preview.expiresAt ? new Date(preview.expiresAt) : null,
-    pendingConfirmationToken,
-  };
+  return {};
 }
 
 /**
@@ -302,6 +325,7 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
           idempotencyKey: null,
           pendingExecutionAttemptId: taskState.pendingExecutionAttemptId,
           ...pendingFields(taskState, unresolvedIntent),
+          ...(unresolvedIntent ? { intent: unresolvedIntent } : {}),
         },
         { traceId, toolCalls, intentSource: 'deterministic' },
       );
@@ -321,7 +345,6 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
 
     // 直接重试需要三件服务端状态：同 key、同令牌、可重放的契约。
     // 缺少任何一项都不能重新预览或新开操作——原 attempt 仍可能在对账中提交。
-    const retryContract = taskState.pendingPreview?.contract || unresolvedIntent.contract;
     if (!taskState.pendingConfirmationToken) {
       return finish(
         'executing',
@@ -330,11 +353,14 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
           idempotencyKey: taskState.idempotencyKey,
           pendingExecutionAttemptId: taskState.pendingExecutionAttemptId,
           ...pendingFields(taskState, unresolvedIntent),
+          intent: unresolvedIntent,
         },
         { traceId, toolCalls, intentSource: 'deterministic' },
       );
     }
-    if (retryContract !== 'create_order' && retryContract !== 'compensate_order') {
+    // 契约只认与 marker 一起持久化的 intent。pendingPreview 可能是更早操作的
+    // 残留快照，用它选工具会把令牌发进错误的幂等命名空间。
+    if (!isExecutableContract(unresolvedIntent.contract)) {
       return finish(
         'executing',
         '上一笔执行结果待对账，但无法确定原操作契约，需人工对账后再试。',
@@ -342,6 +368,7 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
           idempotencyKey: taskState.idempotencyKey,
           pendingExecutionAttemptId: taskState.pendingExecutionAttemptId,
           ...pendingFields(taskState, unresolvedIntent),
+          intent: unresolvedIntent,
         },
         { traceId, toolCalls, intentSource: 'deterministic' },
       );
@@ -425,12 +452,41 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
 }
 
 /**
+ * 未结算执行的保现场返回。
+ *
+ * 对账/人工处理路径绝不清空 marker、幂等键或令牌，也不生成新 key：
+ * 原 attempt 仍可能已经提交副作用，清掉锚点会让下一次操作换 key 重放。
+ */
+function unresolvedRetryPending(
+  taskState: TaskState,
+  operationIntent: Extract<IntentResult, { kind: 'operation' }>,
+  idempotencyKey: string,
+  reply: string,
+  meta: { traceId: string; toolCalls: ToolCallRecord[]; envelope?: Envelope },
+): AgentTurnResult {
+  return finish(
+    'executing',
+    reply,
+    {
+      idempotencyKey,
+      pendingExecutionAttemptId: taskState.pendingExecutionAttemptId ?? `pending:${idempotencyKey}`,
+      ...pendingFields(taskState, operationIntent),
+      intent: operationIntent,
+    },
+    { ...meta, intentSource: 'deterministic' },
+  );
+}
+
+/**
  * 未结算执行的直接重试。
  *
  * 使用持久化的确认令牌与幂等键调用原执行工具，绝不重新预览：重新预览会
  * 签发新令牌/新快照，而原 attempt 仍可能在对账中提交；预览若被阻断，还会
  * 让任务既保留 marker 又失去可重放意图。Phase 1 在消费令牌之前检查 attempt，
  * 因此已消费的令牌在 attempt 存在时是安全的。
+ *
+ * 工具名只由持久化 intent 的契约决定。连接/调用异常与确定性 CONFLICT 都不能
+ * 证明原 attempt 已失败，必须保留现场等待对账，而不是返回 500 或清空 marker。
  */
 async function retryUnresolvedExecution(
   input: AgentTurnInput,
@@ -438,22 +494,69 @@ async function retryUnresolvedExecution(
   unresolvedIntent: Extract<IntentResult, { kind: 'operation' }>,
   toolCalls: ToolCallRecord[],
 ): Promise<AgentTurnResult> {
-  const contract = taskState.pendingPreview?.contract || unresolvedIntent.contract;
+  const contract = unresolvedIntent.contract;
+  const tool = executionToolFor(contract);
   const idempotencyKey = taskState.idempotencyKey as string;
   const confirmationToken = taskState.pendingConfirmationToken as string;
-  const session = await input.connectSession({
-    principal: { ...input.principal, clientKind: 'agent' },
-    traceId: input.traceId,
-    secret: input.secret,
-  });
+
+  if (!tool) {
+    return unresolvedRetryPending(
+      taskState,
+      unresolvedIntent,
+      idempotencyKey,
+      '上一笔执行结果待对账，但无法确定原操作契约，需人工对账后再试。',
+      { traceId: input.traceId, toolCalls },
+    );
+  }
+
+  let session: TefClientSession;
+  try {
+    session = await input.connectSession({
+      principal: { ...input.principal, clientKind: 'agent' },
+      traceId: input.traceId,
+      secret: input.secret,
+    });
+  } catch {
+    return unresolvedRetryPending(
+      taskState,
+      unresolvedIntent,
+      idempotencyKey,
+      '执行结果待对账：暂时无法连接执行服务，尚未确认是否已写入。请稍后使用同一操作重试；不要重新预览。',
+      { traceId: input.traceId, toolCalls },
+    );
+  }
 
   try {
-    const tool = contract === 'compensate_order' ? 'order.execute_compensate' : 'order.execute_create';
-    const executed = await session.callTool(tool, {
-      confirmation_token: confirmationToken,
-      idempotency_key: idempotencyKey,
-    });
+    let executed: Envelope;
+    try {
+      executed = await session.callTool(tool, {
+        confirmation_token: confirmationToken,
+        idempotency_key: idempotencyKey,
+      });
+    } catch {
+      toolCalls.push({ tool, status: 'error' });
+      return unresolvedRetryPending(
+        taskState,
+        unresolvedIntent,
+        idempotencyKey,
+        '执行结果待对账：执行服务调用中断，无法确认是否已写入。请稍后使用同一操作重试；不要重新预览。',
+        { traceId: input.traceId, toolCalls },
+      );
+    }
     toolCalls.push({ tool, status: executed.status, risk: executed.risk });
+
+    // 重试返回 CONFLICT 时不能断言原 attempt 已失败：可能是令牌/快照状态不一致，
+    // 也可能是原写入已提交但结果记录缺失。清空 marker 会让后续重新预览换 key，
+    // 从而可能产生第二次副作用。
+    if (executed.status === 'conflict') {
+      return unresolvedRetryPending(
+        taskState,
+        unresolvedIntent,
+        idempotencyKey,
+        '执行结果待对账：重试返回冲突，但不能确认原尝试已经失败。请等待对账或人工处理；不要重新预览。',
+        { traceId: input.traceId, toolCalls, envelope: executed },
+      );
+    }
 
     const meta: ExecutionReportMeta = {
       taskState,

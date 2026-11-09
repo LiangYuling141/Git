@@ -62,6 +62,12 @@ export async function POST(request: Request) {
 
   const taskState = await taskStateStore.loadOrCreate(tenant.tenantId, conversationId, session.userId);
 
+  // conversationId 来自请求体：同一租户内也不能复用别人的任务状态。
+  // 否则可以用他人未结算的 token/key 继续写入，或读取他人的任务快照。
+  if (taskState.userId !== session.userId) {
+    return NextResponse.json({ error: 'forbidden', message: '该会话不属于当前用户' }, { status: 403 });
+  }
+
   // trace 属于任务而不是轮次：澄清往返、预览、确认、执行要落在同一条链上，
   // 否则 audit.trace 回放不出完整的决策过程（公理 I6）。
   const traceId = isTaskInFlight(taskState.status) && taskState.traceId ? taskState.traceId : `tr_${randomUUID()}`;

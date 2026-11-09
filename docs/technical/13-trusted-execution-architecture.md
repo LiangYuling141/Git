@@ -305,10 +305,11 @@ Phase C 起，一次写入拆成“两阶段执行 + 三个阶段”，不再假
 失败语义：
 
 - `executing` 的重复请求返回 `EXECUTION_IN_PROGRESS`，`unknown` 返回 `EXECUTION_UNKNOWN`，`data` 携带 `{ attemptId, retryWithSameKey: true }`；两者都必须在消费令牌之前返回。
-- Runtime 与确认路由识别这两个错误码后保留 pending 预览、幂等键与可重放意图，并写入显式标记 `TaskState.pendingExecutionAttemptId`（`attemptId`，缺失时为 `pending:<idempotencyKey>`），提示“用同一操作重试”，不得清空 pending 或生成新 key。标记非空期间禁止解析新意图；只有确定结果（成功/冲突/确定失败）才清空标记与幂等键。
+- Runtime 与确认路由识别这两个错误码后保留 pending 预览、幂等键与可重放意图，并写入显式标记 `TaskState.pendingExecutionAttemptId`（`attemptId`，缺失时为 `pending:<idempotencyKey>`），提示“用同一操作重试”，不得清空 pending 或生成新 key。标记非空期间禁止解析新意图；只有确定结果（成功/确定失败）才清空标记与幂等键。marker 重试返回 `CONFLICT` 不足以证明原 attempt 已失败（可能是令牌/快照状态不一致，或写入已提交但结果记录缺失），必须保持非终结 `executing` 等待对账或人工处理，不得清空 marker/key/token。
+- 重试执行工具只能由与 marker 一起持久化的 `TaskState.intent.contract`（或等价的显式 `pendingExecutionContract`）决定，禁止用 `pendingPreview.contract` 反推：旧预览快照可能属于更早的操作，用错工具会把令牌送进错误的幂等命名空间。新操作首次执行落到 `EXECUTION_*` 时，pending 字段必须整体改写为产生该令牌的当前预览（`pendingPreviewId`、`pendingContract`、`pendingContractVersion`、`pendingExpiresAt`）与当前令牌。
 - 未结算执行还必须持久化本次实际使用的确认令牌 `TaskState.pendingConfirmationToken`（L1 取预览签发值，L2 取确认路由请求令牌或服务端已存值）。重试路径直接以该令牌 + 原幂等键调用执行工具，**绝不重新预览**：重新预览会签发新令牌/新快照，且预览一旦被阻断会让任务既保留 marker 又失去可重放意图。Phase 1 在消费令牌之前检查 attempt，因此已消费的令牌在 attempt 存在时是安全的重试凭据。
 - `pendingConfirmationToken` 是纯服务端重试状态：不得下发给模型、不得出现在提示词或任何模型可见的上下文字符串中；确定结果时与 marker、幂等键一起清空。标记存在但令牌缺失时，Runtime 与确认路由只能返回非终结的 `executing` 提示并等待人工对账，不得重新预览或新开操作。
-- 历史数据迁移：升级前已存在 `status=executing` 或 `unknown`、但没有 marker/token 的 TaskState，部署前必须按 `execution_attempts`（`attemptId`、`previewId`、`idempotencyKey`）回填 `pendingExecutionAttemptId` 与 `pendingConfirmationToken`；否则这些任务会失去同 token 重试锚点，只能人工对账。
+- 历史数据迁移：升级前已存在 `status=executing` 或 `unknown`、但没有 marker 的 TaskState，可按 `execution_attempts`（`attemptId`）回填 `pendingExecutionAttemptId`，再用 `previewId`/`idempotencyKey` 校准 intent。但**原始确认令牌无法回填**：`confirmation_tokens` 只保存 `tokenHash`，明文令牌只在签发时出现一次，数据库无法重建。缺少令牌的历史行不能自动恢复同 token 重试，必须人工对账（确认原 attempt 已结算或失败）后才能继续；不得为了“补齐字段”重新预览并生成新 key。
 
 已知限制：
 

@@ -390,7 +390,9 @@ Expected: 全部通过；文档计数与实际一致。
 
 前台工具层对 `executing` 返回 `EXECUTION_IN_PROGRESS`、对 `unknown` 返回 `EXECUTION_UNKNOWN`，`data` 携带 `{ attemptId, retryWithSameKey: true }`。Runtime 与确认路由识别这两个错误码后进入 `executing` 状态，保留 pending 预览与幂等键，提示用户用同一操作重试；不得清空 pending 或生成新 key。
 
-未结算执行同时持久化 `TaskState.pendingConfirmationToken`（L1 预览签发令牌，L2 确认路由请求令牌或已存令牌）。重试直接以该令牌 + 原幂等键执行，绝不重新预览；令牌缺失时只返回非终结的 `executing` 提示等待人工对账。该字段是纯服务端重试状态，不得进入模型上下文。部署前必须按 `execution_attempts` 回填历史 `executing`/`unknown` 行的 marker 与 token。
+未结算执行同时持久化 `TaskState.pendingConfirmationToken`（L1 预览签发令牌，L2 确认路由请求令牌或已存令牌）。重试直接以该令牌 + 原幂等键执行，绝不重新预览；令牌缺失时只返回非终结的 `executing` 提示等待人工对账。该字段是纯服务端重试状态，不得进入模型上下文。
+
+历史迁移边界：`pendingExecutionAttemptId` 可按 `execution_attempts.attemptId` 回填，但 `pendingConfirmationToken` **无法回填**——`confirmation_tokens` 只存 `tokenHash`，明文令牌只在签发时可见一次。缺少令牌的历史 `executing`/`unknown` 行不能自动恢复同 token 重试，必须人工对账后处置，禁止用重新预览生成的新 key 顶替。重试工具名只由 marker 的 `intent.contract` 决定，不得使用可能过期的 `pendingPreview.contract`；新操作落到 `EXECUTION_*` 时 pending 字段必须改写为当前预览与当前令牌。
 
 ### 已知限制
 

@@ -283,6 +283,137 @@ describe('Runtime：结果未知时保留幂等键、意图与 pending', () => {
     expect(result.patch.pendingConfirmationToken).toBeNull();
   });
 
+  it('marker 重试以 intent 契约为准，忽略过期的 pendingPreview 契约', async () => {
+    const calls: FakeCall[] = [];
+    const session = fakeSession((name) => {
+      if (name === 'order.execute_create') {
+        return { status: 'conflict', error: { code: 'CONFLICT', message: 'snapshot mismatch' }, traceId: 'tr_conflict' };
+      }
+      throw new Error(`unexpected tool ${name}`);
+    }, calls);
+
+    const result = await turn(
+      createTaskState({
+        // 历史残留：旧补偿预览仍在，但 marker 的 intent 属于新的 create 操作。
+        pendingPreview: {
+          previewId: 'pv_stale_comp',
+          intentHash: 'ih_stale_comp',
+          contract: 'compensate_order',
+          contractVersion: '1.0',
+          expiresAt: new Date('2026-11-10T00:15:00.000Z'),
+        },
+        intent: { kind: 'operation', contract: 'create_order', slots: { ...ORDER_SLOTS } },
+      }),
+      MESSAGE,
+      session,
+    );
+
+    // 唯一被调用的工具必须来自 intent，而不是旧补偿快照。
+    expect(calls.map((call) => call.name)).toEqual(['order.execute_create']);
+    expect(calls[0].args).toEqual({
+      confirmation_token: 'ct_runtime',
+      idempotency_key: 'idem_runtime_existing',
+    });
+
+    // 冲突不能证明原 attempt 已失败：marker/key/token 必须保留现场。
+    expect(result.status).toBe('executing');
+    expect(result.reply).toContain('待对账');
+    expect(result.patch).toMatchObject({
+      idempotencyKey: 'idem_runtime_existing',
+      pendingExecutionAttemptId: 'att_runtime',
+      pendingConfirmationToken: 'ct_runtime',
+      pendingPreviewId: 'pv_stale_comp',
+      intent: { kind: 'operation', contract: 'create_order' },
+    });
+  });
+
+  it('marker 重试遇到无法识别的契约：非终结 executing，不调用工具且保留现场', async () => {
+    const calls: FakeCall[] = [];
+    const session = fakeSession(() => {
+      throw new Error('no tool should be called without an executable contract');
+    }, calls);
+
+    const result = await turn(
+      createTaskState({ intent: { kind: 'operation', contract: 'refund_order', slots: {} } }),
+      MESSAGE,
+      session,
+    );
+
+    expect(result.status).toBe('executing');
+    expect(result.reply).toContain('无法确定原操作契约');
+    expect(result.patch).toMatchObject({
+      idempotencyKey: 'idem_runtime_existing',
+      pendingExecutionAttemptId: 'att_runtime',
+      pendingConfirmationToken: 'ct_runtime',
+      intent: { kind: 'operation', contract: 'refund_order' },
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('marker 重试的调用抛异常：返回 executing 并保留 marker/key/token', async () => {
+    const calls: FakeCall[] = [];
+    const session = fakeSession(() => {
+      throw new Error('socket hang up');
+    }, calls);
+
+    const result = await turn(createTaskState(), MESSAGE, session);
+
+    expect(result.status).toBe('executing');
+    expect(result.reply).toContain('待对账');
+    expect(result.toolCalls).toEqual([{ tool: 'order.execute_create', status: 'error' }]);
+    expect(result.patch).toMatchObject({
+      idempotencyKey: 'idem_runtime_existing',
+      pendingExecutionAttemptId: 'att_runtime',
+      pendingConfirmationToken: 'ct_runtime',
+      pendingPreviewId: 'pv_runtime',
+    });
+    expect(calls.map((call) => call.name)).toEqual(['order.execute_create']);
+  });
+
+  it('新操作执行 unknown：marker 的 pending 字段改写为当前预览与当前令牌', async () => {
+    const calls: FakeCall[] = [];
+    const session = fakeSession(
+      l1Handler({
+        status: 'error',
+        error: { code: 'EXECUTION_UNKNOWN', message: 'commit outcome unknown' },
+        data: { attemptId: 'att_new', retryWithSameKey: true },
+      }),
+      calls,
+    );
+
+    // 历史残留的补偿快照 + 当前 create 执行：marker 不能被旧快照覆盖。
+    const initial = createTaskState({
+      status: 'idle',
+      pendingExecutionAttemptId: null,
+      pendingConfirmationToken: null,
+      idempotencyKey: null,
+      intent: null,
+      pendingPreview: {
+        previewId: 'pv_stale_comp',
+        intentHash: 'ih_stale_comp',
+        contract: 'compensate_order',
+        contractVersion: '1.0',
+        expiresAt: new Date('2026-11-10T00:15:00.000Z'),
+      },
+    });
+
+    const result = await turn(initial, MESSAGE, session);
+    const executeCall = calls.find((call) => call.name === 'order.execute_create');
+
+    expect(result.status).toBe('executing');
+    expect(executeCall?.args.confirmation_token).toBe('ct_runtime');
+    expect(result.patch).toMatchObject({
+      pendingPreviewId: 'pv_runtime',
+      pendingContract: 'create_order',
+      pendingContractVersion: '1.0',
+      pendingExpiresAt: new Date('2026-11-10T00:15:00.000Z'),
+      pendingConfirmationToken: 'ct_runtime',
+      pendingExecutionAttemptId: 'att_new',
+      idempotencyKey: executeCall?.args.idempotency_key,
+      intent: { kind: 'operation', contract: 'create_order' },
+    });
+  });
+
   it('reportExecution：两个未知错误码都映射为 executing 并写入 marker', () => {
     for (const code of ['EXECUTION_IN_PROGRESS', 'EXECUTION_UNKNOWN'] as const) {
       const result = reportExecution(pendingEnvelope(code), 'idem_runtime_existing', {

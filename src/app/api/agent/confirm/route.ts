@@ -1,11 +1,12 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { verifyTokenString } from '@lymtrix/tef-mcp-kit/token';
 import { connectTefClient } from '@/mcp-server';
 import { prisma } from '@/lib/prisma';
 import { taskStateStore } from '@/tef/task-state';
 import { resolveTenantContext } from '@/tef/tenant';
 import { loadTokenSecret } from '@/tef/token';
-import type { Envelope, TenantRole } from '@/tef/types';
+import type { Envelope, TaskState, TenantRole } from '@/tef/types';
 import {
   EXECUTION_PENDING_REPLY,
   resolveConfirmationOutcome,
@@ -25,6 +26,41 @@ import {
  */
 
 const APPROVER_ROLES: TenantRole[] = ['owner'];
+
+/** 未结算执行可重试的契约白名单；工具名只能由 marker 的 intent 契约映射。 */
+const EXECUTION_TOOLS: Record<string, 'order.execute_create' | 'order.execute_compensate'> = {
+  create_order: 'order.execute_create',
+  compensate_order: 'order.execute_compensate',
+};
+
+/**
+ * 未结算执行的权威契约。
+ *
+ * marker 写入时 Runtime 会把当前操作的 intent 一并持久化；它才是重试时
+ * “这笔未结算写入到底是什么操作”的事实源。`pendingPreview.contract` 可能是
+ * 更早操作残留的旧快照，绝不能用来选择执行工具。
+ */
+function authoritativeUnresolvedContract(state: TaskState | null): string | null {
+  const intent = state?.intent;
+  if (!intent || intent.kind !== 'operation') return null;
+  const contract = intent.contract;
+  return typeof contract === 'string' && Object.hasOwn(EXECUTION_TOOLS, contract) ? contract : null;
+}
+
+/**
+ * 只读取令牌里的契约声明，用于与 marker 的权威契约交叉校验。
+ *
+ * 传入 epoch 时间是为了跳过过期检查：marker 重试可能使用已过期但已消费的
+ * 令牌，Phase 1 会先查 attempt 再决定是否消费；令牌生命周期仍由工具层判定。
+ * 这里只关心签名是否有效以及令牌属于哪个契约。
+ */
+function requestTokenContract(token: string, secret: string): string | null {
+  try {
+    return verifyTokenString(token, secret, new Date(0)).contract ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export async function POST(request: Request) {
   const cookieStore = await cookies();
@@ -101,12 +137,46 @@ export async function POST(request: Request) {
   let traceId: string;
   /** 本次执行使用的令牌：重试时优先请求体，其次服务端持久化值。 */
   let executionToken: string;
+  /** 本次执行应调用的契约；未结算重试只认 marker 的 intent。 */
+  let contractOperation: string;
 
   if (unresolvedAttemptId) {
     // 跳过人工批准：Phase 1 先检查 attempt 再消费令牌，已使用/已批准的
     // 令牌不会被二次消费；对账已结算时会直接重放已存结果。
     // 令牌是服务端重试状态，绝不再调用 confirmation.approve。
-    const storedToken = requestToken ?? state?.pendingConfirmationToken ?? null;
+    const authoritative = authoritativeUnresolvedContract(state);
+    if (!authoritative) {
+      return NextResponse.json(
+        {
+          status: 'executing',
+          approved: true,
+          reply: '执行结果待对账，但无法确定原操作契约，需人工对账后再试。',
+          traceId: state?.traceId ?? null,
+        },
+        { status: 409 },
+      );
+    }
+
+    // 纵深防御：请求/服务端令牌声明的契约必须与 marker 的权威契约一致。
+    // 不能用旧快照或跨操作令牌把写入送进错误的幂等命名空间。
+    const candidateToken = requestToken || state?.pendingConfirmationToken || null;
+    if (candidateToken) {
+      const claimed = requestTokenContract(candidateToken, secret);
+      if (claimed && claimed !== authoritative) {
+        return NextResponse.json(
+          {
+            status: 'executing',
+            approved: true,
+            reply: '执行结果待对账，但请求令牌与原操作契约不一致，需人工对账后再试。',
+            traceId: state?.traceId ?? null,
+          },
+          { status: 409 },
+        );
+      }
+    }
+
+    // 空字符串令牌必须回退到服务端持久化值，而不是被 `??` 当成有效值。
+    const storedToken = requestToken || state?.pendingConfirmationToken || null;
     if (!storedToken) {
       return NextResponse.json(
         {
@@ -118,6 +188,7 @@ export async function POST(request: Request) {
         { status: 409 },
       );
     }
+    contractOperation = authoritative;
     executionToken = storedToken;
     traceId = state?.traceId ?? `tr_exec_${Date.now()}`;
   } else {
@@ -125,6 +196,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'validation', message: '需要 confirmationToken' }, { status: 400 });
     }
     executionToken = requestToken;
+    // 新批准路径以令牌声明的契约为准（它绑定预览快照）；令牌无法解析时
+    // 回退到 pending 快照与 intent。绝不能默认成 create_order。
+    contractOperation =
+      requestTokenContract(requestToken, secret) ??
+      state?.pendingPreview?.contract ??
+      (state?.intent?.kind === 'operation' ? state.intent.contract : undefined) ??
+      'create_order';
     const human = await connectTefClient({ principal: humanPrincipal, traceId: `tr_confirm_${Date.now()}`, secret });
     try {
       decision = await human.callTool(action === 'approve' ? 'confirmation.approve' : 'confirmation.reject', {
@@ -186,10 +264,6 @@ export async function POST(request: Request) {
     });
   }
 
-  const contractOperation =
-    state?.pendingPreview?.contract ??
-    (state?.intent?.kind === 'operation' ? state.intent.contract : undefined) ??
-    'create_order';
   const plan = resolveExecutionPlan(contractOperation);
 
   // 重试必须沿用未结算尝试的 key；没有 key 就无法命中原 attempt，
@@ -206,20 +280,89 @@ export async function POST(request: Request) {
     );
   }
   const idempotencyKey = state?.idempotencyKey ?? `idem_${Date.now()}`;
+  const attemptId = unresolvedAttemptId ?? `pending:${idempotencyKey}`;
 
-  const agent = await connectTefClient({
-    principal: { ...humanPrincipal, clientKind: 'agent' },
-    traceId,
-    secret,
-  });
+  /**
+   * 保留现场的非终结响应。
+   *
+   * 连接/调用异常与重试冲突都不能证明原 attempt 已失败：清 marker 或换 key
+   * 会让下一次重新预览绕过 Phase 1 的尝试检查，可能产生第二次副作用。
+   */
+  async function keepUnresolved(
+    reply: string,
+    statusCode: number,
+    extra: Record<string, unknown> = {},
+  ): Promise<NextResponse> {
+    if (state) {
+      await taskStateStore
+        .update(
+          tenant.tenantId,
+          conversationId,
+          {
+            status: 'executing',
+            idempotencyKey,
+            pendingExecutionAttemptId: attemptId,
+            pendingConfirmationToken: executionToken,
+          },
+          state.version,
+        )
+        .catch((error) => {
+          console.error('[confirm] failed to persist unresolved execution state', error);
+          return null;
+        });
+    }
+    return NextResponse.json(
+      { status: 'executing', approved: true, reply, traceId, ...extra },
+      { status: statusCode },
+    );
+  }
+
+  let agent: Awaited<ReturnType<typeof connectTefClient>>;
+  try {
+    agent = await connectTefClient({
+      principal: { ...humanPrincipal, clientKind: 'agent' },
+      traceId,
+      secret,
+    });
+  } catch (error) {
+    console.error('[confirm] failed to connect execution client', error);
+    return keepUnresolved(
+      '执行结果待对账：暂时无法连接执行服务，尚未确认是否已写入。请稍后使用同一确认操作重试；不要重新预览。',
+      409,
+    );
+  }
+
   let executed: Envelope;
   try {
-    executed = await agent.callTool(plan.tool, {
-      confirmation_token: executionToken,
-      idempotency_key: idempotencyKey,
-    });
-  } finally {
-    await agent.close();
+    try {
+      executed = await agent.callTool(plan.tool, {
+        confirmation_token: executionToken,
+        idempotency_key: idempotencyKey,
+      });
+    } finally {
+      await agent.close();
+    }
+  } catch (error) {
+    console.error('[confirm] execution transport failed', error);
+    return keepUnresolved(
+      '执行结果待对账：执行服务调用中断，无法确认是否已写入。请稍后使用同一确认操作重试；不要重新预览。',
+      409,
+    );
+  }
+
+  // 未结算重试返回 CONFLICT：不能据此断言原 attempt 已失败，也不能清空
+  // marker/key/token。保持非终结状态等待对账或人工处理。
+  if (unresolvedAttemptId && executed.status === 'conflict') {
+    return keepUnresolved(
+      '执行结果待对账：重试返回冲突，但不能确认原尝试已经失败。请等待对账或人工处理；不要重新预览。',
+      200,
+      {
+        risk: executed.risk,
+        reasons: executed.reasons,
+        auditId: executed.auditId,
+        error: executed.error,
+      },
+    );
   }
 
   const outcome = resolveConfirmationOutcome(executed, plan, contractOperation, idempotencyKey);
