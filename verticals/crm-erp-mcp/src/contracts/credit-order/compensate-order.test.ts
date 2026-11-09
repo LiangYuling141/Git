@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ExecContext } from '@/tef/types';
+import type { ExecContext } from '@lymatrix/tef-core';
 import { createOrderContract } from './create-order';
 import { compensateOrderContract } from './compensate-order';
 import type {
@@ -349,7 +349,7 @@ describe('diff', () => {
 describe('registration', () => {
   it('registerCreditOrderContracts 同时注册 create_order 与 compensate_order', async () => {
     const { registerCreditOrderContracts } = await import('./index');
-    const { contractRegistry } = await import('@/tef/contract-registry');
+    const { contractRegistry } = await import('@lymatrix/tef-core');
     registerCreditOrderContracts();
     expect(contractRegistry.get('create_order', '1.0')).toBeDefined();
     expect(contractRegistry.get('compensate_order', '1.0')).toBeDefined();

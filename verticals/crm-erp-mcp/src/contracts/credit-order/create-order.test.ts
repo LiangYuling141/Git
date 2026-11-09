@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ExecContext } from '@/tef/types';
+import type { ExecContext } from '@lymatrix/tef-core';
 import { createOrderContract } from './create-order';
 import type { CreateOrderEvidence, CreateOrderParams, CustomerEvidence, ProductEvidence } from './types';
 
