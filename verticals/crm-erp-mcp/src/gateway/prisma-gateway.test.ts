@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { TefError, type BusinessGateway } from '@lymtrix/tef-core';
+import { TefError } from '@lymtrix/tef-core';
 import type { PrismaTx } from '@lymtrix/tef-mcp-kit';
 import { createPrismaCrmGateway } from './prisma-gateway';
+import { CRM_QUERY, type CrmBusinessGateway } from './types';
 
 const BOUND_TENANT = 't_yiwu_demo';
 const OTHER_TENANT = 't_other';
@@ -38,7 +39,7 @@ describe('租户绑定：调用方 tenantId 必须与工厂闭包一致', () => 
     const { tx, touched } = untouchableTx();
     const gateway = createPrismaCrmGateway(tx, BOUND_TENANT);
 
-    const calls: Array<[keyof BusinessGateway, () => Promise<unknown>]> = [
+    const calls: Array<[keyof CrmBusinessGateway, () => Promise<unknown>]> = [
       ['searchCustomers', () => gateway.searchCustomers({ tenantId: OTHER_TENANT })],
       ['getCustomer', () => gateway.getCustomer({ tenantId: OTHER_TENANT, customerId: 'c_1' })],
       ['getCredit', () => gateway.getCredit({ tenantId: OTHER_TENANT, customerId: 'c_1' })],
@@ -159,5 +160,43 @@ describe('响应映射：保留契约依赖的关键字段', () => {
         dueAt: null,
       },
     ]);
+  });
+});
+
+describe('泛型 query 分发', () => {
+  it('按 CRM_QUERY 分发到类型化读方法；未知 operation 抛 VALIDATION_ERROR', async () => {
+    const customerRow = {
+      id: 'c_weiye_import',
+      name: '义乌市伟业进出口有限公司',
+      phone: '13905791001',
+      status: 'active',
+      customerType: 'normal',
+      creditLimit: 50000,
+      creditUsed: 40000,
+      overdueDays: 0,
+      isHighRisk: false,
+      monthlyTransaction: 120000,
+      onboardingStatus: 'approved',
+    };
+    const tx = { customer: { findFirst: vi.fn(async () => customerRow) } } as unknown as PrismaTx;
+    const gateway = createPrismaCrmGateway(tx, BOUND_TENANT);
+
+    const expected = await gateway.getCustomer({ tenantId: BOUND_TENANT, customerId: customerRow.id });
+    const viaQuery = await gateway.query({
+      tenantId: BOUND_TENANT,
+      operation: CRM_QUERY.customerGet,
+      params: { customerId: customerRow.id },
+    });
+    expect(viaQuery).toEqual(expected);
+
+    const error = await gateway
+      .query({ tenantId: BOUND_TENANT, operation: 'crm.unknown', params: {} })
+      .then(() => {
+        throw new Error('expected the gateway to reject, but it resolved');
+      })
+      .catch((reason: unknown) => reason);
+    expect(error).toBeInstanceOf(TefError);
+    expect((error as TefError).code).toBe('VALIDATION_ERROR');
+    expect((error as TefError).message).toBe('unknown business query: crm.unknown');
   });
 });

@@ -1,7 +1,8 @@
 import { z } from 'zod';
-import { TefError, classifyRisk, formatCNY, fromCents, prorateCents, toCents } from '@lymtrix/tef-core';
+import { classifyRisk, formatCNY, fromCents, prorateCents, toCents } from '@lymtrix/tef-core';
 import type { Check, Contract, DiffEntry, Effect, ExecContext, RiskResult } from '@lymtrix/tef-core';
 import type { PrismaTx } from '@lymtrix/tef-mcp-kit';
+import { requireCrmGateway } from '../../gateway/context';
 import {
   DEFAULT_OVERDUE_DAYS_L2_THRESHOLD,
   OVERDUE_THRESHOLD_KEY,
@@ -76,8 +77,7 @@ function normalize(raw: unknown): CreateOrderParams {
 }
 
 async function loadEvidence(params: CreateOrderParams, ctx: ExecContext<PrismaTx>): Promise<CreateOrderEvidence> {
-  const gateway = ctx.gateway;
-  if (!gateway) throw new TefError('INTERNAL', 'BusinessGateway is not configured');
+  const gateway = requireCrmGateway(ctx);
 
   const skus = [...new Set(params.items.map((item) => item.sku))];
 

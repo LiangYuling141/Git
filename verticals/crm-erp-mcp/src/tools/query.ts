@@ -1,4 +1,4 @@
-import { redactArgs, type BusinessGateway, type Envelope } from '@lymtrix/tef-core';
+import { redactArgs, type Envelope } from '@lymtrix/tef-core';
 import {
   auditChain,
   buildExecContext,
@@ -9,6 +9,7 @@ import {
   type PrismaTx,
 } from '@lymtrix/tef-mcp-kit';
 import { createPrismaCrmGateway } from '../gateway/prisma-gateway';
+import type { CrmBusinessGateway } from '../gateway/types';
 
 /**
  * 查询工具（L0，只读）。
@@ -22,7 +23,7 @@ export interface QueryOptions {
   traceId: string;
   now?: Date;
   /** 可选注入的业务网关；缺省时在租户事务内构造 Prisma 实现。 */
-  gateway?: BusinessGateway;
+  gateway?: CrmBusinessGateway;
 }
 
 /** 电话属于直接标识。工具响应会进模型上下文，所以默认打码。 */

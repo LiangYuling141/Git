@@ -1,4 +1,4 @@
-import { TefError, formatCNY, toCents } from '@lymtrix/tef-core';
+import { formatCNY, toCents } from '@lymtrix/tef-core';
 import type {
   AuditSpec,
   Check,
@@ -7,10 +7,11 @@ import type {
   Effect,
   ExecContext,
   ExecResult,
-  OrderRecord,
   RiskResult,
 } from '@lymtrix/tef-core';
 import type { PrismaTx } from '@lymtrix/tef-mcp-kit';
+import { requireCrmGateway } from '../../gateway/context';
+import type { OrderRecord } from '../../gateway/types';
 import { CREATE_ORDER_OPERATION, createOrderContract } from './create-order';
 import {
   compensateOrderParamsSchema,
@@ -151,8 +152,7 @@ async function loadEvidence(
   params: CompensateOrderParams,
   ctx: ExecContext<PrismaTx>,
 ): Promise<CompensateOrderEvidence> {
-  const gateway = ctx.gateway;
-  if (!gateway) throw new TefError('INTERNAL', 'BusinessGateway is not configured');
+  const gateway = requireCrmGateway(ctx);
 
   const orderRow = await gateway.getOrder({ tenantId: ctx.tenantId, orderId: params.orderId });
 

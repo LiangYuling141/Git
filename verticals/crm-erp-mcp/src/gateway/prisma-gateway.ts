@@ -1,17 +1,19 @@
+import { TefError, type BusinessQueryRequest } from '@lymtrix/tef-core';
+import type { PrismaTx } from '@lymtrix/tef-mcp-kit';
 import {
-  TefError,
-  type BusinessGateway,
+  CRM_QUERY,
+  type CrmBusinessGateway,
   type CreditRecord,
   type CustomerRecord,
   type OrderRecord,
   type ProductRecord,
-} from '@lymtrix/tef-core';
-import type { PrismaTx } from '@lymtrix/tef-mcp-kit';
+} from './types';
 
 /**
  * CRM-ERP 的进程内业务网关实现。
  *
- * 框架核心只认识 `BusinessGateway` 端口；这里把端口翻译成 Prisma 查询。
+ * 框架核心只认识 `BusinessGateway` 端口的 `query` / `executeEffects`；这里把
+ * 垂直查询翻译成 Prisma 查询，并通过 `CrmBusinessGateway` 暴露带类型的读方法。
  * 每个方法都显式校验调用方传入的 tenantId 与工厂闭包绑定的 tenantId 一致，
  * 拒绝时抛 PERMISSION_DENIED——这样进程内实现与后续 HTTP 实现的租户语义一致，
  * 不会出现"闭包租户静默兜底"导致跨租户读取的漏洞。
@@ -71,8 +73,8 @@ function toProduct(row: {
   };
 }
 
-export function createPrismaCrmGateway(tx: PrismaTx, tenantId: string): BusinessGateway {
-  return {
+export function createPrismaCrmGateway(tx: PrismaTx, tenantId: string): CrmBusinessGateway {
+  const gateway: CrmBusinessGateway = {
     async searchCustomers(input) {
       assertBoundTenant(tenantId, input.tenantId);
       const { name, phone, limit } = input;
@@ -188,9 +190,32 @@ export function createPrismaCrmGateway(tx: PrismaTx, tenantId: string): Business
       return result;
     },
 
+    async query<T = unknown>(input: BusinessQueryRequest): Promise<T> {
+      // 端口级 tenantId 是唯一事实来源：忽略 params 里的同名键，避免双份租户
+      // 声明互相矛盾；每个 case 仍交给带类型的读方法做租户绑定校验。
+      const params = { ...input.params, tenantId: input.tenantId } as never;
+      switch (input.operation) {
+        case CRM_QUERY.customerSearch:
+          return gateway.searchCustomers(params) as Promise<T>;
+        case CRM_QUERY.customerGet:
+          return gateway.getCustomer(params) as Promise<T>;
+        case CRM_QUERY.creditGet:
+          return gateway.getCredit(params) as Promise<T>;
+        case CRM_QUERY.productsGet:
+          return gateway.getProducts(params) as Promise<T>;
+        case CRM_QUERY.productsSearch:
+          return gateway.searchProducts(params) as Promise<T>;
+        case CRM_QUERY.orderGet:
+          return gateway.getOrder(params) as Promise<T>;
+        default:
+          throw new TefError('VALIDATION_ERROR', `unknown business query: ${input.operation}`);
+      }
+    },
+
     async executeEffects(input) {
       assertBoundTenant(tenantId, input.tenantId);
       throw new TefError('INTERNAL', 'PrismaCrmGateway.executeEffects is implemented in Phase B2/C');
     },
   };
+  return gateway;
 }
