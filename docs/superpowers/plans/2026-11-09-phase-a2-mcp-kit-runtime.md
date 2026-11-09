@@ -1,10 +1,10 @@
 # Phase A2：tef-mcp-kit、CRM 垂直 MCP 与 tef-runtime 提取实施计划
 
-> **执行状态**：Phase A2 已完成（2026-11-09，commits 21a9433..A2 最终提交（含 0e0135f、0f25aac 及后续修复））。
+> **执行状态**：Phase A2 已完成（2026-11-09，commits 21a9433..76abf8c + 最终边界修复（本轮））。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把 MCP 工具层、CRM 垂直实现与 Agent Runtime 从单一 `src/` 应用拆成三个 workspace 包，保持运行时行为不变，最终 301 个测试通过，且既有测试不减少。
+**Goal:** 把 MCP 工具层、CRM 垂直实现与 Agent Runtime 从单一 `src/` 应用拆成三个 workspace 包，保持运行时行为不变，最终 304 个测试通过，且既有测试不减少。
 
 **Architecture:** `@lymatrix/tef-mcp-kit` 提供通用 MCP Server 工厂、治理工具、契约运行时与状态存储；`@lymatrix/vertical-crm-erp` 用 kit 注册 CRM 查询/订单工具与契约；`@lymatrix/tef-runtime` 承载意图解析、LLM 客户端、TaskState 与编排，并通过注入的会话连接器调用 MCP。旧路径全部保留 re-export shim。
 
@@ -13,8 +13,8 @@
 ## Global Constraints
 
 - 不改变运行时行为；旧导入路径 `@/mcp-server/*`、`@/tef/*`、`@/agent-runtime/*`、`@/lib/ai/LLMClient` 必须继续可用。
-- 每个任务结束时 `npm run typecheck`、`npm run lint` 为 0 错误；`npm test` 通过数不得低于 274 单元测试。
-- 最后一项任务执行 `TEF_DB_TESTS=1 npm test`，必须 301 全部通过；`npm run build` 必须成功。
+- 每个任务结束时 `npm run typecheck`、`npm run lint` 为 0 错误；`npm test` 通过数不得低于 277 单元测试。
+- 最后一项任务执行 `TEF_DB_TESTS=1 npm test`，必须 304 全部通过；`npm run build` 必须成功。
 - 包名固定：`@lymatrix/tef-mcp-kit`、`@lymatrix/vertical-crm-erp`、`@lymatrix/tef-runtime`。
 - 不修改 `strict`、`target`、`moduleResolution` 等全局 TypeScript 选项。
 - 默认不执行 git commit；只有用户明确授权后才提交（本阶段已获授权，仅本地提交，不推送）。
@@ -947,6 +947,12 @@ Expected: intent 17 + intent.model 3 + LLMClient 11 通过；全量 295（A2 前
 **Files:**
 - Modify: `eslint.config.mjs`
 - Modify: `verticals/crm-erp-mcp/package.json`
+- Modify: `package.json`（新增 `boundaries:check` 脚本）
+- Create: `scripts/check-boundaries.mjs`
+- Create: `scripts/check-boundaries.d.ts`
+- Create: `tests/boundaries.test.ts`
+- Modify: `.github/workflows/ci.yml`（lint 与 boundaries:check 同时执行）
+- Modify: `tsconfig.json`、`vitest.config.ts`、`next.config.ts`（Task 1 的 workspace 解析别名）
 - Modify: `README.md`
 - Modify: `docs/00-framework.md`
 - Modify: `docs/00-positioning.md`
@@ -955,7 +961,7 @@ Expected: intent 17 + intent.model 3 + LLMClient 11 通过；全量 295（A2 前
 
 **Interfaces:**
 - Consumes: Task 1–4 的包结构
-- Produces: 可执行的包边界规则与同步文档；最终 301 验收。
+- Produces: 可执行的包边界规则与同步文档；最终 304 验收。
 
 - [ ] **Step 1：增加包边界 lint**
 
@@ -1053,6 +1059,7 @@ Expected: intent 17 + intent.model 3 + LLMClient 11 通过；全量 295（A2 前
 - [ ] **Step 3：最终验收**
 
 ```bash
+npm run boundaries:check
 npm run secrets:check
 npm run typecheck
 npm run lint
@@ -1060,7 +1067,7 @@ TEF_DB_TESTS=1 npm test
 npm run build
 ```
 
-Expected: secrets 通过；typecheck 0；lint 0 错误 / 28 警告；301 passed；build 成功。
+Expected: boundaries 通过（51 文件）；secrets 通过；typecheck 0；lint 0 错误 / 28 警告；304 passed；build 成功。
 
 - [ ] **Step 4：检查点**
 

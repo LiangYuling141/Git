@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 // 包边界静态检查：不依赖 ESLint 的目录级兜底。
 //
+// 与 ESLint 的分工：
+// - ESLint（no-restricted-imports）覆盖静态 import/export 与 type-only 语义，
+//   能区分 `import type` 在运行时被擦除的情况；
+// - 本脚本覆盖动态 import()、跨包相对路径逃逸、深层子路径，以及
+//   `@lymatrix/vertical-*` 这类裸包前缀——ESLint 不解析动态导入。
+// 两者在 CI 中同时执行：`npm run lint` 与 `npm run boundaries:check`。
+//
 // ESLint 规则按文件模式生效，容易漏掉新增目录；这个脚本直接递归扫描四个包的
 // 源码目录，拒绝跨包相对路径逃逸（例如从 packages/tef-core 反向 import 到
 // src/lib/prisma）以及包级禁止的裸模块导入。
@@ -13,7 +20,8 @@ const SCRIPT_PATH = fileURLToPath(import.meta.url);
 
 /**
  * 每个包的扫描目录与禁止导入前缀。
- * prefix 以 `/` 结尾时按前缀匹配，否则匹配自身及其子路径。
+ * prefix 以 `*` 结尾时按去掉 `*` 后的原始前缀匹配（如 `@lymatrix/vertical-*`）；
+ * prefix 以 `-` 或 `/` 结尾时按原始前缀匹配；否则匹配自身及其子路径。
  */
 export const PACKAGES = [
   {
@@ -97,7 +105,12 @@ function findPackage(repoRelativePath) {
 }
 
 function matchesPrefix(specifier, prefix) {
-  if (prefix.endsWith('/')) return specifier.startsWith(prefix);
+  if (prefix.endsWith('*')) {
+    return specifier.startsWith(prefix.slice(0, -1));
+  }
+  if (prefix.endsWith('-') || prefix.endsWith('/')) {
+    return specifier.startsWith(prefix);
+  }
   return specifier === prefix || specifier.startsWith(`${prefix}/`);
 }
 

@@ -38,7 +38,9 @@
 | 执行依赖单事务 | `src/mcp-server/tools/contract.ts` 中令牌消费、快照消费、重校验、effects、审计同事务 | 跨服务后原子性不可保留 |
 | 业务表与框架表同 schema | `prisma/schema.prisma` 同时包含客户、订单与快照、令牌、审计 | 无法独立部署与迁移 |
 
-当前验证基线：typecheck 通过，`TEF_DB_TESTS=1 npm test` 共 301 个测试通过（274 单元 + 27 真实数据库集成）。
+> **基线说明**：上表记录的是 **Phase A 前基线**的耦合证据。A1/A2 完成后，表中列出的 `src/` 路径均已变为迁移 shim，真实实现已迁移到 `packages/`（`tef-core`、`tef-mcp-kit`、`tef-runtime`）与 `verticals/crm-erp-mcp/`。
+
+当前验证基线：typecheck 通过，`TEF_DB_TESTS=1 npm test` 共 304 个测试通过（277 单元 + 27 真实数据库集成）。
 
 ## 3. 设计原则与硬边界
 
@@ -318,7 +320,7 @@ EXECUTING → SUCCEEDED
 4. 迁移 Agent Runtime 与 TaskState 到 `tef-runtime`。
 5. 最后移动 Next.js 应用到 `apps/crm-erp`，同步 tsconfig、ESLint、CI、Prisma 路径。**该项推迟到 Phase B**：Phase A1/A2 只完成后端包的抽取，Next.js 应用仍留在仓库根目录，待 API 边界稳定后再迁移。
 
-验收：每一步执行 `npm run typecheck`、`npm run lint`、`npm test` 全部通过；301 个测试数量不得下降。
+验收：每一步执行 `npm run typecheck`、`npm run lint`、`npm test` 全部通过；304 个测试数量不得下降。
 
 ### 8.2 Phase B：服务化与 API 边界
 

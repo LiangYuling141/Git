@@ -69,6 +69,48 @@ describe('package boundary checker', () => {
     });
   });
 
+  it('rejects static vertical imports from tef-core', () => {
+    const violations = checkSource(
+      'packages/tef-core/src/probe.ts',
+      "import x from '@lymatrix/vertical-crm-erp';",
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({
+      file: 'packages/tef-core/src/probe.ts',
+      specifier: '@lymatrix/vertical-crm-erp',
+      rule: 'forbidden-import',
+    });
+  });
+
+  it('rejects dynamic vertical imports from the MCP kit', () => {
+    const violations = checkSource(
+      'packages/tef-mcp-kit/src/probe.ts',
+      "const mod = await import('@lymatrix/vertical-crm-erp');",
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({
+      file: 'packages/tef-mcp-kit/src/probe.ts',
+      specifier: '@lymatrix/vertical-crm-erp',
+      rule: 'forbidden-import',
+    });
+  });
+
+  it('rejects vertical subpath imports from the runtime', () => {
+    const violations = checkSource(
+      'packages/tef-runtime/src/probe.ts',
+      "import { server } from '@lymatrix/vertical-crm-erp/server';",
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({
+      file: 'packages/tef-runtime/src/probe.ts',
+      specifier: '@lymatrix/vertical-crm-erp/server',
+      rule: 'forbidden-import',
+    });
+  });
+
   it('accepts clean tef-core sources', () => {
     const violations = checkSource(
       'packages/tef-core/src/probe.ts',
