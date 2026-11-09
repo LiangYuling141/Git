@@ -390,7 +390,7 @@ idle
 | 认证 | Cookie Session + bcrypt；生产可升级 OAuth/JWT | 当前为 MVP |
 | 评测 | Vitest + 自研评测 harness | 意图、拦截率、延迟、成本 |
 | 部署 | Docker Compose（MVP）；K8s（后续） | 先跑通再扩展 |
-| 模型 | MiniMax 或任意支持工具调用的模型 | 模型可替换，工具链不变 |
+| 模型 | DeepSeek（默认）或任意 OpenAI 兼容模型 | 模型可替换，工具链不变 |
 
 ---
 
@@ -460,7 +460,7 @@ flowchart TB
 | 考量 | 分析 |
 |------|------|
 | 标准化 | 工具发现、Schema、调用协议统一 |
-| 模型无关 | MiniMax、Claude 或其他模型都可以作为大脑 |
+| 模型无关 | DeepSeek、Claude 或其他模型都可以作为大脑 |
 | 信任边界 | MCP Server 是唯一写入通道，权限和审计集中 |
 | 可测试 | 工具可以脱离模型单独测试 |
 
@@ -512,3 +512,4 @@ flowchart TB
 - [11-fallback.md](11-fallback.md) — 多级兜底策略
 - [12-hook-system-design.md](12-hook-system-design.md) — Hook 系统详细设计（作为可选增强保留）
 - [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md) — 可信执行架构详细设计（业务操作契约、MCP 工具链、评测基准）
+- [../superpowers/specs/2026-11-09-tef-extraction-design.md](../superpowers/specs/2026-11-09-tef-extraction-design.md) — 框架剥离与 P1/P2 收尾设计（包边界、API 契约、执行状态机）

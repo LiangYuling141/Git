@@ -116,7 +116,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | 能力 | 如何使用 |
 |------|----------|
-| 模型适配 | MiniMax 或任意支持工具调用的模型 |
+| 模型适配 | DeepSeek（默认）或任意 OpenAI 兼容模型 |
 | MCP Client | 工具发现、调用、结果解析 |
 | 上下文装配 | TaskState、最近对话、摘要、实体快照 |
 | 任务状态 | 多轮对话、待确认操作、断点恢复 |
@@ -190,7 +190,7 @@ L1 接入/认证 → L2 上下文/任务状态 → L3 意图契约 → L4 MCP �
 | **业务引擎** | TypeScript + Prisma 7 | 契约、规则、事务、补偿 |
 | **数据库** | PostgreSQL、Redis | 业务数据、缓存、审计事件 |
 | **前端** | Next.js 16 / React 19 | 当前代码已采用 |
-| **AI** | MiniMax 或任意支持工具调用的模型 | 模型可替换，工具链不变 |
+| **AI** | DeepSeek（默认）或任意 OpenAI 兼容模型 | 模型可替换，工具链不变 |
 | **评测** | Vitest + 自研评测 harness | 意图、拦截率、延迟、成本 |
 | **部署** | Docker Compose（MVP）、K8s（后续） | 先跑通再扩展 |
 
@@ -271,3 +271,4 @@ git merge --no-ff feature/customer-management
 - [docs/technical/13-trusted-execution-architecture.md](docs/technical/13-trusted-execution-architecture.md) — 可信执行架构详细设计
 - [docs/technical/03-mcp-tool-whitelist.md](docs/technical/03-mcp-tool-whitelist.md) — MCP 工具白名单体系
 - [docs/technical/04-business-engine.md](docs/technical/04-business-engine.md) — 统一业务引擎设计
+- [docs/superpowers/specs/2026-11-09-tef-extraction-design.md](docs/superpowers/specs/2026-11-09-tef-extraction-design.md) — 框架剥离与 P1/P2 收尾设计：包边界、API 契约、跨服务执行状态机

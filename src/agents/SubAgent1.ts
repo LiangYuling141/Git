@@ -1,11 +1,11 @@
 // =============================================================================
-// Sub Agent 1 - Business Rule Validator using MiniMax M2.5
+// Sub Agent 1 - Business Rule Validator using DeepSeek
 // =============================================================================
 
-import { miniMaxClient, type MiniMaxMessage } from '@/lib/ai/MiniMaxClient';
+import { llmClient, isDeepSeekConfigured, type LLMMessage } from '@/lib/ai/LLMClient';
 import type { Operation, Session } from '@/types';
 import type { AgentVoter } from '@/voting';
-import type { ValidationResult } from '@/lib/ai/IAgentKernel';
+import { parseValidationResult, type ValidationResult } from '@/lib/ai/IAgentKernel';
 import { loggerManager, LogCategory } from '@/lib/logger';
 
 const logger = loggerManager.getLogger(LogCategory.SYSTEM, 'SubAgent1');
@@ -48,9 +48,8 @@ export class SubAgent1 implements AgentVoter {
     this.reason = '';
     this.lastResult = { passed: true };
 
-    const apiKey = process.env.MINIMAX_API_KEY;
-    if (!apiKey) {
-      logger.warn('MINIMAX_API_KEY not set, using fallback validation');
+    if (!isDeepSeekConfigured()) {
+      logger.warn('DEEPSEEK_API_KEY not set, using fallback validation');
       return this.fallbackValidation(operation, session);
     }
 
@@ -79,14 +78,13 @@ export class SubAgent1 implements AgentVoter {
       .replace('{isHighRisk}', String(customer?.isHighRisk || false))
       .replace('{monthlyTransaction}', String(customer?.monthlyTransaction || 0));
 
-    const messages: MiniMaxMessage[] = [
+    const messages: LLMMessage[] = [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: userPrompt },
     ];
 
-    const response = await miniMaxClient.chatWithRetry(
+    const response = await llmClient.chatWithRetry(
       {
-        model: 'MiniMax-M2.5',
         messages,
         temperature: 0.1,
         max_tokens: 500,
@@ -100,11 +98,11 @@ export class SubAgent1 implements AgentVoter {
     const content = response.choices[0]?.message?.content || '{}';
 
     try {
-      const parsed = JSON.parse(content) as ValidationResult;
+      const parsed = parseValidationResult(content);
       this.reason = parsed.reason || '';
       return parsed;
     } catch {
-      return { passed: false, reason: 'Failed to parse AI response' };
+      return { passed: false, reason: 'AI response failed schema validation' };
     }
   }
 

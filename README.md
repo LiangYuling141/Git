@@ -5,7 +5,7 @@
 
 LyMatrix TEF 是一个面向 AI Agent 的可信执行框架。它不试图让模型输出变得确定，而是让模型产生的**副作用**变得确定：任何写操作都必须经过契约校验、证据加载、风险定级、预览快照、一次性令牌确认和幂等执行，否则被阻断、拒绝或转人工。
 
-**当前状态（2026-11-08）**：Phase 0 闭环与 Phase 1 补偿运行时已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime、确认 UI 与补偿闭环全部可运行，279 个测试通过（含 27 个对真实 PostgreSQL 的闭环、攻击场景与补偿集成测试）。尚未达到生产可用：评测体系（Phase 2）、遗留代码清理、崩溃恢复与并发压测仍未完成。成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
+**当前状态（2026-11-09）**：Phase 0 闭环与 Phase 1 补偿运行时已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime、确认 UI 与补偿闭环全部可运行，295 个测试通过（含 27 个对真实 PostgreSQL 的闭环、攻击场景与补偿集成测试）。尚未达到生产可用：评测体系（Phase 2）、遗留代码清理、崩溃恢复与并发压测仍未完成。成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
 
 ---
 
@@ -145,7 +145,7 @@ flowchart TB
 
 | 能力 | 说明 |
 |------|------|
-| 模型调用 | 可接 MiniMax 或其他支持工具调用的模型 |
+| 模型调用 | 默认接入 DeepSeek，也可替换为任意 OpenAI 兼容模型 |
 | MCP Client | 工具发现、调用、结果解析 |
 | 上下文装配 | TaskState、最近对话、摘要、实体快照 |
 | 任务状态 | 多轮对话、待确认操作、断点恢复 |
@@ -202,6 +202,7 @@ Agent Runtime 不持有数据库凭据，不直接执行写操作；模型可以
 | [docs/technical/14-unified-architecture.md](docs/technical/14-unified-architecture.md) | **统一架构框架（裁决版，单一权威）**：六条公理、信任域、L0/L1/L2/Block、契约引擎、审计合规 |
 | [docs/technical/13-trusted-execution-architecture.md](docs/technical/13-trusted-execution-architecture.md) | 可信执行架构详细设计：业务操作契约、MCP 工具链、评测基准 |
 | [docs/technical/06-system-architecture.md](docs/technical/06-system-architecture.md) | 整体技术架构设计：技术选型、分层职责、核心流程、部署 |
+| [docs/superpowers/specs/2026-11-09-tef-extraction-design.md](docs/superpowers/specs/2026-11-09-tef-extraction-design.md) | 框架剥离与 P1/P2 收尾设计：包边界、API 契约、跨服务执行状态机 |
 
 ### 比赛材料
 
@@ -260,7 +261,7 @@ Agent Runtime 不持有数据库凭据，不直接执行写操作；模型可以
 
 ## 本地运行
 
-前置：Node 22+、PostgreSQL、（可选）Redis 与 MiniMax API key。
+前置：Node 22+、PostgreSQL、（可选）Redis 与 DeepSeek API key。
 
 所有配置统一放在仓库根目录的 `.env`（已被 `.gitignore` 忽略），模板见 `.env.example`。项目不再读取 `.env.local`。
 

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { IntentResult } from '@/tef/types';
+import { isDeepSeekConfigured } from '@/lib/ai/LLMClient';
 
 /**
  * 意图解析（L3）。
@@ -41,12 +42,6 @@ const INVENTORY_WORDS = /(库存|现货|还有多少|备货|存货)/;
 const ORDER_QUERY_WORDS = /(订单|单子).{0,6}(查|看|状态|详情)|(查|看).{0,6}(订单|单子)/;
 const COMPENSATION_VERBS = /(取消|作废|撤销|退掉|不要了)/;
 const ORDER_REFERENCE = /(订单|单子|那单|这单|刚才|SO-[A-Z0-9-]+)/;
-
-function hasModelKey(): boolean {
-  const key = process.env.MINIMAX_API_KEY ?? '';
-  // 占位符不算配置好：仓库里 .env 跟踪的是 your_api_key_here
-  return key.length >= 20 && !/^(your|xxx|placeholder|changeme)/i.test(key);
-}
 
 function extractCustomerName(message: string): string | undefined {
   const patterns = [
@@ -222,15 +217,14 @@ const LLM_SYSTEM_PROMPT = `你是义乌小商品外贸 CRM 的意图解析器。
  * 返回值一律经过 schema 校验，confidence 字段即使模型给了也会被丢弃。
  */
 export async function parseIntent(message: string): Promise<{ intent: IntentResult; source: 'model' | 'deterministic' }> {
-  if (!hasModelKey()) {
+  if (!isDeepSeekConfigured()) {
     return { intent: parseIntentDeterministic(message), source: 'deterministic' };
   }
 
   try {
-    const { miniMaxClient } = await import('@/lib/ai/MiniMaxClient');
-    const response = await miniMaxClient.chatWithRetry(
+    const { llmClient } = await import('@/lib/ai/LLMClient');
+    const response = await llmClient.chatWithRetry(
       {
-        model: 'MiniMax-M2.7',
         messages: [
           { role: 'system', content: LLM_SYSTEM_PROMPT },
           { role: 'user', content: message },

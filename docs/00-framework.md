@@ -722,7 +722,8 @@ sequenceDiagram
 | 赊账订单契约 | 前置条件、不变量、权限、风险、副作用、补偿、diff | `src/contracts/credit-order/create-order.ts` | `create-order.test.ts`（52） |
 | 补偿契约 | 已提交订单的补偿预览与执行 | `src/contracts/credit-order/compensate-order.ts` | `compensate-order.test.ts`（33） |
 | 通用契约运行时 | preview/execute 共用逻辑与垂直适配器注入 | `src/mcp-server/tools/contract.ts` | 由 MCP、契约与集成测试覆盖 |
-| 意图解析 | 模型解析与确定性回退、补偿意图 | `src/agent-runtime/intent.ts` | `intent.test.ts`（17） |
+| 意图解析 | 模型解析与确定性回退、补偿意图 | `src/agent-runtime/intent.ts` | `intent.test.ts`（17）、`intent.model.test.ts`（3） |
+| 模型客户端 | OpenAI 兼容调用、瞬时错误重试、配置检查 | `src/lib/ai/LLMClient.ts` | `LLMClient.test.ts`（11） |
 | MCP Server | 工具注册、可见性、角色 scope | `src/mcp-server/server.ts` | `server.test.ts`（14） |
 | 确认执行计划 | 根据契约选择执行工具与成功状态 | `src/app/api/agent/confirm/execute-plan.ts` | `execute-plan.test.ts`（3） |
 | 闭环集成 | 真实数据库端到端、攻击场景与补偿 | `tests/integration/` | 27（需 `TEF_DB_TESTS=1`） |
@@ -753,7 +754,7 @@ sequenceDiagram
 | 单元测试 | 契约引擎、风险、哈希、快照、令牌、审计链、意图、MCP、创建与补偿契约、确认执行计划 | 252 | `npm test` 默认运行 |
 | 数据库集成测试 | Phase 0 闭环/攻击场景（19）+ Phase 1 补偿闭环（8） | 27 | `TEF_DB_TESTS=1` 且 `DATABASE_URL` 可用 |
 
-本地实测（2026-11-08）：252 个单元测试通过；设置 `TEF_DB_TESTS=1` 后 279 个测试全部通过；typecheck 通过；build 通过；lint 为 0 错误、29 警告（集中在遗留代码）。
+本地实测（2026-11-09）：268 个单元测试通过；设置 `TEF_DB_TESTS=1` 后 295 个测试全部通过；typecheck 通过；build 通过；lint 为 0 错误、28 警告（集中在遗留代码）。
 
 ### 9.3 CI 流水线
 
@@ -798,13 +799,14 @@ npm run rls:verify
 | `DATABASE_URL` | 是 | PostgreSQL 连接串，Prisma CLI 与运行时共用 |
 | `TEF_TOKEN_SECRET` | 是 | 令牌 HMAC-SHA256 密钥，至少 32 字符；缺失或过短时拒绝签发 |
 | `REDIS_URL` | 否 | 未配置或不可用时限流 fail-open，仅适合本地开发 |
-| `MINIMAX_API_KEY` | 否 | 未配置或为占位符时，意图解析回落到确定性规则解析器；有效 Key 需至少 20 字符且不以 `your` / `xxx` / `placeholder` / `changeme` 开头 |
-| `MINIMAX_API_BASE` | 否 | 模型 API 地址，未设置时使用内置默认值 |
-| `MINIMAX_GROUP_ID` | 否 | MiniMax 分组 ID，仅非空时附加 `MMG-Group-Id` 请求头 |
+| `DEEPSEEK_API_KEY` | 否 | 未配置或为占位符时，意图解析回落到确定性规则解析器；有效 Key 需至少 20 字符且不以 `your` / `xxx` / `placeholder` / `changeme` 开头 |
+| `DEEPSEEK_API_BASE` | 否 | OpenAI 兼容 API 地址，默认 `https://api.deepseek.com/v1` |
+| `DEEPSEEK_MODEL` | 否 | 模型名，默认 `deepseek-chat`；可切换为 `deepseek-reasoner` 或其他兼容模型 |
 | `LOG_DIR` | 否 | 文件日志目录，默认 `./logs`；仅 production 写文件 |
 | `APP_DB_ROLE` | 否 | RLS 验证用应用角色，默认 `lymatrix_app`，仅 `npm run rls:*` 使用 |
 | `APP_DB_PASSWORD` | 否 | 上述角色密码，仅 `prepare-app-role` / `app-role-url` 使用 |
 | `TEF_DB_TESTS` | 否 | 设为 `1` 时 `npm test` 额外执行真实数据库集成测试 |
+| `TEF_MODEL_TESTS` | 否 | 设为 `1` 时测试保留真实 `DEEPSEEK_API_KEY` 并调用模型；默认清空 Key，走确定性解析器 |
 | `PORT` | 否 | Next.js 监听端口，默认 3000 |
 
 ### 9.6 密钥管理
@@ -886,7 +888,7 @@ npm run rls:verify
 | RLS 本地验证口径 | 开发库以表 owner 连接时，仅 FORCE 档受约束；非 owner 角色验证由 CI 完成 |
 | 复合意图 | Runtime 只推进第一步，不合并事务 |
 | ops 白名单工具 | `whitelist.list`、`whitelist.set`、`tenant.config.get` 已声明但未注册 |
-| 模型可替换演示 | 需要真实 `MINIMAX_API_KEY`；否则回落到确定性解析器，无法演示“更换模型” |
+| 模型可替换演示 | 需要真实 `DEEPSEEK_API_KEY`；否则回落到确定性解析器，无法演示“更换模型” |
 | 生产可用性 | 未做安全评审、压测、兼容性验证与 SLA，不得对外宣称工业级 |
 
 ---
@@ -899,6 +901,7 @@ npm run rls:verify
 - [technical/14-unified-architecture.md](technical/14-unified-architecture.md) — 统一架构框架（裁决版，单一权威）：六条公理、信任域、风险模型、契约引擎、审计合规
 - [technical/13-trusted-execution-architecture.md](technical/13-trusted-execution-architecture.md) — 可信执行架构详细设计：业务操作契约、MCP 工具链、评测基准
 - [technical/06-system-architecture.md](technical/06-system-architecture.md) — 整体技术架构设计：技术选型、分层职责、核心流程、部署
+- [superpowers/specs/2026-11-09-tef-extraction-design.md](superpowers/specs/2026-11-09-tef-extraction-design.md) — 框架剥离与 P1/P2 收尾设计：包边界、API 契约、跨服务执行状态机
 
 ### 工具、引擎与安全机制
 

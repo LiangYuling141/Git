@@ -44,7 +44,7 @@ jobs:
       NEXT_TELEMETRY_DISABLED: "1"
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/lymatrix_ci
       REDIS_URL: redis://localhost:6379
-      MINIMAX_API_KEY: ci-placeholder
+      DEEPSEEK_API_KEY: ci-placeholder
       # 至少 32 字符：缺失或过短时服务会拒绝签发确认令牌，CI 必须显式提供
       TEF_TOKEN_SECRET: ci-only-token-signing-secret-not-for-production
       TEF_DB_TESTS: "1"

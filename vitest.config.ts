@@ -6,6 +6,12 @@ import dotenv from 'dotenv';
 // CI 未提供 .env 时静默跳过，直接使用 workflow 注入的环境变量。
 dotenv.config({ path: '.env', quiet: true });
 
+// 测试默认不访问外部模型：只有显式设置 TEF_MODEL_TESTS=1 时才保留真实 Key。
+// 否则本地 .env 配好 Key 后，集成测试会因模型调用超时而失败，CI 也不应依赖外部服务。
+if (process.env.TEF_MODEL_TESTS !== '1') {
+  process.env.DEEPSEEK_API_KEY = '';
+}
+
 export default defineConfig({
   resolve: {
     alias: {
