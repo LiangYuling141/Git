@@ -421,3 +421,4 @@ interface EvalSample {
 - [../plans/2026-11-09-phase-b1-business-gateway.md](../plans/2026-11-09-phase-b1-business-gateway.md) — Phase B1 实施计划：BusinessGateway 端口与垂直读路径改造
 - [../plans/2026-11-09-phase-b1-5-port-neutrality.md](../plans/2026-11-09-phase-b1-5-port-neutrality.md) — Phase B1.5 实施计划：BusinessGateway 端口垂直中立化
 - [../plans/2026-11-09-phase-b2-crm-http-gateway.md](../plans/2026-11-09-phase-b2-crm-http-gateway.md) — Phase B2 实施计划：CRM 通用 HTTP 网关与 HttpCrmGateway
+- [../plans/2026-11-09-phase-c-p1-execution-state-machine.md](../plans/2026-11-09-phase-c-p1-execution-state-machine.md) — Phase C 实施计划：P1 收尾、执行状态机、故障注入与并发
