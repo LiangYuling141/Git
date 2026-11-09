@@ -59,6 +59,29 @@ async function findReplayRecord(
 }
 
 /**
+ * 事务回滚后重读幂等记录。
+ *
+ * 业务守卫失败（例如并发预占把库存扣到不足）会以 CONFLICT 抛出并回滚本次
+ * 事务，但同一 key 的并发调用可能已经成功提交。若只返回 CONFLICT，对账会把
+ * “副作用已发生”的尝试误结算为 failed。新开事务读取先提交者的记录并按重放
+ * 返回；确实没有记录才是确定冲突。
+ */
+async function replayIfCommitted(
+  input: EffectsExecuteRequest,
+): Promise<EffectsExecuteResult | null> {
+  try {
+    const replay = await findReplayRecord(input.tenantId, input.idempotencyKey);
+    return replay ? replayResponse(replay) : null;
+  } catch (replayError) {
+    console.error(
+      '[internal.effects.execute] replay lookup failed:',
+      replayError instanceof Error ? replayError.message : replayError,
+    );
+    return null;
+  }
+}
+
+/**
  * 在租户作用域事务内执行 effects。
  *
  * 抛出 EffectExecutionError 或 Prisma 错误由调用方统一收口——这里不吞异常，
@@ -111,23 +134,21 @@ export async function executeCrmEffectsInProcess(
     return await executeWithinTenantScope(input);
   } catch (error) {
     if (error instanceof EffectExecutionError) {
+      // CONFLICT 可能来自与已提交执行的并发竞争（例如库存守卫只在两个
+      // 事务争抢同一行时失败）。事务已回滚，必须在新事务里确认是否已有
+      // 先提交者；有则重放缓存的成功响应，否则才是确定冲突。
+      if (error.code === 'CONFLICT') {
+        const replay = await replayIfCommitted(input);
+        if (replay) return replay;
+      }
       return structuredFailure(error.code, error.message);
     }
     if (isUniqueConstraintError(error)) {
       // 并发同 key：两个事务都没读到幂等记录，先提交者成功，后提交者在
       // 唯一索引上得到 P2002，整个事务（包括 effects）回滚。读取先提交者的
       // 记录，按正常重放返回。
-      try {
-        const replay = await findReplayRecord(input.tenantId, input.idempotencyKey);
-        if (replay) {
-          return replayResponse(replay);
-        }
-      } catch (replayError) {
-        console.error(
-          '[internal.effects.execute] replay lookup failed:',
-          replayError instanceof Error ? replayError.message : replayError,
-        );
-      }
+      const replay = await replayIfCommitted(input);
+      if (replay) return replay;
       // 记录仍不存在说明 P2002 不是幂等插入造成的；按内部错误处理，
       // 不能把竞态当成成功响应返回。
       console.error('[internal.effects.execute] unique constraint without idempotency record');

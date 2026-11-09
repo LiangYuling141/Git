@@ -104,6 +104,23 @@ async function loadAttemptContext(row: AttemptRow): Promise<ExecutingAttempt | n
     const snapshot = await previewStore.load(row.tenantId, row.previewId, tx);
     if (!snapshot) return null;
 
+    // 对账执行前必须确认尝试与快照指向同一份被批准内容。若不一致，
+    // 用快照重算出的 effects 可能不是 attempt 行所代表的操作，绝不能执行：
+    // 保持原状态并交给人工对账。
+    if (
+      snapshot.intentHash !== row.intentHash ||
+      snapshot.contract !== row.contract ||
+      snapshot.contractVersion !== row.contractVersion
+    ) {
+      console.error(
+        `[tef.reconcile] attempt ${row.attemptId} snapshot binding mismatch ` +
+          `(attempt contract=${row.contract}@${row.contractVersion}, ` +
+          `snapshot contract=${snapshot.contract}@${snapshot.contractVersion}); ` +
+          'leaving it for manual reconciliation',
+      );
+      return null;
+    }
+
     const contract = contractRegistry.get(row.contract, row.contractVersion);
     if (!contract) return null;
 
@@ -235,7 +252,9 @@ async function reconcileAttempt(
         settleError instanceof Error ? settleError.message : settleError,
       );
     }
-    return 'unknown';
+    // settleUnknown 只推进仍未结算的尝试。若并发对账/前台已经成功结算，
+    // 实际终态可能是 succeeded；报告必须按数据库状态归类，不能无条件写 unknown。
+    return classifyStoredStatus(row.tenantId, row.attemptId);
   }
 
   if (execResult.ok) {

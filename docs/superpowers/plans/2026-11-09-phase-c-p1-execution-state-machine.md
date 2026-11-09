@@ -259,7 +259,7 @@ const execResult = await options.effectsExecutor.execute({
 });
 ```
 
-**证据版本语义（Task 4 前）**：`expectedEvidenceVersion` 当前取预览快照的 `evidenceDigest`，仅作为证据版本标识透传；进程内执行器尚未比较该值。版本不一致 → `CONFLICT` 的判定与冲突后的重新预览流程延后到 Task 4 实现，在此之前它不参与执行判定。
+**证据版本语义**：`expectedEvidenceVersion` 当前取预览快照的 `evidenceDigest`，仅作为证据版本标识透传；进程内执行器尚未比较该值。版本不一致 → `CONFLICT` 的判定与冲突后的重新预览流程待具备第二证据版本来源后实现（B3/跨服务），在此之前它不参与执行判定。
 
 - [ ] **Step 3：Phase 3（结算）**
 

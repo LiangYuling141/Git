@@ -487,7 +487,7 @@ async function runPhase1(
         effects: revalidated.effects as unknown as Prisma.InputJsonValue,
         // expectedEvidenceVersion 当前取预览快照的 evidenceDigest，仅作为证据版本
         // 标识透传给执行器。进程内执行器尚未比较该值；版本冲突 → CONFLICT 的
-        // 语义（以及冲突后的重新预览）延后到 Task 4 落地，在此之前它不参与执行判定。
+        // 语义（以及冲突后的重新预览）待具备第二证据版本来源后实现（B3/跨服务）。
         expectedEvidenceVersion: snapshot.evidenceDigest,
       },
     });
@@ -931,7 +931,10 @@ export async function executeContract(
       actorId: principal.userId,
       actorType: 'agent',
       traceId: options.traceId,
-      now,
+      // 结算时间取实际结算时刻，而不是请求开始时间：Phase 2 可能耗时较长，
+      // 把 settledAt 与结果审计 ts 钉在请求开始会掩盖真实执行时长。
+      // 仅在调用方显式注入时钟（测试/回放）时才使用固定值。
+      now: options.now,
     };
 
     // Phase 2：外部副作用。执行器幂等域只含单一内部工具名，必须用

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
+  EffectExecutionError,
   EffectsExecutionUnknownError,
   type EffectsExecuteRequest,
   type EffectsExecuteResult,
@@ -373,6 +374,103 @@ describeDb('对账与故障注入（真实数据库）', () => {
         scopedExecutorIdempotencyKey(CREATE_TOOL, idempotencyKey),
       ),
     ).toBe(1);
+  });
+
+  it('确定性失败：对账把尝试结算为 failed，写失败审计与 CONFLICT 幂等记录', async () => {
+    await resetFixture();
+    const traceId = nextTrace();
+    const idempotencyKey = `idem_recovery_deterministic_${traceId}`;
+    const { token } = await previewAndApprove(traceId);
+
+    const captured = await captureUnknownAttempt(traceId, token, idempotencyKey);
+    await markExecuting(captured.attemptId);
+
+    const executor: EffectsExecutor = {
+      async execute() {
+        throw new EffectExecutionError('CONFLICT', 'inventory changed concurrently; re-preview required');
+      },
+    };
+
+    const report = await reconcileExecutions({
+      tenantId: TENANT,
+      effectsExecutor: executor,
+      staleAfterMs: 0,
+      now: reconciliationClock(),
+    });
+    expectReport(report, { scanned: 1, succeeded: 0, failed: 1, unknown: 0 });
+
+    const attempt = await readAttempt(captured.attemptId);
+    expect(attempt.status).toBe('failed');
+    expect(attempt.errorCode).toBe('CONFLICT');
+    expect(attempt.settledAt).not.toBeNull();
+    expect(attempt.result).toMatchObject({ status: 'conflict' });
+
+    const resultAudit = await readResultAudit(captured.attemptId);
+    expect(resultAudit).not.toBeNull();
+    expect(resultAudit?.result).toBe('failure');
+    expect(resultAudit?.decision).toBe('block');
+    expect(resultAudit?.actorType).toBe('system');
+
+    // CONFLICT 是确定失败：写 TEF 幂等记录，重复请求得到同一个失败响应。
+    expect(await countIdempotencyRecords(CREATE_TOOL, idempotencyKey)).toBe(1);
+    // 副作用从未发生。
+    expect(await countOrdersByTrace([traceId])).toBe(0);
+    await expect(readProduct()).resolves.toEqual({
+      availableQty: INITIAL_AVAILABLE_QTY,
+      reservedQty: 0,
+    });
+
+    // 终态尝试不再被扫描。
+    const again = await reconcileExecutions({
+      tenantId: TENANT,
+      effectsExecutor: executor,
+      staleAfterMs: 0,
+      now: reconciliationClock(),
+    });
+    expectReport(again, { scanned: 0, succeeded: 0, failed: 0, unknown: 0 });
+  });
+
+  it('结果仍未知：对账保持 unknown，不写终态审计与幂等记录，下一轮可收敛', async () => {
+    await resetFixture();
+    const traceId = nextTrace();
+    const idempotencyKey = `idem_recovery_still_unknown_${traceId}`;
+    const { token } = await previewAndApprove(traceId);
+
+    const captured = await captureUnknownAttempt(traceId, token, idempotencyKey);
+    await markExecuting(captured.attemptId);
+
+    const unknownExecutor: EffectsExecutor = {
+      async execute() {
+        throw new EffectsExecutionUnknownError('simulated timeout');
+      },
+    };
+
+    const firstReport = await reconcileExecutions({
+      tenantId: TENANT,
+      effectsExecutor: unknownExecutor,
+      staleAfterMs: 0,
+      now: reconciliationClock(),
+    });
+    expectReport(firstReport, { scanned: 1, succeeded: 0, failed: 0, unknown: 1 });
+
+    const attempt = await readAttempt(captured.attemptId);
+    expect(attempt.status).toBe('unknown');
+    expect(attempt.errorCode).toBe('UNKNOWN');
+    expect(attempt.resultAuditEventId).toBeNull();
+    expect(await readResultAudit(captured.attemptId)).toBeNull();
+    expect(await countIdempotencyRecords(CREATE_TOOL, idempotencyKey)).toBe(0);
+    expect(await countOrdersByTrace([traceId])).toBe(0);
+
+    // unknown 仍会被下一轮扫描，并用同一执行器幂等键收敛为成功。
+    const secondReport = await reconcileExecutions({
+      tenantId: TENANT,
+      effectsExecutor: createInProcessCrmEffectsExecutor(),
+      staleAfterMs: 0,
+      now: reconciliationClock(),
+    });
+    expectReport(secondReport, { scanned: 1, succeeded: 1, failed: 0, unknown: 0 });
+    expect((await readAttempt(captured.attemptId)).status).toBe('succeeded');
+    expect(await countOrdersByTrace([traceId])).toBe(1);
   });
 
   it('副作用成功但 Phase 3 未执行：对账补写结果审计，审计链校验通过', async () => {
