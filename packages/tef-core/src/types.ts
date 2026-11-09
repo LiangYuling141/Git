@@ -341,6 +341,12 @@ export interface TaskState {
    * 只在执行结果确定（成功/冲突/确定失败）时清空。
    */
   pendingExecutionAttemptId?: string | null;
+  /**
+   * 未结算执行使用的确认令牌。只允许服务端重试逻辑读取：
+   * 绝不可写入模型上下文、提示词或任何模型可见字符串。
+   * 与 pendingExecutionAttemptId 同生命周期，确定结果后清空。
+   */
+  pendingConfirmationToken?: string | null;
   clarificationRounds: number;
   /** 乐观锁 */
   version: number;

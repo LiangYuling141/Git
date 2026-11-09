@@ -45,11 +45,11 @@ export async function POST(request: Request) {
     conversationId?: string;
   } | null;
 
-  const token = body?.confirmationToken;
+  const requestToken = body?.confirmationToken;
   const action = body?.action;
-  if (!token || (action !== 'approve' && action !== 'reject')) {
+  if (action !== 'approve' && action !== 'reject') {
     return NextResponse.json(
-      { error: 'validation', message: '需要 confirmationToken 与 action(approve|reject)' },
+      { error: 'validation', message: '需要 action(approve|reject)；重试未结算执行时 token 可选' },
       { status: 400 },
     );
   }
@@ -79,6 +79,11 @@ export async function POST(request: Request) {
   // 这次请求是同一操作的重试，而原令牌可能已经被 Phase 1 消费。再调用
   // confirmation.approve 会得到 CONFLICT，把可恢复的 unknown 变成确定失败。
   const state = await taskStateStore.load(tenant.tenantId, conversationId);
+  // conversationId 来自请求体：同一租户内也不能复用别人的任务状态，
+  // 否则可以用他人未结算的 token/key 重放写入。
+  if (state && state.userId !== session.userId) {
+    return NextResponse.json({ error: 'forbidden', message: '该会话不属于当前用户' }, { status: 403 });
+  }
   const unresolvedAttemptId = state?.pendingExecutionAttemptId ?? null;
 
   // 未结算执行期间拒绝不会撤销已经可能发生的副作用，也不能清掉 marker；
@@ -94,16 +99,36 @@ export async function POST(request: Request) {
 
   let decision: Envelope | null = null;
   let traceId: string;
+  /** 本次执行使用的令牌：重试时优先请求体，其次服务端持久化值。 */
+  let executionToken: string;
 
   if (unresolvedAttemptId) {
     // 跳过人工批准：Phase 1 先检查 attempt 再消费令牌，已使用/已批准的
     // 令牌不会被二次消费；对账已结算时会直接重放已存结果。
+    // 令牌是服务端重试状态，绝不再调用 confirmation.approve。
+    const storedToken = requestToken ?? state?.pendingConfirmationToken ?? null;
+    if (!storedToken) {
+      return NextResponse.json(
+        {
+          status: 'executing',
+          approved: true,
+          reply: '执行结果待对账，但缺少确认令牌，需人工对账后再试。',
+          traceId: state?.traceId ?? null,
+        },
+        { status: 409 },
+      );
+    }
+    executionToken = storedToken;
     traceId = state?.traceId ?? `tr_exec_${Date.now()}`;
   } else {
+    if (!requestToken) {
+      return NextResponse.json({ error: 'validation', message: '需要 confirmationToken' }, { status: 400 });
+    }
+    executionToken = requestToken;
     const human = await connectTefClient({ principal: humanPrincipal, traceId: `tr_confirm_${Date.now()}`, secret });
     try {
       decision = await human.callTool(action === 'approve' ? 'confirmation.approve' : 'confirmation.reject', {
-        confirmation_token: token,
+        confirmation_token: requestToken,
         ...(body.reason ? { reason: body.reason } : {}),
       });
     } finally {
@@ -141,10 +166,14 @@ export async function POST(request: Request) {
             intent: null,
             idempotencyKey: null,
             pendingExecutionAttemptId: null,
+            pendingConfirmationToken: null,
           },
           state.version,
         )
-        .catch(() => null);
+        .catch((error) => {
+          console.error('[confirm] failed to persist rejected task state', error);
+          return null;
+        });
     }
 
     return NextResponse.json({
@@ -186,7 +215,7 @@ export async function POST(request: Request) {
   let executed: Envelope;
   try {
     executed = await agent.callTool(plan.tool, {
-      confirmation_token: token,
+      confirmation_token: executionToken,
       idempotency_key: idempotencyKey,
     });
   } finally {
@@ -212,17 +241,23 @@ export async function POST(request: Request) {
               // 确定结果后清空执行锚点，下一次操作必须拿到新 key。
               idempotencyKey: null,
               pendingExecutionAttemptId: null,
+              pendingConfirmationToken: null,
             }
-          : // 执行结果待对账：推进状态并写入显式 marker，保留幂等键、pending
-            // 预览与过期时间。用户下一步仍用同一确认操作重试，不重新预览。
+          : // 执行结果待对账：推进状态并写入显式 marker，保留幂等键、令牌、
+            // pending 预览与过期时间。用户下一步仍用同一确认操作重试，
+            // 服务端直接复用该令牌执行，绝不重新预览。
             {
               status: outcome.nextStatus,
               idempotencyKey,
               pendingExecutionAttemptId: outcome.pendingExecutionAttemptId,
+              pendingConfirmationToken: executionToken,
             },
         state.version,
       )
-      .catch(() => null);
+      .catch((error) => {
+        console.error('[confirm] failed to persist unresolved execution state', error);
+        return null;
+      });
   }
 
   return NextResponse.json({

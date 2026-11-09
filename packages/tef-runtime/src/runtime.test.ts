@@ -58,8 +58,9 @@ function createTaskState(overrides: Partial<TaskState> = {}): TaskState {
       expiresAt: new Date('2026-11-10T00:15:00.000Z'),
     },
     // 默认代表“上一轮执行结果未结算”：Runtime 必须跳过意图解析，
-    // 用同一 key 重跑持久化的操作快照。
+    // 用同一 key + 同一令牌直接重试持久化的操作快照，绝不重新预览。
     pendingExecutionAttemptId: 'att_runtime',
+    pendingConfirmationToken: 'ct_runtime',
     idempotencyKey: 'idem_runtime_existing',
     intent: { kind: 'operation', contract: 'create_order', slots: { ...ORDER_SLOTS } },
     ...overrides,
@@ -168,10 +169,14 @@ describe('Runtime：结果未知时保留幂等键、意图与 pending', () => {
 
       const result = await turn(taskState, MESSAGE, session);
 
-      const executeCall = calls.find((call) => call.name === 'order.execute_create');
-      expect(executeCall, 'Runtime should reach the L1 execute step').toBeTruthy();
-      // L1 执行必须复用未结算执行的 key，否则重试会变成第二次副作用。
-      expect(executeCall?.args.idempotency_key).toBe('idem_runtime_existing');
+      // marker 重试必须直接执行：不得重新预览（预览会签发新令牌/新快照）。
+      expect(calls.map((call) => call.name)).toEqual(['order.execute_create']);
+      const executeCall = calls[0];
+      // 同 key + 同令牌，否则重试会变成第二次副作用或消费错令牌。
+      expect(executeCall.args).toEqual({
+        confirmation_token: 'ct_runtime',
+        idempotency_key: 'idem_runtime_existing',
+      });
 
       expect(result.status).toBe('executing');
       expect(result.reply).toContain('待对账');
@@ -182,6 +187,7 @@ describe('Runtime：结果未知时保留幂等键、意图与 pending', () => {
         status: 'executing',
         idempotencyKey: 'idem_runtime_existing',
         pendingExecutionAttemptId: 'att_runtime',
+        pendingConfirmationToken: 'ct_runtime',
         pendingPreviewId: 'pv_runtime',
         pendingIntentHash: 'ih_runtime',
         pendingContract: 'create_order',
@@ -194,6 +200,88 @@ describe('Runtime：结果未知时保留幂等键、意图与 pending', () => {
       });
     },
   );
+
+  it('首次执行落到 unknown：持久化预览签发并实际用于执行的令牌', async () => {
+    const calls: FakeCall[] = [];
+    const initial = createTaskState({
+      status: 'idle',
+      pendingExecutionAttemptId: null,
+      pendingConfirmationToken: null,
+      idempotencyKey: null,
+      intent: null,
+      pendingPreview: null,
+    });
+    const session = fakeSession(
+      l1Handler({
+        status: 'error',
+        error: { code: 'EXECUTION_UNKNOWN', message: 'commit outcome unknown' },
+        data: { attemptId: 'att_runtime', retryWithSameKey: true },
+      }),
+      calls,
+    );
+
+    const result = await turn(initial, MESSAGE, session);
+    const executeCall = calls.find((call) => call.name === 'order.execute_create');
+
+    expect(result.status).toBe('executing');
+    expect(executeCall?.args.confirmation_token).toBe('ct_runtime');
+    // 下一次 marker 重试必须能直接用这个令牌，不能重新预览。
+    expect(result.patch.pendingConfirmationToken).toBe('ct_runtime');
+    expect(result.patch.pendingExecutionAttemptId).toBe('att_runtime');
+    expect(result.patch.idempotencyKey).toBe(executeCall?.args.idempotency_key);
+  });
+
+  it('marker 存在但缺少持久化令牌：executing，不调用工具、不生成新 key', async () => {
+    const calls: FakeCall[] = [];
+    const session = fakeSession(() => {
+      throw new Error('no tool should be called without the stored confirmation token');
+    }, calls);
+
+    const result = await turn(createTaskState({ pendingConfirmationToken: null }), MESSAGE, session);
+
+    expect(result.status).toBe('executing');
+    expect(result.reply).toContain('待对账');
+    expect(result.reply).toContain('确认令牌');
+    expect(result.patch.pendingExecutionAttemptId).toBe('att_runtime');
+    expect(result.patch.idempotencyKey).toBe('idem_runtime_existing');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('补偿 marker 重试直接调用 order.execute_compensate，不重新预览', async () => {
+    const calls: FakeCall[] = [];
+    const session = fakeSession((name) => {
+      if (name === 'order.execute_compensate') {
+        return { status: 'ok', data: { orderId: 'o_comp' }, auditId: 'aud_comp' };
+      }
+      throw new Error(`unexpected tool ${name}`);
+    }, calls);
+
+    const result = await turn(
+      createTaskState({
+        status: 'executing',
+        pendingPreview: {
+          previewId: 'pv_comp',
+          intentHash: 'ih_comp',
+          contract: 'compensate_order',
+          contractVersion: '1.0',
+          expiresAt: new Date('2026-11-10T00:15:00.000Z'),
+        },
+        intent: { kind: 'operation', contract: 'compensate_order', slots: { orderId: 'o_comp' } },
+        pendingConfirmationToken: 'ct_comp',
+      }),
+      MESSAGE,
+      session,
+    );
+
+    expect(calls.map((call) => call.name)).toEqual(['order.execute_compensate']);
+    expect(calls[0].args).toEqual({
+      confirmation_token: 'ct_comp',
+      idempotency_key: 'idem_runtime_existing',
+    });
+    expect(result.status).toBe('compensated');
+    expect(result.patch.pendingExecutionAttemptId).toBeNull();
+    expect(result.patch.pendingConfirmationToken).toBeNull();
+  });
 
   it('reportExecution：两个未知错误码都映射为 executing 并写入 marker', () => {
     for (const code of ['EXECUTION_IN_PROGRESS', 'EXECUTION_UNKNOWN'] as const) {
@@ -347,6 +435,8 @@ describe('Runtime：未结算执行的跨轮次生命周期', () => {
     expect(first.patch.pendingExecutionAttemptId).toBe('att_runtime');
     const firstKey = first.patch.idempotencyKey as string;
     expect(firstKey).toMatch(/^[0-9a-f-]{36}$/);
+    // 首次执行的实际令牌来自预览，必须随 marker 一起持久化。
+    expect(first.patch.pendingConfirmationToken).toBe('ct_runtime');
     const stateAfterUnknown = applyPatch(initialState, first.patch);
 
     // 2. 用户发了一句无关聊天：marker 优先，Runtime 不解析这句话，
@@ -356,6 +446,9 @@ describe('Runtime：未结算执行的跨轮次生命周期', () => {
     expect(chatRound.intentSource).toBe('deterministic');
     expect(chatRound.patch.pendingExecutionAttemptId).toBe('att_runtime');
     expect(chatRound.patch.idempotencyKey).toBe(firstKey);
+    expect(chatRound.patch.pendingConfirmationToken).toBe('ct_runtime');
+    // 重试轮次绝不能再走预览：预览调用数保持为首次的那一次。
+    expect(calls.filter((call) => call.name === 'order.preview_create')).toHaveLength(1);
     const stillUnknown = applyPatch(stateAfterUnknown, chatRound.patch);
 
     // 3. 对账结算后再重试：同一操作复用同一 key，直接拿到重放结果。

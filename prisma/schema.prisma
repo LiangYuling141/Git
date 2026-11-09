@@ -556,6 +556,9 @@ model TaskState {
   // 未结算执行尝试的显式标记（execution_attempts.attemptId 或 pending:<key>）。
   // 非空表示副作用可能已经发生：禁止解析新意图，必须用同一幂等键重试/等待对账。
   pendingExecutionAttemptId String?
+  // 未结算执行使用的确认令牌（服务端重试状态，绝不下发给模型或放入模型上下文）。
+  // 与 pendingExecutionAttemptId 同生命周期：重试直接用它执行，绝不重新预览。
+  pendingConfirmationToken   String?
   clarificationRounds       Int        @default(0)
   version                   Int        @default(0)
   // 任务级 trace：一次写入的完整生命周期（含澄清往返）共用一条链，

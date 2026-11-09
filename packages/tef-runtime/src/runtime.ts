@@ -109,7 +109,9 @@ function unresolvedIdempotencyKey(taskState: TaskState): string | undefined {
 }
 
 /** 未结算执行对应的操作契约与可重放槽位；没有则返回 null。 */
-function unresolvedOperationIntent(taskState: TaskState): IntentResult | null {
+function unresolvedOperationIntent(
+  taskState: TaskState,
+): Extract<IntentResult, { kind: 'operation' }> | null {
   if (!taskState.pendingExecutionAttemptId) return null;
   const intent = taskState.intent;
   return intent?.kind === 'operation' && intent.contract ? intent : null;
@@ -139,6 +141,9 @@ function pendingFields(
   preview?: Envelope,
 ): TaskStatePatch {
   const pending = taskState.pendingPreview;
+  // 服务端重试令牌：本轮预览产生了新令牌就用新的，否则沿用已持久化的令牌。
+  // 该字段只用于服务端同 token 重试，绝不下发给模型。
+  const pendingConfirmationToken = preview?.confirmationToken ?? taskState.pendingConfirmationToken ?? null;
   if (pending) {
     return {
       pendingPreviewId: pending.previewId,
@@ -146,6 +151,7 @@ function pendingFields(
       pendingContract: pending.contract,
       pendingContractVersion: pending.contractVersion,
       pendingExpiresAt: pending.expiresAt,
+      pendingConfirmationToken,
     };
   }
   // 首次执行就落到 unknown 时 TaskState 里还没有 pending 快照，
@@ -157,6 +163,7 @@ function pendingFields(
     pendingContract: operationIntent?.kind === 'operation' ? operationIntent.contract : '',
     pendingContractVersion: '1.0',
     pendingExpiresAt: preview.expiresAt ? new Date(preview.expiresAt) : null,
+    pendingConfirmationToken,
   };
 }
 
@@ -170,6 +177,7 @@ function clearedExecutionFields(): TaskStatePatch {
   return {
     idempotencyKey: null,
     pendingExecutionAttemptId: null,
+    pendingConfirmationToken: null,
     intent: null,
     pendingPreviewId: null,
     pendingIntentHash: null,
@@ -283,31 +291,63 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
   // 0. 未结算执行优先：副作用可能已经发生，本轮禁止解析新意图或换 key。
   // 没有可重放的操作快照时只能提示等待对账，不能把它当成一轮普通聊天。
   const unresolvedIntent = unresolvedOperationIntent(taskState);
-  if (taskState.pendingExecutionAttemptId && !taskState.idempotencyKey) {
-    // 没有 key 就无法命中原 attempt；生成新 key 会绕过 Phase 1 检查，
-    // 可能产生第二次副作用。这里只能要求人工对账，绝不静默降级。
-    return finish(
-      'executing',
-      '上一笔执行结果待对账，但缺少幂等键，需人工对账后再试。',
-      {
-        idempotencyKey: null,
-        pendingExecutionAttemptId: taskState.pendingExecutionAttemptId,
-        ...pendingFields(taskState, null),
-      },
-      { traceId, toolCalls, intentSource: 'deterministic' },
-    );
-  }
-  if (taskState.pendingExecutionAttemptId && !unresolvedIntent) {
-    return finish(
-      'executing',
-      '上一笔执行结果待对账，请稍后重试或等待对账完成。',
-      {
-        idempotencyKey: taskState.idempotencyKey ?? null,
-        pendingExecutionAttemptId: taskState.pendingExecutionAttemptId,
-        ...pendingFields(taskState, null),
-      },
-      { traceId, toolCalls, intentSource: 'deterministic' },
-    );
+  if (taskState.pendingExecutionAttemptId) {
+    if (!taskState.idempotencyKey) {
+      // 没有 key 就无法命中原 attempt；生成新 key 会绕过 Phase 1 检查，
+      // 可能产生第二次副作用。这里只能要求人工对账，绝不静默降级。
+      return finish(
+        'executing',
+        '上一笔执行结果待对账，但缺少幂等键，需人工对账后再试。',
+        {
+          idempotencyKey: null,
+          pendingExecutionAttemptId: taskState.pendingExecutionAttemptId,
+          ...pendingFields(taskState, unresolvedIntent),
+        },
+        { traceId, toolCalls, intentSource: 'deterministic' },
+      );
+    }
+    if (!unresolvedIntent) {
+      return finish(
+        'executing',
+        '上一笔执行结果待对账，请稍后重试或等待对账完成。',
+        {
+          idempotencyKey: taskState.idempotencyKey,
+          pendingExecutionAttemptId: taskState.pendingExecutionAttemptId,
+          ...pendingFields(taskState, null),
+        },
+        { traceId, toolCalls, intentSource: 'deterministic' },
+      );
+    }
+
+    // 直接重试需要三件服务端状态：同 key、同令牌、可重放的契约。
+    // 缺少任何一项都不能重新预览或新开操作——原 attempt 仍可能在对账中提交。
+    const retryContract = taskState.pendingPreview?.contract || unresolvedIntent.contract;
+    if (!taskState.pendingConfirmationToken) {
+      return finish(
+        'executing',
+        '上一笔执行结果待对账，但缺少确认令牌，需人工对账后再试。',
+        {
+          idempotencyKey: taskState.idempotencyKey,
+          pendingExecutionAttemptId: taskState.pendingExecutionAttemptId,
+          ...pendingFields(taskState, unresolvedIntent),
+        },
+        { traceId, toolCalls, intentSource: 'deterministic' },
+      );
+    }
+    if (retryContract !== 'create_order' && retryContract !== 'compensate_order') {
+      return finish(
+        'executing',
+        '上一笔执行结果待对账，但无法确定原操作契约，需人工对账后再试。',
+        {
+          idempotencyKey: taskState.idempotencyKey,
+          pendingExecutionAttemptId: taskState.pendingExecutionAttemptId,
+          ...pendingFields(taskState, unresolvedIntent),
+        },
+        { traceId, toolCalls, intentSource: 'deterministic' },
+      );
+    }
+
+    return await retryUnresolvedExecution(input, taskState, unresolvedIntent, toolCalls);
   }
 
   const session = await input.connectSession({
@@ -379,6 +419,52 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
       );
     }
     return await handleQuery(session, contract, intent.slots, { traceId, toolCalls, intentSource, taskState });
+  } finally {
+    await session.close();
+  }
+}
+
+/**
+ * 未结算执行的直接重试。
+ *
+ * 使用持久化的确认令牌与幂等键调用原执行工具，绝不重新预览：重新预览会
+ * 签发新令牌/新快照，而原 attempt 仍可能在对账中提交；预览若被阻断，还会
+ * 让任务既保留 marker 又失去可重放意图。Phase 1 在消费令牌之前检查 attempt，
+ * 因此已消费的令牌在 attempt 存在时是安全的。
+ */
+async function retryUnresolvedExecution(
+  input: AgentTurnInput,
+  taskState: TaskState,
+  unresolvedIntent: Extract<IntentResult, { kind: 'operation' }>,
+  toolCalls: ToolCallRecord[],
+): Promise<AgentTurnResult> {
+  const contract = taskState.pendingPreview?.contract || unresolvedIntent.contract;
+  const idempotencyKey = taskState.idempotencyKey as string;
+  const confirmationToken = taskState.pendingConfirmationToken as string;
+  const session = await input.connectSession({
+    principal: { ...input.principal, clientKind: 'agent' },
+    traceId: input.traceId,
+    secret: input.secret,
+  });
+
+  try {
+    const tool = contract === 'compensate_order' ? 'order.execute_compensate' : 'order.execute_create';
+    const executed = await session.callTool(tool, {
+      confirmation_token: confirmationToken,
+      idempotency_key: idempotencyKey,
+    });
+    toolCalls.push({ tool, status: executed.status, risk: executed.risk });
+
+    const meta: ExecutionReportMeta = {
+      taskState,
+      traceId: input.traceId,
+      toolCalls,
+      intentSource: 'deterministic',
+      operationIntent: unresolvedIntent,
+    };
+    return contract === 'compensate_order'
+      ? reportCompensation(executed, idempotencyKey, meta)
+      : reportExecution(executed, idempotencyKey, meta);
   } finally {
     await session.close();
   }
@@ -581,6 +667,21 @@ async function handleCompensateOrder(
   meta.toolCalls.push({ tool: 'order.preview_compensate', status: preview.status, risk: preview.risk });
 
   if (preview.status === 'blocked') {
+    // 防御分支：有 marker 时主流程不会进入预览。若未来改动让这里可达，
+    // 也绝不能清掉未结算标记，更不能声称"没有产生写入"——原 attempt
+    // 仍可能已经提交副作用。
+    if (meta.taskState.pendingExecutionAttemptId) {
+      return finish(
+        'executing',
+        '本次预览被阻断，但上一笔执行结果仍未结算，无法断言没有写入；请等待对账并使用同一操作重试。',
+        {
+          idempotencyKey: meta.taskState.idempotencyKey ?? null,
+          pendingExecutionAttemptId: meta.taskState.pendingExecutionAttemptId,
+          ...pendingFields(meta.taskState, null),
+        },
+        { ...meta, envelope: preview },
+      );
+    }
     const lines = ['本次补偿被契约阻断，没有产生任何写入：', ...(preview.reasons ?? [])];
     (preview.error?.checks ?? []).forEach((check) => lines.push(`  · ${check.code} — ${check.message}`));
     return finish('failed', lines.join('\n'), { intent: null }, { ...meta, envelope: preview });
@@ -767,6 +868,21 @@ async function handleCreateOrder(
   meta.toolCalls.push({ tool: 'order.preview_create', status: preview.status, risk: preview.risk });
 
   if (preview.status === 'blocked') {
+    // 防御分支：有 marker 时主流程不会进入预览。若未来改动让这里可达，
+    // 也绝不能清掉未结算标记，更不能声称"没有产生写入"——原 attempt
+    // 仍可能已经提交副作用。
+    if (meta.taskState.pendingExecutionAttemptId) {
+      return finish(
+        'executing',
+        '本次预览被阻断，但上一笔执行结果仍未结算，无法断言没有写入；请等待对账并使用同一操作重试。',
+        {
+          idempotencyKey: meta.taskState.idempotencyKey ?? null,
+          pendingExecutionAttemptId: meta.taskState.pendingExecutionAttemptId,
+          ...pendingFields(meta.taskState, null),
+        },
+        { ...meta, envelope: preview },
+      );
+    }
     const lines = ['本次操作被契约阻断，没有产生任何写入：', ...(preview.reasons ?? [])];
     (preview.error?.checks ?? []).forEach((check) => lines.push(`  · ${check.code} — ${check.message}`));
     return finish('failed', lines.join('\n'), { intent: null }, { ...meta, envelope: preview });

@@ -306,6 +306,9 @@ Phase C 起，一次写入拆成“两阶段执行 + 三个阶段”，不再假
 
 - `executing` 的重复请求返回 `EXECUTION_IN_PROGRESS`，`unknown` 返回 `EXECUTION_UNKNOWN`，`data` 携带 `{ attemptId, retryWithSameKey: true }`；两者都必须在消费令牌之前返回。
 - Runtime 与确认路由识别这两个错误码后保留 pending 预览、幂等键与可重放意图，并写入显式标记 `TaskState.pendingExecutionAttemptId`（`attemptId`，缺失时为 `pending:<idempotencyKey>`），提示“用同一操作重试”，不得清空 pending 或生成新 key。标记非空期间禁止解析新意图；只有确定结果（成功/冲突/确定失败）才清空标记与幂等键。
+- 未结算执行还必须持久化本次实际使用的确认令牌 `TaskState.pendingConfirmationToken`（L1 取预览签发值，L2 取确认路由请求令牌或服务端已存值）。重试路径直接以该令牌 + 原幂等键调用执行工具，**绝不重新预览**：重新预览会签发新令牌/新快照，且预览一旦被阻断会让任务既保留 marker 又失去可重放意图。Phase 1 在消费令牌之前检查 attempt，因此已消费的令牌在 attempt 存在时是安全的重试凭据。
+- `pendingConfirmationToken` 是纯服务端重试状态：不得下发给模型、不得出现在提示词或任何模型可见的上下文字符串中；确定结果时与 marker、幂等键一起清空。标记存在但令牌缺失时，Runtime 与确认路由只能返回非终结的 `executing` 提示并等待人工对账，不得重新预览或新开操作。
+- 历史数据迁移：升级前已存在 `status=executing` 或 `unknown`、但没有 marker/token 的 TaskState，部署前必须按 `execution_attempts`（`attemptId`、`previewId`、`idempotencyKey`）回填 `pendingExecutionAttemptId` 与 `pendingConfirmationToken`；否则这些任务会失去同 token 重试锚点，只能人工对账。
 
 已知限制：
 
@@ -350,6 +353,8 @@ interface TaskState {
   idempotencyKey?: string;
   /** 未结算执行尝试；非空时禁止解析新意图，只能用同一幂等键重试 */
   pendingExecutionAttemptId?: string | null;
+  /** 未结算执行使用的确认令牌；仅服务端重试可见，绝不下发给模型 */
+  pendingConfirmationToken?: string | null;
   version: number;
   updatedAt: Date;
 }

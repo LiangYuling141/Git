@@ -153,8 +153,94 @@ describe('确认路由：未结算执行的重试', () => {
       status: 'executing',
       idempotencyKey: 'idem_confirm',
       pendingExecutionAttemptId: 'att_1',
+      // 结果仍未结算：令牌必须随 marker 保留，供下一次直接重试。
+      pendingConfirmationToken: 'ct_used',
     });
     expect(mocks.update.mock.calls[0][3]).toBe(3);
+  });
+
+  it('marker 重试且请求未带 token：复用服务端持久化的令牌直接执行', async () => {
+    mocks.load.mockResolvedValue(
+      makeState({
+        status: 'executing',
+        pendingExecutionAttemptId: 'att_1',
+        pendingConfirmationToken: 'ct_stored',
+      }),
+    );
+    mocks.responses['order.execute_create'] = {
+      status: 'error',
+      error: { code: 'EXECUTION_UNKNOWN', message: 'commit outcome unknown' },
+      data: { attemptId: 'att_1', retryWithSameKey: true },
+      traceId: 'tr_exec',
+    };
+
+    const response = await POST(post({ action: 'approve', conversationId: 'conv_confirm' }));
+    const payload = await response.json();
+
+    // 不再要求客户端带回令牌，也绝不重新调用 confirmation.approve。
+    expect(mocks.toolCalls.map((call) => call.tool)).toEqual(['order.execute_create']);
+    expect(mocks.toolCalls[0].args).toEqual({
+      confirmation_token: 'ct_stored',
+      idempotency_key: 'idem_confirm',
+    });
+    expect(payload.status).toBe('executing');
+    expect(mocks.update.mock.calls[0][2]).toMatchObject({
+      pendingExecutionAttemptId: 'att_1',
+      pendingConfirmationToken: 'ct_stored',
+    });
+  });
+
+  it('marker 重试但请求与服务端都没有令牌：executing，不猜测也不新开操作', async () => {
+    mocks.load.mockResolvedValue(
+      makeState({ status: 'executing', pendingExecutionAttemptId: 'att_1', pendingConfirmationToken: null }),
+    );
+
+    const response = await POST(post({ action: 'approve', conversationId: 'conv_confirm' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.status).toBe('executing');
+    expect(payload.reply).toContain('缺少确认令牌');
+    expect(mocks.toolCalls).toHaveLength(0);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it('跨用户复用 TaskState 被拒绝：不能用他人的未结算 token/key 重放写入', async () => {
+    mocks.load.mockResolvedValue(
+      makeState({ userId: 'u_other', status: 'executing', pendingExecutionAttemptId: 'att_1' }),
+    );
+
+    const response = await POST(
+      post({ confirmationToken: 'ct_used', action: 'approve', conversationId: 'conv_confirm' }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(payload.error).toBe('forbidden');
+    expect(mocks.toolCalls).toHaveLength(0);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it('正常拒绝（无未结算执行）仍调用 confirmation.reject 并标记为 rejected', async () => {
+    mocks.load.mockResolvedValue(makeState());
+    mocks.responses['confirmation.reject'] = {
+      status: 'ok',
+      diff: [],
+      auditId: 'aud_reject',
+      traceId: 'tr_rejected',
+    };
+
+    const response = await POST(
+      post({ confirmationToken: 'ct_fresh', action: 'reject', conversationId: 'conv_confirm' }),
+    );
+    const payload = await response.json();
+
+    expect(mocks.toolCalls.map((call) => call.tool)).toEqual(['confirmation.reject']);
+    expect(payload.status).toBe('failed');
+    expect(mocks.update.mock.calls[0][2]).toMatchObject({
+      pendingExecutionAttemptId: null,
+      pendingConfirmationToken: null,
+    });
   });
 
   it('重试后确定成功：清空 marker 与 key，任务按 completed 结算', async () => {

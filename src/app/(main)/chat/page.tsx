@@ -9,6 +9,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { resolveCardResolution } from './confirm-resolution';
 
 interface DiffChange {
   field: string;
@@ -175,19 +176,14 @@ export default function ChatPage() {
         body: JSON.stringify({ confirmationToken: token, action, conversationId }),
       });
       const data = await response.json();
-      // executing / EXECUTION_UNKNOWN 不是确定结果：不把确认卡片标记为已执行，
-      // 用户必须能对同一操作再次点击确认（服务端会用同一幂等键重试）。
-      const resolved: MessageMeta['resolved'] = !response.ok
-        ? undefined
-        : action === 'reject'
-          ? 'rejected'
-          : data.status === 'completed' || data.status === 'compensated'
-            ? 'executed'
-            : data.status === 'conflict'
-              ? 'conflict'
-              : data.status === 'failed' || data.status === 'compensation_failed'
-                ? 'failed'
-                : undefined;
+      // executing / EXECUTION_UNKNOWN 不是确定结果：不把确认卡片标记为已执行
+      // 或已拒绝，用户必须能对同一操作再次点击确认（服务端会用同一 token 与
+      // 幂等键重试）。拒绝亦如此——它不会撤销可能已经发生的副作用。
+      const resolved: MessageMeta['resolved'] = resolveCardResolution({
+        ok: response.ok,
+        action,
+        status: data.status,
+      });
       if (resolved) markResolved(messageId, resolved);
       pushAssistant(response.status === 403 ? `无权批准：${data.message}` : data.reply, {
         status: data.status,

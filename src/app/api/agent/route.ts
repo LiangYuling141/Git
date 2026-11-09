@@ -83,9 +83,11 @@ export async function POST(request: Request) {
 
   try {
     await taskStateStore.update(tenant.tenantId, conversationId, { ...result.patch, traceId }, taskState.version);
-  } catch {
+  } catch (error) {
     // TaskState 更新失败不影响已经发生的判定：写入路径本身是幂等的，
-    // 而把乐观锁冲突当成 500 抛给用户会掩盖真正的结果。
+    // 而把乐观锁冲突当成 500 抛给用户会掩盖真正的结果。但这一 patch 可能
+    // 承载未结算执行的 marker/key/token，必须留下日志供对账排查。
+    console.error('[agent] failed to persist task state', error);
   }
 
   const envelope = result.envelope;
