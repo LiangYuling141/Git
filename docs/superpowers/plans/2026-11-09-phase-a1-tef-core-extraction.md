@@ -240,7 +240,7 @@ Expected: 只出现本任务涉及的文件变更；不执行提交。
 
 **Interfaces:**
 - Consumes: `@lymatrix/tef-core` 包骨架（Task 1）
-- Produces: `@lymatrix/tef-core` 导出 `Contract`、`ContractEngine`、`contractEngine`、`contractRegistry`、`assessRisk`、`executeEffects`、`canonicalize`、`hash*`、`Money` 等公开符号；旧路径 `@/tef/*` 继续可用。
+- Produces: `@lymatrix/tef-core` 导出 `Contract`、`ContractEngine`、`contractEngine`、`contractRegistry`、`classifyRisk`、`resolveAmountThreshold`、`executeEffects`、`canonicalize`、`hash*`、`toCents`、`fromCents`、`prorateCents`、`formatCNY` 等公开符号；旧路径 `@/tef/*` 继续可用。
 
 - [ ] **Step 1：移动文件**
 
