@@ -42,10 +42,11 @@ LyMatrix TEF 是一个面向 AI Agent 的可信执行框架。它不试图让模
 | 目录 | 现状 | 目标 |
 |------|------|------|
 | `docs/` | 框架设计、参考实现与合规文档 | 拆分为 `docs/core/` 与 `docs/reference/crm-erp/` |
-| `src/` | Next.js 参考实现 + TEF 框架核心（`src/tef/`）、MCP 工具层（`src/mcp-server/`）、垂直契约（`src/contracts/`）、Agent Runtime（`src/agent-runtime/`） | 框架核心下沉到 `packages/core`，垂直移入 `examples/crm-erp` |
-| `prisma/` | 参考实现数据模型 | 保留为 `examples/crm-erp` 的数据层 |
+| `packages/tef-core/` | 框架治理核心（契约、风险、哈希、effects），不依赖 IO 与业务字段 | 保持零 IO、零垂直依赖，作为 MCP Kit、Runtime 与垂直包的公共底座 |
+| `src/` | Next.js 参考实现与尚未迁出的模块 | 后续阶段继续下沉到 `packages/` 与 `apps/` |
+| `prisma/` | 参考实现数据模型 | 后续阶段拆分为 business / tef / runtime schema |
 
-当前阶段先完成"改名 + 定位 + 文档"，代码目录拆分与仓库改名随 Phase 0 一起做。框架核心不得依赖 CRM 字段、订单模型或义乌规则。
+代码目录拆分已启动：纯治理模块已迁入 `packages/tef-core/`，Next.js 参考实现仍留在 `src/`；仓库改名与其余拆分随后续阶段推进。框架核心不得依赖 CRM 字段、订单模型或义乌规则。
 
 ---
 
