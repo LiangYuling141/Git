@@ -2,6 +2,11 @@
   "name": "lymatrix-tef",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "packages/*",
+    "verticals/*",
+    "apps/*"
+  ],
   "description": "LyMatrix Trusted Execution Framework — a deterministic execution boundary for AI agents.",
   "scripts": {
     "dev": "next dev",

@@ -14,13 +14,24 @@ if (process.env.TEF_MODEL_TESTS !== '1') {
 
 export default defineConfig({
   resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-    },
+    alias: [
+      {
+        find: /^@lymatrix\/tef-core\/(.*)$/,
+        replacement: `${fileURLToPath(new URL('./packages/tef-core/src', import.meta.url))}/$1`,
+      },
+      {
+        find: '@lymatrix/tef-core',
+        replacement: fileURLToPath(new URL('./packages/tef-core/src/index.ts', import.meta.url)),
+      },
+      {
+        find: '@',
+        replacement: fileURLToPath(new URL('./src', import.meta.url)),
+      },
+    ],
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'packages/**/*.test.ts', 'tests/**/*.test.ts'],
     exclude: ['node_modules', '.next', 'BASE', 'src/generated'],
     // 真实数据库集成测试共享 demo 租户夹具；并行文件会互相 reset，
     // 导致"单独跑通过、全量跑失败"的假象。顺序执行文件成本很低。
