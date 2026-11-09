@@ -18,6 +18,11 @@
 - 用户已授权本地提交（仅本地，不推送）。
 - 本计划只覆盖 B2；B3（独立存储/TEF Server/Docker）另行成计划。
 
+### B2 已知限制
+
+- **事务边界**：HTTP 读当前仍在本地租户事务（`withTenantScope`）内发起网络 IO，网络往返期间会持续占用一条数据库连接。B3 必须把远程读取移出事务后再启用跨服务读取。
+- **只读模式**：B2 的 HTTP 通道只承载查询；写入仍走本地 Prisma 适配器，直到 Phase C 的跨服务 effects 执行落地。在 effects 跨服务之前，禁止在生产设置 `TEF_CRM_GATEWAY=http`。
+
 ---
 
 ## Task 1：CRM 内部 query API
@@ -199,13 +204,15 @@ export function createHttpCrmGateway(options: HttpCrmGatewayOptions): CrmBusines
       return gateway.query<OrderRecord | null>({ tenantId: input.tenantId, operation: CRM_QUERY.orderGet, params: input });
     },
     async executeEffects(): Promise<never> {
-      throw new TefError('INTERNAL', 'HttpCrmGateway.executeEffects is implemented in Task 3');
+      throw new TefError('INTERNAL', 'HttpCrmGateway.executeEffects is implemented in Task 4');
     },
   } as CrmBusinessGateway;
 
   return gateway;
 }
 ```
+
+> **Task 2 修复（评审）**：发送前用 `sanitizeParams` 清理 `params` 中的 `undefined` 与空字符串——MCP 查询工具以 `''` 表示缺省字段，原样透传会被内部路由的 `min(1)` 判成 400；同时为 fetch 增加 10 秒超时，并把非 2xx 的 `VALIDATION_ERROR` / `PERMISSION_DENIED` / `NOT_FOUND` / `CONFLICT` 映射为同名 `TefError` 错误码。
 
 - [ ] **Step 2：网关工厂**
 
@@ -339,6 +346,7 @@ npm run lint
 
 - `.env.example` 增加 `TEF_CRM_GATEWAY`、`TEF_CRM_API_BASE`、`TEF_CRM_SERVICE_TOKEN`。
 - README 与 00-framework 记录内部网关端点、鉴权与默认 prisma 模式。
+- 记录 B2 已知限制：HTTP 读仍在本地租户事务内进行网络 IO，会占用数据库连接，B3 必须把远程读取移出事务；HTTP 模式暂时只读，写入仍走本地 Prisma 适配器，effects 跨服务前不得在生产启用 `TEF_CRM_GATEWAY=http`。
 - 设计 spec 更新 B2 状态与测试基线（新增测试后同步）。
 - B2 计划状态标记完成。
 

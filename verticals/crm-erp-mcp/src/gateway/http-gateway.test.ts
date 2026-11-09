@@ -109,6 +109,70 @@ describe('请求构造', () => {
     expect(error.code).toBe('INTERNAL');
     expect(error.message).toBe('TEF_CRM_SERVICE_TOKEN is not configured');
   });
+
+  it('缺少基址或租户绑定时构造即拒绝', () => {
+    const missingBaseUrl = captureTefError(() =>
+      createHttpCrmGateway({ baseUrl: '', serviceToken: SERVICE_TOKEN, tenantId: BOUND_TENANT }),
+    );
+    expect(missingBaseUrl.code).toBe('INTERNAL');
+    expect(missingBaseUrl.message).toBe('TEF_CRM_API_BASE is not configured');
+
+    const missingTenant = captureTefError(() =>
+      createHttpCrmGateway({ baseUrl: BASE_URL, serviceToken: SERVICE_TOKEN, tenantId: '' }),
+    );
+    expect(missingTenant.code).toBe('INTERNAL');
+    expect(missingTenant.message).toBe('HttpCrmGateway tenantId is not configured');
+  });
+
+  it('请求携带 10 秒超时信号', async () => {
+    const fetchMock = stubFetch(jsonResponse({ data: null }));
+    const gateway = createGateway();
+
+    await gateway.getCustomer({ tenantId: BOUND_TENANT, customerId: 'c_1' });
+
+    expect(sentInit(fetchMock).signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe('参数清理：缺省字段用空字符串表示时不得发给内部网关', () => {
+  it('searchCustomers 去掉空字符串 phone，保留 name 与 limit', async () => {
+    const fetchMock = stubFetch(jsonResponse({ data: [] }));
+    const gateway = createGateway();
+
+    await gateway.searchCustomers({ tenantId: BOUND_TENANT, name: '伟业', phone: '', limit: 10 });
+
+    expect(sentBody(fetchMock)).toEqual({
+      tenantId: BOUND_TENANT,
+      operation: CRM_QUERY.customerSearch,
+      params: { tenantId: BOUND_TENANT, name: '伟业', limit: 10 },
+    });
+  });
+
+  it('getOrder 去掉空字符串 orderId，保留 orderNo', async () => {
+    const fetchMock = stubFetch(jsonResponse({ data: null }));
+    const gateway = createGateway();
+
+    await gateway.getOrder({ tenantId: BOUND_TENANT, orderId: '', orderNo: 'SO-X' });
+
+    expect(sentBody(fetchMock)).toEqual({
+      tenantId: BOUND_TENANT,
+      operation: CRM_QUERY.orderGet,
+      params: { tenantId: BOUND_TENANT, orderNo: 'SO-X' },
+    });
+  });
+
+  it('只清理 undefined 与空字符串，不误删 0、false 与空数组', async () => {
+    const fetchMock = stubFetch(jsonResponse({ data: [] }));
+    const gateway = createGateway();
+
+    await gateway.query({
+      tenantId: BOUND_TENANT,
+      operation: CRM_QUERY.customerSearch,
+      params: { name: '伟业', phone: undefined, limit: 0, exact: false, skus: [] },
+    });
+
+    expect(sentBody(fetchMock).params).toEqual({ name: '伟业', limit: 0, exact: false, skus: [] });
+  });
 });
 
 describe('租户绑定：调用方 tenantId 必须与工厂闭包一致', () => {
@@ -169,6 +233,45 @@ describe('错误映射', () => {
     const gateway = createGateway();
 
     await expect(gateway.searchCustomers({ tenantId: BOUND_TENANT, phone: '13905791001' })).resolves.toEqual([]);
+  });
+
+  it.each([
+    ['VALIDATION_ERROR', 400],
+    ['PERMISSION_DENIED', 403],
+    ['NOT_FOUND', 404],
+    ['CONFLICT', 409],
+  ] as const)('非 2xx 的 %s 映射为同名 TefError 错误码', async (code, status) => {
+    stubFetch(jsonResponse({ error: code, message: `${code} from crm` }, status));
+    const gateway = createGateway();
+
+    await expectTefError(
+      () => gateway.getCustomer({ tenantId: BOUND_TENANT, customerId: 'c_1' }),
+      code,
+      `${code} from crm`,
+    );
+  });
+
+  it('未映射的错误码回落到 INTERNAL，但仍使用服务端 message', async () => {
+    stubFetch(jsonResponse({ error: 'TEAPOT', message: 'unexpected gateway state' }, 418));
+    const gateway = createGateway();
+
+    await expectTefError(
+      () => gateway.getCustomer({ tenantId: BOUND_TENANT, customerId: 'c_1' }),
+      'INTERNAL',
+      'unexpected gateway state',
+    );
+  });
+
+  it('网络失败包装为 TefError(INTERNAL)，不泄漏原生 TypeError', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+    vi.stubGlobal('fetch', fetchMock);
+    const gateway = createGateway();
+
+    await expectTefError(
+      () => gateway.getCustomer({ tenantId: BOUND_TENANT, customerId: 'c_1' }),
+      'INTERNAL',
+      'CRM gateway request failed: fetch failed',
+    );
   });
 });
 
@@ -233,7 +336,7 @@ describe('类型化方法映射', () => {
     }
   });
 
-  it('executeEffects 在 Task 3 实现前显式拒绝，不发请求', async () => {
+  it('executeEffects 在 Task 4 实现前显式拒绝，不发请求', async () => {
     const fetchMock = stubFetch(jsonResponse({ data: null }));
     const gateway = createGateway();
 
@@ -247,7 +350,7 @@ describe('类型化方法映射', () => {
           effects: [],
         }),
       'INTERNAL',
-      'HttpCrmGateway.executeEffects is implemented in Task 3',
+      'HttpCrmGateway.executeEffects is implemented in Task 4',
     );
     expect(fetchMock).not.toHaveBeenCalled();
   });
