@@ -142,6 +142,7 @@ npx vitest run packages/tef-mcp-kit packages/tef-core
 
 **Interfaces:**
 - `EffectsExecutor { execute(input: EffectsExecuteRequest): Promise<EffectsExecuteResult> }`
+- `EffectsExecutionUnknownError`：远程执行器在“可能已提交但响应丢失”时抛出；进程内执行器不抛该错误
 - `createInProcessCrmEffectsExecutor(): EffectsExecutor`
 
 - [ ] **Step 1：端口**
@@ -168,7 +169,7 @@ export async function executeCrmEffectsInProcess(
 ): Promise<EffectsExecuteResult> {
   return withTenantScope(input.tenantId, async (tx) => {
     const existing = await tx.idempotencyRecord.findFirst({
-      where: { tenantId: input.tenantId, toolName: 'crm.effects.execute', idempotencyKey: input.idempotencyKey },
+      where: { tenantId: input.tenantId, toolName: 'internal.effects.execute', idempotencyKey: input.idempotencyKey },
     });
     if (existing) return { ...(existing.response as EffectsExecuteResult), replayed: true };
 
@@ -181,7 +182,7 @@ export async function executeCrmEffectsInProcess(
     await tx.idempotencyRecord.create({
       data: {
         tenantId: input.tenantId,
-        toolName: 'crm.effects.execute',
+        toolName: 'internal.effects.execute',
         idempotencyKey: input.idempotencyKey,
         status: 'completed',
         response: response as unknown as object,
@@ -197,6 +198,8 @@ export function createInProcessCrmEffectsExecutor(): EffectsExecutor {
 ```
 
 捕获 `EffectExecutionError`：`CONFLICT` → `{ ok:false, refs:{}, error:{code:'CONFLICT',message} }`；`INTERNAL` → 同样返回 INTERNAL。抛出的未知错误也映射为 INTERNAL。
+
+**兼容说明**：工具名沿用现有的 `internal.effects.execute`，不要改成 `crm.effects.execute`，否则已有幂等记录无法重放。Task 3/4 的测试与实现都使用该常量。
 
 - [ ] **Step 3：路由复用**
 
@@ -260,7 +263,7 @@ const execResult = await options.effectsExecutor.execute({
 - `ok:true`：attempt → succeeded，写 result；追加结果审计（eventId `${attemptId}:result`，result = `contract.auditResult ?? 'success'`）；写 TEF 幂等记录；返回现有成功响应。
 - `ok:false` 且 code CONFLICT：attempt → failed；追加失败审计；写 TEF 幂等记录（失败响应）；返回 conflict。
 - `ok:false` INTERNAL：attempt → failed；追加 failure 审计；返回 error。
-- 执行器抛超时/未知错误：attempt → unknown；返回 `INTERNAL`/`CONFLICT`，提示对账中；不写幂等记录。
+- 执行器抛 `EffectsExecutionUnknownError`（或超时）：attempt → unknown；返回 `INTERNAL`/`CONFLICT`，提示对账中；不写幂等记录。进程内执行器的 `INTERNAL` 表示事务已回滚，按确定失败处理，不进入 unknown。
 
 - [ ] **Step 4：垂直注入**
 
