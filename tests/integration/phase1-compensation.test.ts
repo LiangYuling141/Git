@@ -404,6 +404,7 @@ describeDb('Phase 1 补偿闭环（真实数据库）', () => {
         taskState,
         traceId,
         secret,
+        connectSession: connectTefClient,
       });
       const persisted = await taskStateStore.update(
         TENANT,

@@ -560,6 +560,7 @@ describeDb('Phase 0 闭环（真实数据库）', () => {
       taskState,
       traceId,
       secret,
+      connectSession: connectTefClient,
     });
     const persisted = await taskStateStore.update(TENANT, conversationId, { ...result.patch, traceId }, taskState.version);
     return { result, taskState: persisted, traceId };

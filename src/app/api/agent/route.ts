@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { runAgentTurn } from '@/agent-runtime/runtime';
 import { prisma } from '@/lib/prisma';
+import { connectTefClient } from '@/mcp-server';
 import { taskStateStore } from '@/tef/task-state';
 import { resolveTenantContext } from '@/tef/tenant';
 import { loadTokenSecret } from '@/tef/token';
@@ -77,6 +78,7 @@ export async function POST(request: Request) {
     taskState,
     traceId,
     secret,
+    connectSession: connectTefClient,
   });
 
   try {
