@@ -1,5 +1,7 @@
 export { createCrmErpServer, connectCrmErpClient } from './server';
 export { createPrismaCrmGateway } from './gateway/prisma-gateway';
+export { createCrmGateway } from './gateway/factory';
+export { createHttpCrmGateway, type HttpCrmGatewayOptions } from './gateway/http-gateway';
 export {
   CRM_QUERY,
   type CrmBusinessGateway,

@@ -8,7 +8,7 @@ import {
   type Principal,
   type PrismaTx,
 } from '@lymtrix/tef-mcp-kit';
-import { createPrismaCrmGateway } from '../gateway/prisma-gateway';
+import { createCrmGateway } from '../gateway/factory';
 import type { CrmBusinessGateway } from '../gateway/types';
 
 /**
@@ -77,7 +77,7 @@ export async function customerSearch(
   const now = options.now ?? new Date();
 
   return withTenantScope(principal.tenantId, async (tx) => {
-    const gateway = options.gateway ?? createPrismaCrmGateway(tx, principal.tenantId);
+    const gateway = options.gateway ?? createCrmGateway(tx, principal.tenantId);
     const rows = await gateway.searchCustomers({ tenantId: principal.tenantId, name, phone, limit });
 
     // matchReason 让澄清界面能解释"为什么这几个是候选"（§7.3）
@@ -115,7 +115,7 @@ export async function customerGet(
   const now = options.now ?? new Date();
 
   return withTenantScope(principal.tenantId, async (tx) => {
-    const gateway = options.gateway ?? createPrismaCrmGateway(tx, principal.tenantId);
+    const gateway = options.gateway ?? createCrmGateway(tx, principal.tenantId);
     const row = await gateway.getCustomer({ tenantId: principal.tenantId, customerId: args.customerId });
     if (!row) {
       // 不区分"不存在"与"属于别的租户"：否则会变成一个跨租户 ID 探测器。
@@ -164,7 +164,7 @@ export async function creditGet(
   const now = options.now ?? new Date();
 
   return withTenantScope(principal.tenantId, async (tx) => {
-    const gateway = options.gateway ?? createPrismaCrmGateway(tx, principal.tenantId);
+    const gateway = options.gateway ?? createCrmGateway(tx, principal.tenantId);
     const credit = await gateway.getCredit({ tenantId: principal.tenantId, customerId: args.customerId });
 
     if (!credit) return fail('NOT_FOUND', `customer ${args.customerId} not found`);
@@ -214,7 +214,7 @@ export async function inventoryCheck(
   const now = options.now ?? new Date();
 
   return withTenantScope(principal.tenantId, async (tx) => {
-    const gateway = options.gateway ?? createPrismaCrmGateway(tx, principal.tenantId);
+    const gateway = options.gateway ?? createCrmGateway(tx, principal.tenantId);
     // 口语里说的是商品名（"圣诞球"），档案里的主键是 SKU（XMAS-BALL-01），
     // 所以两者都要能匹配——否则模型只能靠猜 SKU。
     const term = typeof args.sku === 'string' && args.sku.trim() ? args.sku.trim() : undefined;
@@ -253,7 +253,7 @@ export async function orderGet(
   const now = options.now ?? new Date();
 
   return withTenantScope(principal.tenantId, async (tx) => {
-    const gateway = options.gateway ?? createPrismaCrmGateway(tx, principal.tenantId);
+    const gateway = options.gateway ?? createCrmGateway(tx, principal.tenantId);
     const row = await gateway.getOrder({
       tenantId: principal.tenantId,
       orderId: args.orderId,
