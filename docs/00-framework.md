@@ -1,7 +1,7 @@
 # LyMtrix-TEF 项目框架总览
 
-> **文档版本**：v1.1（2026-11-09）
-> **代码基线**：`feature/tef-extraction` 工作区（2026-11-09）
+> **文档版本**：v1.2（2026-11-10）
+> **代码基线**：`feature/tef-extraction` 工作区（2026-11-10）
 > **当前成熟度**：设计 L0 已完成；Phase 0 闭环、Phase 1 补偿运行时与 Phase C 执行状态机/对账已落地；TaskState 会话级恢复、跨服务 effects 与生产级压测未完成
 > **权威关系**：架构裁决以 [technical/14-unified-architecture.md](technical/14-unified-architecture.md) 为准。本篇是全景入口与代码映射，当本篇与 14 号文档冲突时，以 14 号文档为准。
 
