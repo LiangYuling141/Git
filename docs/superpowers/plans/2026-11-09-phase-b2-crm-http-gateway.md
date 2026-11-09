@@ -328,11 +328,20 @@ npm run lint
 **Files:**
 - Modify: `verticals/crm-erp-mcp/src/gateway/http-gateway.ts`
 - Modify: `verticals/crm-erp-mcp/src/gateway/http-gateway.test.ts`
+- Modify: `src/app/api/internal/v1/effects/execute/route.ts`
+- Modify: `tests/integration/internal-gateway.test.ts`
 - Modify: `README.md`
 - Modify: `docs/00-framework.md`
 - Modify: `docs/superpowers/specs/2026-11-09-tef-extraction-design.md`
 - Modify: `docs/superpowers/plans/2026-11-09-phase-b2-crm-http-gateway.md`
 - Modify: `.env.example`
+
+- [ ] **Step 0：effects 路由的纵深防御与测试补强**
+
+1. 在 effects 路由的 effect schema 中拒绝 `payload.tenantId` 与 `payload.id`：用 `superRefine` 报 `VALIDATION_ERROR`，防止 update payload 覆写租户归属或主键。补一条集成测试（`payload: { tenantId: 't_e2e_other' }` → 400）。
+2. 幂等重放响应增加 `replayed: true`（与既有 `executeContract` 口径一致）；在既有重放测试中断言。
+3. `expectedEvidenceVersion` 改为 `z.string().min(1).optional()`。
+4. 补 2–3 条 malformed effect 测试（increment 值非数字、bind 字段类型错误、空 effects 数组），不新增 `it` 也可用表驱动并入现有测试；报告实际新增数。
 
 - [ ] **Step 1：实现 executeEffects**
 
