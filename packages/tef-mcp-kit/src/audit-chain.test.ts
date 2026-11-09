@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AuditChain, type AuditEventInput } from './audit-chain';
-import { GENESIS_HASH, computeChainHash } from './hashing';
-import { REDACTED_PLACEHOLDER, isPseudonym, pseudonymize, redactArgs } from './redaction';
+import { GENESIS_HASH, computeChainHash } from '@lymatrix/tef-core';
+import { REDACTED_PLACEHOLDER, isPseudonym, pseudonymize, redactArgs } from '@lymatrix/tef-core';
 
 const T0 = new Date('2026-11-07T10:00:00.000Z');
 const TENANT = 't_yiwu_demo';

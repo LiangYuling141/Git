@@ -8,7 +8,7 @@ import {
   verifyTokenString,
   type TokenClaims,
 } from './token';
-import { TefError } from './errors';
+import { TefError } from '@lymatrix/tef-core';
 
 const SECRET = 'test-secret-that-is-long-enough-to-be-accepted';
 const T0 = new Date('2026-11-07T10:00:00.000Z');
