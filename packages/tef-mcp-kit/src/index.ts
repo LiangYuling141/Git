@@ -20,6 +20,14 @@ export {
   type ContractToolOptions,
   type AdapterFactory,
 } from './tools/contract';
+export {
+  reconcileExecutions,
+  DEFAULT_RECONCILE_STALE_AFTER_MS,
+  DEFAULT_RECONCILE_LIMIT,
+  RECONCILER_ACTOR_ID,
+  type ReconcileOptions,
+  type ReconciliationReport,
+} from './reconcile-executions';
 export { previewStore } from './preview-store';
 export { tokenStore, loadTokenSecret } from './token';
 export { auditChain } from './audit-chain';

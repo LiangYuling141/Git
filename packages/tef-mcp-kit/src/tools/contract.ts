@@ -4,6 +4,7 @@ import { contractEngine, contractRegistry, redactArgs, riskToDb } from '@lymtrix
 import { EffectExecutionError, EffectsExecutionUnknownError } from '@lymtrix/tef-core';
 import { TefError, isTefError } from '@lymtrix/tef-core';
 import type {
+  ActorType,
   AuditResultType,
   BusinessGateway,
   Contract,
@@ -228,12 +229,27 @@ export async function previewContract(
 }
 
 /** Phase 1 提交后交给 Phase 2/3 的不可变上下文。 */
-interface ExecutingAttempt {
+export interface ExecutingAttempt {
   attemptId: string;
   contract: Contract<unknown, unknown, unknown>;
   snapshot: StoredPreview;
   claims: TokenClaims;
   revalidated: Extract<RevalidateOutcome, { ok: true }>;
+}
+
+/**
+ * 结算事务的操作者与时间基准。
+ *
+ * 前台执行以发起请求的用户身份结算；对账（Task 4）用系统身份补齐结果，
+ * 两者共用同一套条件结算与结果审计逻辑，避免对账路径另写一份状态迁移。
+ */
+export interface SettlementActor {
+  tenantId: string;
+  actorId: string;
+  actorType: ActorType;
+  traceId: string;
+  /** 结算时间基准；缺省为当前时间。 */
+  now?: Date;
 }
 
 type Phase1Result =
@@ -582,11 +598,22 @@ async function ensureResultAudit(
   });
   if (current?.resultAuditEventId) return current.resultAuditEventId;
 
-  const appended = await auditChain.append(
-    { eventId: `${attemptId}:result`, tenantId, ...spec },
-    tx,
-    now,
-  );
+  // 确定性事件 ID 让重复对账不会拉长链；若事件已经写过但 attempt 的指针
+  // 意外缺失（例如历史数据或人工修复），补齐指针而不是再追加一条。
+  const eventId = `${attemptId}:result`;
+  const existingEvent = await tx.auditEvent.findFirst({
+    where: { eventId, tenantId },
+    select: { eventId: true },
+  });
+  if (existingEvent) {
+    await tx.executionAttempt.update({
+      where: { attemptId },
+      data: { resultAuditEventId: existingEvent.eventId },
+    });
+    return existingEvent.eventId;
+  }
+
+  const appended = await auditChain.append({ eventId, tenantId, ...spec }, tx, now);
   await tx.executionAttempt.update({
     where: { attemptId },
     data: { resultAuditEventId: appended.eventId },
@@ -622,15 +649,14 @@ async function settlementRacedEnvelope(
 }
 
 /** 结算成功：条件迁移 attempt succeeded + 确定性结果审计 + TEF 幂等记录，同一事务提交。 */
-async function settleSuccess(
-  principal: Principal,
-  options: ContractWriteOptions,
+export async function settleSuccess(
+  actor: SettlementActor,
   toolName: string,
   idempotencyKey: string,
   attempt: ExecutingAttempt,
   execResult: EffectsExecuteResult,
 ): Promise<Envelope> {
-  const settledAt = options.now ?? new Date();
+  const settledAt = actor.now ?? new Date();
   const auditEventId = `${attempt.attemptId}:result`;
   const order = execResult.refs.order as Record<string, unknown> | undefined;
   const normalizedArgs = attempt.snapshot.normalizedArgs as Record<string, unknown>;
@@ -652,7 +678,7 @@ async function settleSuccess(
       risk: attempt.claims.risk,
       reasons: attempt.revalidated.reasons,
       auditId: auditEventId,
-      traceId: options.traceId,
+      traceId: actor.traceId,
     },
   );
 
@@ -662,8 +688,8 @@ async function settleSuccess(
     execResult,
   );
 
-  return withTenantScope(principal.tenantId, async (tx) => {
-    const claimed = await claimAttemptForSettlement(tx, principal.tenantId, attempt.attemptId, {
+  return withTenantScope(actor.tenantId, async (tx) => {
+    const claimed = await claimAttemptForSettlement(tx, actor.tenantId, attempt.attemptId, {
       status: 'succeeded',
       result: response as unknown as Prisma.InputJsonValue,
       errorCode: null,
@@ -673,22 +699,22 @@ async function settleSuccess(
     if (!claimed) {
       return settlementRacedEnvelope(
         tx,
-        principal.tenantId,
+        actor.tenantId,
         toolName,
         idempotencyKey,
         attempt.attemptId,
-        options.traceId,
+        actor.traceId,
       );
     }
 
     const resultAuditEventId = await ensureResultAudit(
       tx,
-      principal.tenantId,
+      actor.tenantId,
       attempt.attemptId,
       {
-        traceId: options.traceId,
-        actorId: principal.userId,
-        actorType: 'agent',
+        traceId: actor.traceId,
+        actorId: actor.actorId,
+        actorType: actor.actorType,
         tool: toolName,
         contract: attempt.contract.operation,
         contractVersion: attempt.contract.version,
@@ -706,7 +732,7 @@ async function settleSuccess(
 
     await tx.idempotencyRecord.create({
       data: {
-        tenantId: principal.tenantId,
+        tenantId: actor.tenantId,
         toolName,
         idempotencyKey,
         status: 'completed',
@@ -726,9 +752,8 @@ async function settleSuccess(
  * attempt → failed，并写结果审计。CONFLICT 额外写幂等记录，让重复请求
  * 得到同一个失败响应；INTERNAL 不写幂等记录，避免把暂时性问题固化成成功语义。
  */
-async function settleFailure(
-  principal: Principal,
-  options: ContractWriteOptions,
+export async function settleFailure(
+  actor: SettlementActor,
   toolName: string,
   idempotencyKey: string,
   failureResult: AuditResultType,
@@ -736,16 +761,16 @@ async function settleFailure(
   code: 'CONFLICT' | 'INTERNAL',
   message: string,
 ): Promise<Envelope> {
-  const settledAt = options.now ?? new Date();
-  const response = code === 'CONFLICT' ? conflict(message, { traceId: options.traceId }) : fail('INTERNAL', message);
+  const settledAt = actor.now ?? new Date();
+  const response = code === 'CONFLICT' ? conflict(message, { traceId: actor.traceId }) : fail('INTERNAL', message);
   const auditSpec = attempt.contract.audit(
     attempt.snapshot.normalizedArgs as never,
     attempt.revalidated.evidence,
     null,
   );
 
-  return withTenantScope(principal.tenantId, async (tx) => {
-    const claimed = await claimAttemptForSettlement(tx, principal.tenantId, attempt.attemptId, {
+  return withTenantScope(actor.tenantId, async (tx) => {
+    const claimed = await claimAttemptForSettlement(tx, actor.tenantId, attempt.attemptId, {
       status: 'failed',
       result: response as unknown as Prisma.InputJsonValue,
       errorCode: code,
@@ -755,22 +780,22 @@ async function settleFailure(
     if (!claimed) {
       return settlementRacedEnvelope(
         tx,
-        principal.tenantId,
+        actor.tenantId,
         toolName,
         idempotencyKey,
         attempt.attemptId,
-        options.traceId,
+        actor.traceId,
       );
     }
 
     const resultAuditEventId = await ensureResultAudit(
       tx,
-      principal.tenantId,
+      actor.tenantId,
       attempt.attemptId,
       {
-        traceId: options.traceId,
-        actorId: principal.userId,
-        actorType: 'agent',
+        traceId: actor.traceId,
+        actorId: actor.actorId,
+        actorType: actor.actorType,
         tool: toolName,
         contract: attempt.contract.operation,
         contractVersion: attempt.contract.version,
@@ -789,7 +814,7 @@ async function settleFailure(
     if (code === 'CONFLICT') {
       await tx.idempotencyRecord.create({
         data: {
-          tenantId: principal.tenantId,
+          tenantId: actor.tenantId,
           toolName,
           idempotencyKey,
           status: 'completed',
@@ -810,9 +835,9 @@ async function settleFailure(
  * 再用 `${attemptId}:result` 补齐结果事件。重复请求会被 Phase 1 的
  * executing/unknown 检查挡下，不会盲目重试。
  */
-async function settleUnknown(
-  principal: Principal,
-  attempt: ExecutingAttempt,
+export async function settleUnknown(
+  tenantId: string,
+  attempt: Pick<ExecutingAttempt, 'attemptId'>,
   error: unknown,
 ): Promise<Envelope> {
   const message =
@@ -821,12 +846,12 @@ async function settleUnknown(
       : 'effects execution outcome is unknown; reconciliation is required before retrying';
 
   try {
-    await withTenantScope(principal.tenantId, async (tx) => {
+    await withTenantScope(tenantId, async (tx) => {
       // 只把尚未结算的尝试推进到 unknown；若对账已经抢先结算，不能覆盖其结果。
       await tx.executionAttempt.updateMany({
         where: {
           attemptId: attempt.attemptId,
-          tenantId: principal.tenantId,
+          tenantId,
           status: { in: ['executing', 'unknown'] },
         },
         // UNKNOWN 不是确定性错误：不能写成 INTERNAL，否则会把“可能已提交”
@@ -901,6 +926,13 @@ export async function executeContract(
     // runPhase1 返回时租户事务已经提交；从这里开始副作用可能发生。
     phase1Committed = true;
     const executing = phase1;
+    const settlementActor: SettlementActor = {
+      tenantId: principal.tenantId,
+      actorId: principal.userId,
+      actorType: 'agent',
+      traceId: options.traceId,
+      now,
+    };
 
     // Phase 2：外部副作用。执行器幂等域只含单一内部工具名，必须用
     // `toolName:key` 作用域，避免跨工具复用同一业务 key 时重放另一个操作。
@@ -920,8 +952,7 @@ export async function executeContract(
       // （含 EffectsExecutionUnknownError/超时）都表示结果未知，交给对账收敛。
       if (error instanceof EffectExecutionError) {
         return settleFailure(
-          principal,
-          options,
+          settlementActor,
           toolName,
           idempotencyKey,
           failureResult,
@@ -930,23 +961,23 @@ export async function executeContract(
           error.message,
         );
       }
-      return settleUnknown(principal, executing, error);
+      return settleUnknown(principal.tenantId, executing, error);
     }
 
     // Phase 3：结算。
     if (execResult.ok) {
-      return settleSuccess(principal, options, toolName, idempotencyKey, executing, execResult);
+      return settleSuccess(settlementActor, toolName, idempotencyKey, executing, execResult);
     }
 
     const code = execResult.error?.code ?? 'INTERNAL';
     const message = execResult.error?.message ?? 'effects execution failed';
-    return settleFailure(principal, options, toolName, idempotencyKey, failureResult, executing, code, message);
+    return settleFailure(settlementActor, toolName, idempotencyKey, failureResult, executing, code, message);
   } catch (error) {
     if (phase1Committed && phase1?.kind === 'execute') {
       // Phase 1 已提交且后续步骤意外失败：副作用可能已经发生，尝试仍是
       // executing。这里写失败审计会在对账补写成功审计后自相矛盾；正确做法
       // 是把尝试标记为 unknown（或保留 executing），等待同一幂等键收敛。
-      return settleUnknown(principal, phase1, error);
+      return settleUnknown(principal.tenantId, phase1, error);
     }
 
     await auditFailureOutOfTransaction(
