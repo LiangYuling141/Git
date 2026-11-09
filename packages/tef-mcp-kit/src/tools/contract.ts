@@ -645,8 +645,10 @@ async function ensureResultAudit(
  * updateMany 命中 0 行说明另一个调用者（并发请求或对账）已经推进了终态：
  * 优先重放已提交的幂等记录，其次返回 attempt 中存储的信封；两者都没有时
  * 只能要求人工对账，绝不能伪造成功或覆盖已有结果。
+ *
+ * 导出用于单测直接覆盖三条优先级分支；不是公共 API。
  */
-async function settlementRacedEnvelope(
+export async function settlementRacedEnvelope(
   tx: PrismaTx,
   tenantId: string,
   toolName: string,

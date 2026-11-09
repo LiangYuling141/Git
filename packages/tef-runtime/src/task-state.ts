@@ -23,6 +23,7 @@ export interface TaskStatePatch {
   activeCustomerId?: string | null;
   activeOrderId?: string | null;
   idempotencyKey?: string | null;
+  pendingExecutionAttemptId?: string | null;
   clarificationRounds?: number;
   traceId?: string | null;
 }
@@ -42,6 +43,7 @@ type Row = {
   activeCustomerId: string | null;
   activeOrderId: string | null;
   idempotencyKey: string | null;
+  pendingExecutionAttemptId: string | null;
   clarificationRounds: number;
   version: number;
   traceId: string | null;
@@ -68,6 +70,7 @@ function toTaskState(row: Row): TaskState {
     activeCustomerId: row.activeCustomerId,
     activeOrderId: row.activeOrderId,
     idempotencyKey: row.idempotencyKey,
+    pendingExecutionAttemptId: row.pendingExecutionAttemptId,
     clarificationRounds: row.clarificationRounds,
     version: row.version,
     traceId: row.traceId,

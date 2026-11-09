@@ -538,28 +538,31 @@ model AuditEvent {
 
 // 对话上下文只保存"说了什么"，任务进行到哪一步只存在这里（§8.3）
 model TaskState {
-  id                     String     @id @default(cuid())
-  tenantId               String     @default("t_yiwu_demo")
-  tenant                 Tenant     @relation(fields: [tenantId], references: [id])
-  userId                 String
-  conversationId         String
-  status                 TaskStatus @default(idle)
-  intent                 Json?
-  pendingPreviewId       String?
-  pendingIntentHash      String?
-  pendingContract        String?
-  pendingContractVersion String?
-  pendingExpiresAt       DateTime?
-  activeCustomerId       String?
-  activeOrderId          String?
-  idempotencyKey         String?
-  clarificationRounds    Int        @default(0)
-  version                Int        @default(0)
+  id                        String     @id @default(cuid())
+  tenantId                  String     @default("t_yiwu_demo")
+  tenant                    Tenant     @relation(fields: [tenantId], references: [id])
+  userId                    String
+  conversationId            String
+  status                    TaskStatus @default(idle)
+  intent                    Json?
+  pendingPreviewId          String?
+  pendingIntentHash         String?
+  pendingContract           String?
+  pendingContractVersion    String?
+  pendingExpiresAt          DateTime?
+  activeCustomerId          String?
+  activeOrderId             String?
+  idempotencyKey            String?
+  // 未结算执行尝试的显式标记（execution_attempts.attemptId 或 pending:<key>）。
+  // 非空表示副作用可能已经发生：禁止解析新意图，必须用同一幂等键重试/等待对账。
+  pendingExecutionAttemptId String?
+  clarificationRounds       Int        @default(0)
+  version                   Int        @default(0)
   // 任务级 trace：一次写入的完整生命周期（含澄清往返）共用一条链，
   // 否则 audit.trace 会把同一个任务切成几段，回放不出完整决策过程。
-  traceId                String?
-  createdAt              DateTime   @default(now())
-  updatedAt              DateTime   @updatedAt
+  traceId                   String?
+  createdAt                 DateTime   @default(now())
+  updatedAt                 DateTime   @updatedAt
 
   @@unique([tenantId, conversationId])
   @@index([tenantId, userId, status])

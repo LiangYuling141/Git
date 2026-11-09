@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import type { ClarifyQuestion, Envelope, IntentResult, TaskState, TaskStatus, TenantRole } from '@lymtrix/tef-core';
+import type {
+  ClarifyQuestion,
+  Envelope,
+  ErrorCode,
+  IntentResult,
+  TaskState,
+  TaskStatus,
+  TenantRole,
+} from '@lymtrix/tef-core';
 import type { TefClientSession } from '@lymtrix/tef-mcp-kit';
 import { parseIntent } from './intent';
 import type { TaskStatePatch } from './task-state';
@@ -83,62 +91,135 @@ function envelopeData(envelope: Envelope): Record<string, unknown> {
   return asRecord(envelope.data);
 }
 
-const TERMINAL_TASK_STATUSES: readonly TaskStatus[] = [
-  'completed',
-  'failed',
-  'compensated',
-  'compensation_failed',
-];
+const EXECUTION_PENDING_CODES: ReadonlySet<ErrorCode> = new Set([
+  'EXECUTION_IN_PROGRESS',
+  'EXECUTION_UNKNOWN',
+]);
 
 /**
- * 只有未终结的任务才允许复用已持久化的幂等键。
+ * 只有存在未结算执行时，旧幂等键才是重试锚点。
  *
- * 复用场景是“上一次执行结果未知，用户重试同一操作”：TaskState 里已有
- * executing/unknown 尝试对应的 key，必须原样再发一次，才能命中 Phase 1 的
- * 尝试检查或对账重放。任务已终结时保留旧 key 只是历史记录，新操作必须换 key，
- * 否则会把上一单的成功响应当成新单重放。
+ * 这里刻意不参考 TaskState.status：状态会在普通聊天/澄清轮次之间变化，
+ * 用状态判断会让“完成 → 聊天 → 新订单”复用上一单的 key 并命中 Phase 1 重放。
+ * 显式的 pendingExecutionAttemptId 才代表“副作用可能已发生，必须同 key 重试”。
  */
-function reusableIdempotencyKey(taskState: TaskState): string | undefined {
-  if (TERMINAL_TASK_STATUSES.includes(taskState.status)) return undefined;
+function unresolvedIdempotencyKey(taskState: TaskState): string | undefined {
+  if (!taskState.pendingExecutionAttemptId) return undefined;
   return taskState.idempotencyKey ?? undefined;
+}
+
+/** 未结算执行对应的操作契约与可重放槽位；没有则返回 null。 */
+function unresolvedOperationIntent(taskState: TaskState): IntentResult | null {
+  if (!taskState.pendingExecutionAttemptId) return null;
+  const intent = taskState.intent;
+  return intent?.kind === 'operation' && intent.contract ? intent : null;
+}
+
+/**
+ * 单次执行使用的幂等键。
+ *
+ * 重试路径必须传入持久化的 key；否则只有未结算标记存在时才复用旧 key，
+ * 其余情况一律生成新 key（新操作不能复用上一单的幂等记录）。
+ */
+function idempotencyKeyFor(taskState: TaskState, override?: string): string {
+  return override ?? unresolvedIdempotencyKey(taskState) ?? randomUUID();
 }
 
 /**
  * 待对账时显式保留 pending 字段。
  *
- * TaskStatePatch 是合并写入，理论上省略字段即可保留；这里显式写回是为了让
- * “未知结果不清 pending”成为可测试的契约，而不是依赖存储实现细节。
+ * 已有快照必须原样写回；只有首次执行就落到 unknown（TaskState 里还没有
+ * pending 快照）时才用本轮产生令牌的预览补齐。TaskStatePatch 是合并写入，
+ * 显式写回是为了让“未知结果不清 pending”成为可测试的契约，而不是依赖
+ * 存储实现细节。
  */
-function pendingFields(taskState: TaskState): TaskStatePatch {
+function pendingFields(
+  taskState: TaskState,
+  operationIntent: IntentResult | null,
+  preview?: Envelope,
+): TaskStatePatch {
   const pending = taskState.pendingPreview;
-  if (!pending) return {};
+  if (pending) {
+    return {
+      pendingPreviewId: pending.previewId,
+      pendingIntentHash: pending.intentHash,
+      pendingContract: pending.contract,
+      pendingContractVersion: pending.contractVersion,
+      pendingExpiresAt: pending.expiresAt,
+    };
+  }
+  // 首次执行就落到 unknown 时 TaskState 里还没有 pending 快照，
+  // 用本轮产生令牌的预览补齐，保证下一轮可以用同一操作重试。
+  if (!preview?.previewId) return {};
   return {
-    pendingPreviewId: pending.previewId,
-    pendingIntentHash: pending.intentHash,
-    pendingContract: pending.contract,
-    pendingContractVersion: pending.contractVersion,
-    pendingExpiresAt: pending.expiresAt,
+    pendingPreviewId: preview.previewId,
+    pendingIntentHash: '',
+    pendingContract: operationIntent?.kind === 'operation' ? operationIntent.contract : '',
+    pendingContractVersion: '1.0',
+    pendingExpiresAt: preview.expiresAt ? new Date(preview.expiresAt) : null,
   };
+}
+
+/**
+ * 结果确定（成功/冲突/确定失败）后的清理补丁。
+ *
+ * 未结算标记与幂等键必须一起清空：任务进入终结状态后它们只是历史，
+ * 留着会让下一轮新操作误命中上一单的幂等记录。
+ */
+function clearedExecutionFields(): TaskStatePatch {
+  return {
+    idempotencyKey: null,
+    pendingExecutionAttemptId: null,
+    intent: null,
+    pendingPreviewId: null,
+    pendingIntentHash: null,
+    pendingContract: null,
+    pendingContractVersion: null,
+    pendingExpiresAt: null,
+  };
+}
+
+interface ExecutionReportMeta {
+  taskState: TaskState;
+  traceId: string;
+  toolCalls: ToolCallRecord[];
+  intentSource: 'model' | 'deterministic';
+  /** 当前操作契约与可重放槽位；未知结果时必须写回 TaskState 供同操作重试。 */
+  operationIntent?: IntentResult | null;
+  /** 本轮产生执行令牌的预览信封；首次执行时用于补齐 pending 字段。 */
+  preview?: Envelope;
 }
 
 /**
  * 执行结果未知时的统一出口。
  *
  * 执行层已用 EXECUTION_IN_PROGRESS / EXECUTION_UNKNOWN 明确标注“副作用可能
- * 已经发生”。Runtime 必须保留幂等键与 pending 状态，提示用户用同一操作重试；
- * 若清掉 pending 并生成新 key，下一次执行会绕过原来的 attempt，产生第二次副作用。
+ * 已经发生”。Runtime 必须保留幂等键、pending 状态与可重放意图，并写入
+ * pendingExecutionAttemptId，提示用户用同一操作重试；若清掉 pending 并生成
+ * 新 key，下一次执行会绕过原来的 attempt，产生第二次副作用。
  */
 function executionPendingResult(
   executed: Envelope,
   idempotencyKey: string,
-  meta: { taskState: TaskState; traceId: string; toolCalls: ToolCallRecord[]; intentSource: 'model' | 'deterministic' },
+  meta: ExecutionReportMeta,
 ): AgentTurnResult | null {
   const code = executed.error?.code;
-  if (code !== 'EXECUTION_IN_PROGRESS' && code !== 'EXECUTION_UNKNOWN') return null;
+  if (!code || !EXECUTION_PENDING_CODES.has(code)) return null;
+  const data = envelopeData(executed);
+  const attemptId =
+    typeof data.attemptId === 'string' && data.attemptId
+      ? data.attemptId
+      : `pending:${idempotencyKey}`;
+  const operationIntent = meta.operationIntent ?? null;
   return finish(
     'executing',
     '执行结果待对账，请稍后使用同一操作重试；不要重新预览。',
-    { idempotencyKey, ...pendingFields(meta.taskState) },
+    {
+      idempotencyKey,
+      pendingExecutionAttemptId: attemptId,
+      ...pendingFields(meta.taskState, operationIntent, meta.preview),
+      ...(operationIntent ? { intent: operationIntent } : {}),
+    },
     { ...meta, envelope: executed },
   );
 }
@@ -199,6 +280,36 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
   const { principal, traceId, secret, taskState } = input;
   const toolCalls: ToolCallRecord[] = [];
 
+  // 0. 未结算执行优先：副作用可能已经发生，本轮禁止解析新意图或换 key。
+  // 没有可重放的操作快照时只能提示等待对账，不能把它当成一轮普通聊天。
+  const unresolvedIntent = unresolvedOperationIntent(taskState);
+  if (taskState.pendingExecutionAttemptId && !taskState.idempotencyKey) {
+    // 没有 key 就无法命中原 attempt；生成新 key 会绕过 Phase 1 检查，
+    // 可能产生第二次副作用。这里只能要求人工对账，绝不静默降级。
+    return finish(
+      'executing',
+      '上一笔执行结果待对账，但缺少幂等键，需人工对账后再试。',
+      {
+        idempotencyKey: null,
+        pendingExecutionAttemptId: taskState.pendingExecutionAttemptId,
+        ...pendingFields(taskState, null),
+      },
+      { traceId, toolCalls, intentSource: 'deterministic' },
+    );
+  }
+  if (taskState.pendingExecutionAttemptId && !unresolvedIntent) {
+    return finish(
+      'executing',
+      '上一笔执行结果待对账，请稍后重试或等待对账完成。',
+      {
+        idempotencyKey: taskState.idempotencyKey ?? null,
+        pendingExecutionAttemptId: taskState.pendingExecutionAttemptId,
+        ...pendingFields(taskState, null),
+      },
+      { traceId, toolCalls, intentSource: 'deterministic' },
+    );
+  }
+
   const session = await input.connectSession({
     principal: { ...principal, clientKind: 'agent' },
     traceId,
@@ -206,12 +317,19 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
   });
 
   try {
-    // 1. 澄清回填优先：上一轮问了什么，这一轮就在回答什么
-    const resumed = taskState.status === 'awaiting_clarification' ? resolveClarification(taskState, input.message) : null;
+    // 1. 澄清回填优先：上一轮问了什么，这一轮就在回答什么。
+    // 未结算执行时跳过意图解析与澄清，直接用持久化的操作快照重试同一操作。
+    const resumed =
+      !unresolvedIntent && taskState.status === 'awaiting_clarification'
+        ? resolveClarification(taskState, input.message)
+        : null;
 
     let intent: IntentResult;
     let intentSource: 'model' | 'deterministic';
-    if (resumed) {
+    if (unresolvedIntent) {
+      intent = unresolvedIntent;
+      intentSource = 'deterministic';
+    } else if (resumed) {
       intent = resumed.intent;
       intentSource = 'deterministic';
     } else {
@@ -240,22 +358,25 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
       );
     }
 
+    // 只有未结算执行才允许把旧 key 作为重试锚点；新操作一律换 key。
+    const retryIdempotencyKey = unresolvedIdempotencyKey(taskState);
+
     const contract = intent.contract;
     if (contract === 'compensate_order') {
-      return await handleCompensateOrder(session, intent.slots, {
-        taskState,
-        traceId,
-        toolCalls,
-        intentSource,
-      });
+      return await handleCompensateOrder(
+        session,
+        intent.slots,
+        { taskState, traceId, toolCalls, intentSource },
+        retryIdempotencyKey,
+      );
     }
     if (contract === 'create_order') {
-      return await handleCreateOrder(session, intent.slots as OrderSlots, {
-        taskState,
-        traceId,
-        toolCalls,
-        intentSource,
-      });
+      return await handleCreateOrder(
+        session,
+        intent.slots as OrderSlots,
+        { taskState, traceId, toolCalls, intentSource },
+        retryIdempotencyKey,
+      );
     }
     return await handleQuery(session, contract, intent.slots, { traceId, toolCalls, intentSource, taskState });
   } finally {
@@ -423,7 +544,8 @@ async function resolveCustomer(
 async function handleCompensateOrder(
   session: TefClientSession,
   slots: Record<string, unknown>,
-  meta: { taskState: TaskState; traceId: string; toolCalls: ToolCallRecord[]; intentSource: 'model' | 'deterministic' },
+  meta: ExecutionReportMeta,
+  idempotencyKeyOverride?: string,
 ): Promise<AgentTurnResult> {
   const reason = typeof slots.reason === 'string' ? slots.reason : undefined;
   let orderId = typeof slots.orderId === 'string' ? slots.orderId : undefined;
@@ -486,8 +608,8 @@ async function handleCompensateOrder(
         pendingContractVersion: '1.0',
         pendingExpiresAt: preview.expiresAt ? new Date(preview.expiresAt) : null,
         activeOrderId: orderId,
-        // 同一任务重试时复用已持久化的 key；新任务才生成新 key。
-        idempotencyKey: reusableIdempotencyKey(meta.taskState) ?? randomUUID(),
+        // 重试路径沿用未结算执行的 key；新操作生成新 key。
+        idempotencyKey: idempotencyKeyFor(meta.taskState, idempotencyKeyOverride),
         clarificationRounds: 0,
       },
       { ...meta, envelope: preview },
@@ -496,13 +618,17 @@ async function handleCompensateOrder(
 
   // 补偿契约恒为 L2；这里保留防御分支，契约若降级也不至于静默不执行。
   if (preview.status === 'ok' && preview.confirmationToken) {
-    const idempotencyKey = reusableIdempotencyKey(meta.taskState) ?? randomUUID();
+    const idempotencyKey = idempotencyKeyFor(meta.taskState, idempotencyKeyOverride);
     const executed = await session.callTool('order.execute_compensate', {
       confirmation_token: preview.confirmationToken,
       idempotency_key: idempotencyKey,
     });
     meta.toolCalls.push({ tool: 'order.execute_compensate', status: executed.status, risk: executed.risk });
-    return reportCompensation(executed, idempotencyKey, meta);
+    return reportCompensation(executed, idempotencyKey, {
+      ...meta,
+      operationIntent: { kind: 'operation', contract: 'compensate_order', slots: { orderId, ...(reason ? { reason } : {}) } },
+      preview,
+    });
   }
 
   return finish('failed', preview.error?.message ?? '补偿预览未成功。', {}, { ...meta, envelope: preview });
@@ -511,7 +637,7 @@ async function handleCompensateOrder(
 export function reportCompensation(
   executed: Envelope,
   idempotencyKey: string,
-  meta: { taskState: TaskState; traceId: string; toolCalls: ToolCallRecord[]; intentSource: 'model' | 'deterministic' },
+  meta: ExecutionReportMeta,
 ): AgentTurnResult {
   const pending = executionPendingResult(executed, idempotencyKey, meta);
   if (pending) return pending;
@@ -521,11 +647,8 @@ export function reportCompensation(
       'compensated',
       '订单补偿已完成：订单已取消，收款计划已作废，库存与信用额度已恢复。',
       {
+        ...clearedExecutionFields(),
         activeOrderId: (envelopeData(executed).orderId as string) ?? null,
-        idempotencyKey,
-        intent: null,
-        pendingPreviewId: null,
-        pendingContract: null,
       },
       { ...meta, envelope: executed },
     );
@@ -534,14 +657,14 @@ export function reportCompensation(
     return finish(
       'conflict',
       `补偿执行冲突，未产生写入：${executed.error?.message ?? ''}\n需要重新预览；旧令牌已作废。`,
-      { pendingPreviewId: null, intent: null },
+      clearedExecutionFields(),
       { ...meta, envelope: executed },
     );
   }
   return finish(
     'failed',
     executed.error?.message ?? '补偿执行失败。',
-    { pendingPreviewId: null },
+    clearedExecutionFields(),
     { ...meta, envelope: executed },
   );
 }
@@ -549,7 +672,8 @@ export function reportCompensation(
 async function handleCreateOrder(
   session: TefClientSession,
   slots: OrderSlots,
-  meta: { taskState: TaskState; traceId: string; toolCalls: ToolCallRecord[]; intentSource: 'model' | 'deterministic' },
+  meta: ExecutionReportMeta,
+  idempotencyKeyOverride?: string,
 ): Promise<AgentTurnResult> {
   let { customerId, sku } = slots;
 
@@ -617,6 +741,22 @@ async function handleCreateOrder(
   }
 
   // 4. 预览。参数由服务端契约归一化，Runtime 只负责把槽位递过去。
+  // 持久化的 intent 必须用「顶层可重放槽位」而不是 previewArgs 的嵌套形状：
+  // 未结算执行后的重试会把它直接传回本函数，缺 sku/quantity/unitPrice 会退化成追问。
+  const operationSlots: OrderSlots = {
+    ...slots,
+    customerId,
+    sku,
+    quantity: slots.quantity,
+    unitPrice: slots.unitPrice,
+    depositRate: slots.depositRate ?? 0,
+    termsDays: slots.termsDays ?? 0,
+  };
+  const operationIntent: IntentResult = {
+    kind: 'operation',
+    contract: 'create_order',
+    slots: operationSlots,
+  };
   const previewArgs = {
     customerId,
     items: [{ sku, quantity: slots.quantity, unitPrice: slots.unitPrice }],
@@ -647,15 +787,15 @@ async function handleCreateOrder(
       'awaiting_confirmation',
       reply,
       {
-        intent: { kind: 'operation', contract: 'create_order', slots: previewArgs as unknown as Record<string, unknown> },
+        intent: operationIntent,
         pendingPreviewId: preview.previewId ?? null,
         pendingIntentHash: '',
         pendingContract: 'create_order',
         pendingContractVersion: '1.0',
         pendingExpiresAt: preview.expiresAt ? new Date(preview.expiresAt) : null,
         activeCustomerId: customerId,
-        // 待确认期间重复预览同一任务时不能换 key，否则确认后会绕过原尝试。
-        idempotencyKey: reusableIdempotencyKey(meta.taskState) ?? randomUUID(),
+        // 重试路径沿用未结算执行的 key；新操作生成新 key。
+        idempotencyKey: idempotencyKeyFor(meta.taskState, idempotencyKeyOverride),
         clarificationRounds: 0,
       },
       { ...meta, envelope: preview },
@@ -665,13 +805,13 @@ async function handleCreateOrder(
   // 5. L1：令牌签发即生效，Runtime 可以直接执行（仍然幂等 + 留审计）。
   // 结果未知后的重试必须复用 TaskState 中的 key，否则会创建第二次副作用。
   if (preview.status === 'ok' && preview.confirmationToken) {
-    const idempotencyKey = reusableIdempotencyKey(meta.taskState) ?? randomUUID();
+    const idempotencyKey = idempotencyKeyFor(meta.taskState, idempotencyKeyOverride);
     const executed = await session.callTool('order.execute_create', {
       confirmation_token: preview.confirmationToken,
       idempotency_key: idempotencyKey,
     });
     meta.toolCalls.push({ tool: 'order.execute_create', status: executed.status, risk: executed.risk });
-    return reportExecution(executed, idempotencyKey, meta);
+    return reportExecution(executed, idempotencyKey, { ...meta, operationIntent, preview });
   }
 
   return finish('failed', preview.error?.message ?? '预览未成功。', {}, { ...meta, envelope: preview });
@@ -680,7 +820,7 @@ async function handleCreateOrder(
 export function reportExecution(
   executed: Envelope,
   idempotencyKey: string,
-  meta: { taskState: TaskState; traceId: string; toolCalls: ToolCallRecord[]; intentSource: 'model' | 'deterministic' },
+  meta: ExecutionReportMeta,
 ): AgentTurnResult {
   // 机器可识别的执行状态优先于通用 status 分支：这两个错误码表示副作用可能
   // 已经发生，必须在清空 pending 之前截获。
@@ -697,7 +837,10 @@ export function reportExecution(
     return finish(
       'completed',
       reply,
-      { activeOrderId: (data.orderId as string) ?? null, idempotencyKey, intent: null, pendingPreviewId: null },
+      {
+        ...clearedExecutionFields(),
+        activeOrderId: (data.orderId as string) ?? null,
+      },
       { ...meta, envelope: executed },
     );
   }
@@ -706,10 +849,15 @@ export function reportExecution(
     return finish(
       'conflict',
       `执行冲突，未产生写入：${executed.error?.message ?? ''}\n需要重新预览；旧令牌已作废。`,
-      { pendingPreviewId: null, intent: null },
+      clearedExecutionFields(),
       { ...meta, envelope: executed },
     );
   }
 
-  return finish('failed', executed.error?.message ?? '执行失败。', { pendingPreviewId: null }, { ...meta, envelope: executed });
+  return finish(
+    'failed',
+    executed.error?.message ?? '执行失败。',
+    clearedExecutionFields(),
+    { ...meta, envelope: executed },
+  );
 }

@@ -335,6 +335,12 @@ export interface TaskState {
   activeCustomerId?: string | null;
   activeOrderId?: string | null;
   idempotencyKey?: string | null;
+  /**
+   * 未结算执行尝试的显式标记。非空表示副作用可能已经发生：
+   * 必须用同一 idempotencyKey 重试或等待对账，不能把它当成新操作。
+   * 只在执行结果确定（成功/冲突/确定失败）时清空。
+   */
+  pendingExecutionAttemptId?: string | null;
   clarificationRounds: number;
   /** 乐观锁 */
   version: number;

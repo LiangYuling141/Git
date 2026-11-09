@@ -253,7 +253,7 @@ Phase C 起，副作用不再与治理写入共享一个事务，执行被拆成
 
 > 系统保证 **按幂等键计的 at-most-once 副作用**：执行器幂等记录 + 执行尝试唯一键 + 对账同一 key 重放。调用方在 `EXECUTION_IN_PROGRESS` / `EXECUTION_UNKNOWN` 时必须用**同一个幂等键**重试或等待对账；换 key 会被视为新操作，不在保证范围内。跨进程/跨服务场景不宣称 exactly-once。
 
-> **Phase C 已知限制**：对账重放当前不重新执行 `contractEngine.revalidate`，生产/B3 需在执行器侧增加按 attempt 查找并重校验后再执行；进程内 Prisma 的提交确认歧义只有在执行器抛出 `EffectsExecutionUnknownError` 时才会保守地收敛为 `unknown`；对账扫描存在批次饥饿；证据版本冲突尚未参与执行判定；HTTP effects 的超时/5xx 已在网关与内部路由映射为 `EXECUTION_UNKNOWN`，但真实跨服务接线仍属 B3。
+> **Phase C 已知限制**：对账重放当前不重新执行 `contractEngine.revalidate`，生产/B3 需在执行器侧增加按 attempt 查找并重校验后再执行；进程内 Prisma 的提交确认歧义只有在执行器抛出 `EffectsExecutionUnknownError` 时才会保守地收敛为 `unknown`；对账扫描存在批次饥饿；证据版本冲突尚未参与执行判定；HTTP effects 的网络错误/超时与 500/502/503/504 已在网关映射为 `EXECUTION_UNKNOWN`（409 保持确定性 `CONFLICT`，400 保持确定性校验失败），真实跨服务部署接线仍属 B3。
 
 > **审计链的 `pending`**：预审计先于副作用提交；崩溃会留下 `pending` 事件，对账补写结果事件后闭合。哈希链校验把 `pending` 视为合法结果类型。
 

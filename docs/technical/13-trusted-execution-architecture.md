@@ -305,7 +305,7 @@ Phase C 起，一次写入拆成“两阶段执行 + 三个阶段”，不再假
 失败语义：
 
 - `executing` 的重复请求返回 `EXECUTION_IN_PROGRESS`，`unknown` 返回 `EXECUTION_UNKNOWN`，`data` 携带 `{ attemptId, retryWithSameKey: true }`；两者都必须在消费令牌之前返回。
-- Runtime 与确认路由识别这两个错误码后保留 pending 预览与幂等键，提示“用同一操作重试”，不得清空 pending 或生成新 key。
+- Runtime 与确认路由识别这两个错误码后保留 pending 预览、幂等键与可重放意图，并写入显式标记 `TaskState.pendingExecutionAttemptId`（`attemptId`，缺失时为 `pending:<idempotencyKey>`），提示“用同一操作重试”，不得清空 pending 或生成新 key。标记非空期间禁止解析新意图；只有确定结果（成功/冲突/确定失败）才清空标记与幂等键。
 
 已知限制：
 
@@ -313,7 +313,7 @@ Phase C 起，一次写入拆成“两阶段执行 + 三个阶段”，不再假
 - **提交确认歧义只在执行器主动标注时保守处理**：进程内 Prisma 只有在执行器抛出 `EffectsExecutionUnknownError`（驱动/连接异常、冲突后重读失败）时才把结果收敛为 `unknown`；执行器未抛出而事务实际已提交的极端场景无法被本地状态机识别。
 - 无法重建的尝试（快照/契约缺失、绑定不一致）每轮都会重新扫描并占用 `limit` 名额，长期可能挤压后续可收敛记录；需要 `reconcileBlockedAt` 或游标分页，留待 B3。
 - 证据版本冲突尚未参与执行判定，需第二证据版本来源后启用。
-- HTTP effects 路由已把 `EffectsExecutionUnknownError` 映射为 503 / `EXECUTION_UNKNOWN`，`HttpCrmGateway` 也把 503 / `EXECUTION_UNKNOWN` 抛回状态机；但 `HttpCrmGateway.executeEffects` 尚未接入 `executeContract`，真实跨服务接线留待 B3。
+- HTTP effects 路由已把 `EffectsExecutionUnknownError` 映射为 503 / `EXECUTION_UNKNOWN`；`HttpCrmGateway.executeEffects` 把网络错误/超时与 500/502/503/504 统一抛为 `EffectsExecutionUnknownError`（409 保持 `CONFLICT`，400 保持确定性校验失败）。但 `HttpCrmGateway.executeEffects` 尚未接入 `executeContract`，真实跨服务接线留待 B3。
 - 对账保证**按幂等键计**的副作用 at-most-once，不宣称 exactly-once；`unknown` 必须用同一幂等键重试，换 key 不受该保证覆盖。
 
 ---
@@ -348,6 +348,8 @@ interface TaskState {
   activeCustomerId?: string;
   pendingConfirmationId?: string;
   idempotencyKey?: string;
+  /** 未结算执行尝试；非空时禁止解析新意图，只能用同一幂等键重试 */
+  pendingExecutionAttemptId?: string | null;
   version: number;
   updatedAt: Date;
 }

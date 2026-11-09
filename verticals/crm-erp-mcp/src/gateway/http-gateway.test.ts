@@ -398,18 +398,44 @@ describe('effects:execute', () => {
     });
   });
 
-  it.each([
-    [500, 'INTERNAL', 'internal gateway error'],
-    [400, 'VALIDATION_ERROR', 'payload.id is not allowed'],
-  ] as const)('非 2xx（%s %s）映射为 ok:false INTERNAL，并保留服务端 message', async (status, code, message) => {
-    stubFetch(jsonResponse({ ok: false, error: { code, message } }, status));
+  it('400 校验失败是确定性错误：ok:false INTERNAL，不升级为 unknown', async () => {
+    stubFetch(
+      jsonResponse(
+        { ok: false, error: { code: 'VALIDATION_ERROR', message: 'payload.id is not allowed' } },
+        400,
+      ),
+    );
     const gateway = createGateway();
 
     await expect(gateway.executeEffects(effectsInput())).resolves.toEqual({
       ok: false,
       refs: {},
-      error: { code: 'INTERNAL', message },
+      error: { code: 'INTERNAL', message: 'payload.id is not allowed' },
     });
+  });
+
+  it.each([500, 502, 504] as const)(
+    '%s 无法证明副作用未提交：抛 EffectsExecutionUnknownError 交给对账',
+    async (status) => {
+      stubFetch(jsonResponse({ ok: false, error: { code: 'INTERNAL', message: 'upstream failed' } }, status));
+      const gateway = createGateway();
+
+      await expect(gateway.executeEffects(effectsInput())).rejects.toBeInstanceOf(
+        EffectsExecutionUnknownError,
+      );
+    },
+  );
+
+  it('网络错误/超时抛 EffectsExecutionUnknownError，而不是可能诱导换 key 的 INTERNAL', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValue(new DOMException('The operation was aborted due to timeout', 'TimeoutError')),
+    );
+    const gateway = createGateway();
+
+    await expect(gateway.executeEffects(effectsInput())).rejects.toBeInstanceOf(
+      EffectsExecutionUnknownError,
+    );
   });
 
   it('503 EXECUTION_UNKNOWN 抛 EffectsExecutionUnknownError，交给状态机收敛为 unknown', async () => {

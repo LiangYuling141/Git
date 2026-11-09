@@ -41,13 +41,27 @@ describe('确认路由的执行结果映射', () => {
       const outcome = resolveConfirmationOutcome(pendingEnvelope(code), createPlan, 'create_order');
 
       expect(outcome.nextStatus).toBe('executing');
-      // false 表示路由只更新 status + idempotencyKey，不清空 pending 字段。
+      // false 表示路由只更新 status + idempotencyKey + marker，不清空 pending 字段。
       expect(outcome.clearPending).toBe(false);
+      expect(outcome.pendingExecutionAttemptId).toBe('att_1');
       expect(outcome.reply).toContain('待对账');
       expect(outcome.reply).toContain('同一确认操作');
       expect(outcome.reply).toContain('不要重新预览');
     },
   );
+
+  it('未知结果缺少 attemptId 时，用与幂等键绑定的哨兵 marker', () => {
+    const outcome = resolveConfirmationOutcome(
+      { status: 'error', error: { code: 'EXECUTION_IN_PROGRESS', message: 'in progress' } },
+      createPlan,
+      'create_order',
+      'idem_retry',
+    );
+
+    expect(outcome.nextStatus).toBe('executing');
+    expect(outcome.clearPending).toBe(false);
+    expect(outcome.pendingExecutionAttemptId).toBe('pending:idem_retry');
+  });
 
   it('成功后按计划标记 completed，并清空 pending', () => {
     const outcome = resolveConfirmationOutcome(
@@ -62,6 +76,7 @@ describe('确认路由的执行结果映射', () => {
 
     expect(outcome.nextStatus).toBe('completed');
     expect(outcome.clearPending).toBe(true);
+    expect(outcome.pendingExecutionAttemptId).toBeNull();
     expect(outcome.activeOrderId).toBe('o_1');
     expect(outcome.reply).toContain('已批准并执行');
     expect(outcome.reply).toContain('SO-1');
@@ -87,6 +102,7 @@ describe('确认路由的执行结果映射', () => {
     );
     expect(conflictOutcome.nextStatus).toBe('conflict');
     expect(conflictOutcome.clearPending).toBe(true);
+    expect(conflictOutcome.pendingExecutionAttemptId).toBeNull();
     expect(conflictOutcome.reply).toContain('未产生写入');
 
     const failedOutcome = resolveConfirmationOutcome(
@@ -96,6 +112,7 @@ describe('确认路由的执行结果映射', () => {
     );
     expect(failedOutcome.nextStatus).toBe('failed');
     expect(failedOutcome.clearPending).toBe(true);
+    expect(failedOutcome.pendingExecutionAttemptId).toBeNull();
     expect(failedOutcome.reply).toContain('执行失败');
   });
 });

@@ -167,7 +167,6 @@ export default function ChatPage() {
 
   async function decide(messageId: string, token: string, action: 'approve' | 'reject') {
     if (loading) return;
-    markResolved(messageId, action === 'reject' ? 'rejected' : 'executed');
     setLoading(true);
     try {
       const response = await fetch('/api/agent/confirm', {
@@ -176,6 +175,20 @@ export default function ChatPage() {
         body: JSON.stringify({ confirmationToken: token, action, conversationId }),
       });
       const data = await response.json();
+      // executing / EXECUTION_UNKNOWN 不是确定结果：不把确认卡片标记为已执行，
+      // 用户必须能对同一操作再次点击确认（服务端会用同一幂等键重试）。
+      const resolved: MessageMeta['resolved'] = !response.ok
+        ? undefined
+        : action === 'reject'
+          ? 'rejected'
+          : data.status === 'completed' || data.status === 'compensated'
+            ? 'executed'
+            : data.status === 'conflict'
+              ? 'conflict'
+              : data.status === 'failed' || data.status === 'compensation_failed'
+                ? 'failed'
+                : undefined;
+      if (resolved) markResolved(messageId, resolved);
       pushAssistant(response.status === 403 ? `无权批准：${data.message}` : data.reply, {
         status: data.status,
         risk: data.risk,
@@ -183,8 +196,7 @@ export default function ChatPage() {
         traceId: data.traceId,
         auditId: data.auditId,
         errorCode: data.error?.code,
-        resolved:
-          data.status === 'completed' ? 'executed' : data.status === 'conflict' ? 'conflict' : 'failed',
+        resolved,
       });
     } catch (error) {
       pushAssistant(`确认请求失败：${String(error)}`);

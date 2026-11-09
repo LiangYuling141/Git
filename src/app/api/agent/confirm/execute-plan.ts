@@ -1,4 +1,4 @@
-import type { Envelope, TaskStatus } from '@/tef/types';
+import type { Envelope, ErrorCode, TaskStatus } from '@/tef/types';
 
 /**
  * 人工批准后该调用哪个执行工具。
@@ -30,11 +30,16 @@ export interface ConfirmationOutcome {
   /** false：执行结果待对账，保留 pending 字段与幂等键，不清空任务。 */
   clearPending: boolean;
   activeOrderId: string | null;
+  /**
+   * 未结算执行的显式标记。非空时确认路由跳过 confirmation.approve，
+   * 直接用同一幂等键重试执行；确定结果时必须为 null。
+   */
+  pendingExecutionAttemptId: string | null;
 }
 
 export const EXECUTION_PENDING_REPLY = '执行结果待对账，请稍后使用同一确认操作重试；不要重新预览。';
 
-const EXECUTION_PENDING_CODES: ReadonlySet<string> = new Set([
+const EXECUTION_PENDING_CODES: ReadonlySet<ErrorCode> = new Set([
   'EXECUTION_IN_PROGRESS',
   'EXECUTION_UNKNOWN',
 ]);
@@ -43,16 +48,26 @@ export function resolveConfirmationOutcome(
   executed: Envelope,
   plan: ExecutionPlan,
   contractOperation: string,
+  idempotencyKey?: string,
 ): ConfirmationOutcome {
   const data = (executed.data ?? {}) as Record<string, unknown>;
   const activeOrderId = (data.orderId as string | undefined) ?? null;
 
   if (executed.error?.code && EXECUTION_PENDING_CODES.has(executed.error.code)) {
+    // 没有 attemptId 时用与幂等键绑定的哨兵值：只要 key 不变，标记就能表达
+    // “这笔尝试仍未结算”，从而阻止下一轮解析新意图或换 key。
+    const attemptId =
+      typeof data.attemptId === 'string' && data.attemptId
+        ? data.attemptId
+        : idempotencyKey
+          ? `pending:${idempotencyKey}`
+          : null;
     return {
       nextStatus: 'executing',
       reply: EXECUTION_PENDING_REPLY,
       clearPending: false,
       activeOrderId: null,
+      pendingExecutionAttemptId: attemptId,
     };
   }
 
@@ -70,7 +85,13 @@ export function resolveConfirmationOutcome(
             ).toFixed(2)}，余款 ¥${Number(data.balance ?? 0).toFixed(2)}（${String(data.termsDays ?? 0)} 天账期）`,
             `审计事件 ${String(executed.auditId ?? '')}`,
           ].join('\n');
-    return { nextStatus: plan.successStatus, reply, clearPending: true, activeOrderId };
+    return {
+      nextStatus: plan.successStatus,
+      reply,
+      clearPending: true,
+      activeOrderId,
+      pendingExecutionAttemptId: null,
+    };
   }
 
   if (executed.status === 'conflict') {
@@ -79,6 +100,7 @@ export function resolveConfirmationOutcome(
       reply: `已批准，但执行时发生冲突，未产生写入：${executed.error?.message ?? ''}\n旧令牌已作废，请重新预览。`,
       clearPending: true,
       activeOrderId,
+      pendingExecutionAttemptId: null,
     };
   }
 
@@ -87,5 +109,6 @@ export function resolveConfirmationOutcome(
     reply: `已批准，但执行失败：${executed.error?.message ?? ''}`,
     clearPending: true,
     activeOrderId,
+    pendingExecutionAttemptId: null,
   };
 }

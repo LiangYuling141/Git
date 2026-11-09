@@ -99,13 +99,17 @@ function toEffectsFailure(payload: unknown, status: number): EffectsExecuteResul
 }
 
 /**
- * 503 / EXECUTION_UNKNOWN 表示副作用可能已提交但结果无法确认。
+ * 5xx / EXECUTION_UNKNOWN 表示副作用可能已提交但结果无法确认。
  *
- * 这是端口约定里唯一允许抛出的情况：状态机必须把尝试收敛为 unknown，并等待
- * 对账用同一幂等键收敛，不能返回确定失败诱导调用方换 key 重试。
+ * 500/502/503/504 都无法证明“请求没有到达执行器”或“事务已回滚”：代理超时、
+ * 上游重启、响应丢失都会落在这几个状态码上。按端口约定只能收敛为 unknown，
+ * 交给对账用同一幂等键确认，不能映射成 INTERNAL 诱导调用方换 key 重试。
+ * 409 是确定性冲突，400 是确定性校验失败，都不在此列。
  */
+const UNKNOWN_EXECUTION_HTTP_STATUSES: ReadonlySet<number> = new Set([500, 502, 503, 504]);
+
 export function isEffectsExecutionUnknown(payload: unknown, status: number): boolean {
-  return status === 503 || effectsErrorDetail(payload, status).code === 'EXECUTION_UNKNOWN';
+  return UNKNOWN_EXECUTION_HTTP_STATUSES.has(status) || effectsErrorDetail(payload, status).code === 'EXECUTION_UNKNOWN';
 }
 
 /**
@@ -160,7 +164,19 @@ export function createHttpCrmGateway(options: HttpCrmGatewayOptions): CrmBusines
     payload: unknown;
   }
 
-  const post = async (path: string, body: Record<string, unknown>): Promise<RawResponse> => {
+  interface PostOptions {
+    /**
+     * effects 写入通道：网络错误/超时无法证明副作用未提交，必须抛
+     * EffectsExecutionUnknownError 交给对账；查询通道可安全地按 INTERNAL 处理。
+     */
+    unknownOnTransportFailure?: boolean;
+  }
+
+  const post = async (
+    path: string,
+    body: Record<string, unknown>,
+    options: PostOptions = {},
+  ): Promise<RawResponse> => {
     let response: Response;
     try {
       response = await fetch(`${baseUrl.replace(/\/+$/, '')}${path}`, {
@@ -171,6 +187,9 @@ export function createHttpCrmGateway(options: HttpCrmGatewayOptions): CrmBusines
       });
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
+      if (options.unknownOnTransportFailure) {
+        throw new EffectsExecutionUnknownError(`CRM effects gateway request failed: ${detail}`);
+      }
       throw new TefError('INTERNAL', `CRM gateway request failed: ${detail}`);
     }
     const payload = await response.json().catch(() => ({}));
@@ -220,14 +239,18 @@ export function createHttpCrmGateway(options: HttpCrmGatewayOptions): CrmBusines
     async executeEffects(input: EffectsExecuteRequest): Promise<EffectsExecuteResult> {
       // 租户校验必须在网络调用之前：错误的闭包绑定不能变成一次跨租户写入请求。
       assertTenant(input.tenantId);
-      const { ok, status, payload } = await post('/api/internal/v1/effects/execute', {
-        tenantId: input.tenantId,
-        idempotencyKey: input.idempotencyKey,
-        previewId: input.previewId,
-        traceId: input.traceId,
-        expectedEvidenceVersion: input.expectedEvidenceVersion,
-        effects: input.effects,
-      });
+      const { ok, status, payload } = await post(
+        '/api/internal/v1/effects/execute',
+        {
+          tenantId: input.tenantId,
+          idempotencyKey: input.idempotencyKey,
+          previewId: input.previewId,
+          traceId: input.traceId,
+          expectedEvidenceVersion: input.expectedEvidenceVersion,
+          effects: input.effects,
+        },
+        { unknownOnTransportFailure: true },
+      );
       if (!ok) {
         if (isEffectsExecutionUnknown(payload, status)) {
           throw new EffectsExecutionUnknownError(effectsErrorDetail(payload, status).message);

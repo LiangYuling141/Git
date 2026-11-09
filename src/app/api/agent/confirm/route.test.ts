@@ -1,0 +1,226 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { TaskState } from '@/tef/types';
+
+/**
+ * 确认路由的重试语义（模块级 mock，不依赖数据库）。
+ *
+ * 核心回归：上一笔执行结果未知时，原令牌可能已被 Phase 1 消费。路由必须
+ * 先读 TaskState、跳过 confirmation.approve，用同一幂等键直接重试执行；
+ * 确定结果后再清空 marker/key。
+ */
+
+const mocks = vi.hoisted(() => ({
+  toolCalls: [] as Array<{ clientKind: string; tool: string; args: Record<string, unknown> }>,
+  responses: {} as Record<string, unknown>,
+  load: vi.fn(),
+  update: vi.fn(),
+  findSession: vi.fn(),
+  resolveTenant: vi.fn(),
+}));
+
+vi.mock('next/headers', () => ({
+  cookies: async () => ({ get: () => ({ value: 's_confirm' }) }),
+}));
+
+vi.mock('@/lib/prisma', () => ({
+  prisma: { session: { findUnique: mocks.findSession } },
+}));
+
+vi.mock('@/tef/tenant', () => ({
+  resolveTenantContext: mocks.resolveTenant,
+}));
+
+vi.mock('@/tef/token', () => ({
+  loadTokenSecret: () => 'test-secret-test-secret-test-secret',
+}));
+
+vi.mock('@/tef/task-state', () => ({
+  taskStateStore: { load: mocks.load, update: mocks.update },
+}));
+
+vi.mock('@/mcp-server', () => ({
+  connectTefClient: async ({ principal }: { principal: { clientKind: string } }) => ({
+    async callTool(tool: string, args: Record<string, unknown>) {
+      mocks.toolCalls.push({ clientKind: principal.clientKind, tool, args });
+      const response = mocks.responses[tool];
+      if (!response) throw new Error(`unexpected tool ${tool}`);
+      return response;
+    },
+    async close() {
+      // no-op
+    },
+  }),
+}));
+
+import { POST } from './route';
+
+function makeState(overrides: Partial<TaskState> = {}): TaskState {
+  return {
+    id: 'ts_confirm',
+    tenantId: 't_yiwu_demo',
+    userId: 'u_owner',
+    conversationId: 'conv_confirm',
+    status: 'awaiting_confirmation',
+    clarificationRounds: 0,
+    version: 3,
+    updatedAt: new Date('2026-11-10T00:00:00.000Z'),
+    traceId: 'tr_task',
+    pendingPreview: {
+      previewId: 'pv_1',
+      intentHash: 'ih_1',
+      contract: 'create_order',
+      contractVersion: '1.0',
+      expiresAt: new Date('2026-11-10T00:15:00.000Z'),
+    },
+    idempotencyKey: 'idem_confirm',
+    ...overrides,
+  };
+}
+
+function post(body: Record<string, unknown>): Request {
+  return new Request('http://localhost/api/agent/confirm', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+const SUCCESS: Record<string, unknown> = {
+  status: 'ok',
+  data: {
+    orderId: 'o_1',
+    orderNo: 'SO-1',
+    totalAmount: 200,
+    deposit: 0,
+    balance: 200,
+    termsDays: 0,
+  },
+  auditId: 'aud_exec',
+  traceId: 'tr_exec',
+};
+
+beforeEach(() => {
+  mocks.toolCalls.length = 0;
+  for (const key of Object.keys(mocks.responses)) delete mocks.responses[key];
+  mocks.load.mockReset();
+  mocks.update.mockReset();
+  mocks.findSession.mockReset();
+  mocks.resolveTenant.mockReset();
+
+  mocks.findSession.mockResolvedValue({
+    id: 's_confirm',
+    userId: 'u_owner',
+    tenantId: 't_yiwu_demo',
+    expiresAt: null,
+  });
+  mocks.resolveTenant.mockResolvedValue({
+    tenantId: 't_yiwu_demo',
+    userId: 'u_owner',
+    role: 'owner',
+  });
+  mocks.update.mockResolvedValue(undefined);
+});
+
+describe('确认路由：未结算执行的重试', () => {
+  it('marker 存在时跳过 confirmation.approve，用同一 key 重试；仍未结算则保持 executing', async () => {
+    mocks.load.mockResolvedValue(makeState({ status: 'executing', pendingExecutionAttemptId: 'att_1' }));
+    mocks.responses['order.execute_create'] = {
+      status: 'error',
+      error: { code: 'EXECUTION_UNKNOWN', message: 'commit outcome unknown' },
+      data: { attemptId: 'att_1', retryWithSameKey: true },
+      traceId: 'tr_exec',
+    };
+
+    const response = await POST(
+      post({ confirmationToken: 'ct_used', action: 'approve', conversationId: 'conv_confirm' }),
+    );
+    const payload = await response.json();
+
+    // 关键：已消费/已批准的令牌不再走 approve；直接同 key 执行。
+    expect(mocks.toolCalls.map((call) => call.tool)).toEqual(['order.execute_create']);
+    expect(mocks.toolCalls[0].clientKind).toBe('agent');
+    expect(mocks.toolCalls[0].args).toEqual({
+      confirmation_token: 'ct_used',
+      idempotency_key: 'idem_confirm',
+    });
+
+    expect(payload.status).toBe('executing');
+    expect(payload.approved).toBe(true);
+    expect(payload.reply).toContain('待对账');
+
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+    expect(mocks.update.mock.calls[0][2]).toMatchObject({
+      status: 'executing',
+      idempotencyKey: 'idem_confirm',
+      pendingExecutionAttemptId: 'att_1',
+    });
+    expect(mocks.update.mock.calls[0][3]).toBe(3);
+  });
+
+  it('重试后确定成功：清空 marker 与 key，任务按 completed 结算', async () => {
+    mocks.load.mockResolvedValue(makeState({ status: 'executing', pendingExecutionAttemptId: 'att_1' }));
+    mocks.responses['order.execute_create'] = SUCCESS;
+
+    const response = await POST(
+      post({ confirmationToken: 'ct_used', action: 'approve', conversationId: 'conv_confirm' }),
+    );
+    const payload = await response.json();
+
+    expect(mocks.toolCalls.map((call) => call.tool)).toEqual(['order.execute_create']);
+    expect(payload.status).toBe('completed');
+    expect(mocks.update.mock.calls[0][2]).toMatchObject({
+      status: 'completed',
+      idempotencyKey: null,
+      pendingExecutionAttemptId: null,
+      pendingPreviewId: null,
+      intent: null,
+      activeOrderId: 'o_1',
+    });
+  });
+
+  it('正常首次批准仍先调用 confirmation.approve，再复用持久化 key 执行', async () => {
+    mocks.load.mockResolvedValue(makeState());
+    mocks.responses['confirmation.approve'] = {
+      status: 'ok',
+      diff: [],
+      auditId: 'aud_approve',
+      traceId: 'tr_approved',
+    };
+    mocks.responses['order.execute_create'] = SUCCESS;
+
+    const response = await POST(
+      post({ confirmationToken: 'ct_fresh', action: 'approve', conversationId: 'conv_confirm' }),
+    );
+    const payload = await response.json();
+
+    expect(mocks.toolCalls.map((call) => call.tool)).toEqual([
+      'confirmation.approve',
+      'order.execute_create',
+    ]);
+    expect(mocks.toolCalls[0].clientKind).toBe('confirmation-ui');
+    expect(mocks.toolCalls[1].clientKind).toBe('agent');
+    expect(mocks.toolCalls[1].args).toEqual({
+      confirmation_token: 'ct_fresh',
+      idempotency_key: 'idem_confirm',
+    });
+    expect(payload.status).toBe('completed');
+    expect(mocks.update.mock.calls[0][2]).toMatchObject({
+      idempotencyKey: null,
+      pendingExecutionAttemptId: null,
+    });
+  });
+
+  it('未结算执行期间拒绝不会清空 marker，也不调用令牌工具', async () => {
+    mocks.load.mockResolvedValue(makeState({ status: 'executing', pendingExecutionAttemptId: 'att_1' }));
+
+    const response = await POST(
+      post({ confirmationToken: 'ct_used', action: 'reject', conversationId: 'conv_confirm' }),
+    );
+    const payload = await response.json();
+
+    expect(mocks.toolCalls).toHaveLength(0);
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(payload.status).toBe('executing');
+    expect(payload.reply).toContain('待对账');
+  });
+});

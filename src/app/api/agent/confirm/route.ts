@@ -6,7 +6,11 @@ import { taskStateStore } from '@/tef/task-state';
 import { resolveTenantContext } from '@/tef/tenant';
 import { loadTokenSecret } from '@/tef/token';
 import type { Envelope, TenantRole } from '@/tef/types';
-import { resolveConfirmationOutcome, resolveExecutionPlan } from './execute-plan';
+import {
+  EXECUTION_PENDING_REPLY,
+  resolveConfirmationOutcome,
+  resolveExecutionPlan,
+} from './execute-plan';
 
 /**
  * 人工确认入口（治理工具 + 确认后的执行）。
@@ -71,67 +75,108 @@ export async function POST(request: Request) {
     clientKind: 'confirmation-ui' as const,
   };
 
-  const human = await connectTefClient({ principal: humanPrincipal, traceId: `tr_confirm_${Date.now()}`, secret });
-  let decision: Envelope;
-  try {
-    decision = await human.callTool(action === 'approve' ? 'confirmation.approve' : 'confirmation.reject', {
-      confirmation_token: token,
-      ...(body.reason ? { reason: body.reason } : {}),
+  // 必须在 confirmation.approve 之前读 TaskState：若上一笔执行结果未结算，
+  // 这次请求是同一操作的重试，而原令牌可能已经被 Phase 1 消费。再调用
+  // confirmation.approve 会得到 CONFLICT，把可恢复的 unknown 变成确定失败。
+  const state = await taskStateStore.load(tenant.tenantId, conversationId);
+  const unresolvedAttemptId = state?.pendingExecutionAttemptId ?? null;
+
+  // 未结算执行期间拒绝不会撤销已经可能发生的副作用，也不能清掉 marker；
+  // 保留现场并提示等待对账，避免下一次重试换 key 造成第二次副作用。
+  if (unresolvedAttemptId && action === 'reject') {
+    return NextResponse.json({
+      status: 'executing',
+      approved: false,
+      reply: EXECUTION_PENDING_REPLY,
+      traceId: state?.traceId ?? null,
     });
-  } finally {
-    await human.close();
   }
 
-  if (decision.status !== 'ok') {
-    return NextResponse.json({
-      status: 'failed',
-      approved: false,
-      reply: decision.error?.message ?? '确认失败',
-      error: decision.error,
-      traceId: decision.traceId,
-    });
+  let decision: Envelope | null = null;
+  let traceId: string;
+
+  if (unresolvedAttemptId) {
+    // 跳过人工批准：Phase 1 先检查 attempt 再消费令牌，已使用/已批准的
+    // 令牌不会被二次消费；对账已结算时会直接重放已存结果。
+    traceId = state?.traceId ?? `tr_exec_${Date.now()}`;
+  } else {
+    const human = await connectTefClient({ principal: humanPrincipal, traceId: `tr_confirm_${Date.now()}`, secret });
+    try {
+      decision = await human.callTool(action === 'approve' ? 'confirmation.approve' : 'confirmation.reject', {
+        confirmation_token: token,
+        ...(body.reason ? { reason: body.reason } : {}),
+      });
+    } finally {
+      await human.close();
+    }
+
+    if (decision.status !== 'ok') {
+      return NextResponse.json({
+        status: 'failed',
+        approved: false,
+        reply: decision.error?.message ?? '确认失败',
+        error: decision.error,
+        traceId: decision.traceId,
+      });
+    }
+
+    // 批准通过：traceId 沿用预览那一条，让预览、批准、执行落在同一条决策链上。
+    traceId = decision.traceId ?? `tr_exec_${Date.now()}`;
   }
 
   if (action === 'reject') {
-    await taskStateStore
-      .load(tenant.tenantId, conversationId)
-      .then((state) =>
-        state
-          ? taskStateStore.update(
-              tenant.tenantId,
-              conversationId,
-              {
-                status: 'failed',
-                pendingPreviewId: null,
-                pendingIntentHash: null,
-                pendingContract: null,
-                pendingContractVersion: null,
-                pendingExpiresAt: null,
-                intent: null,
-              },
-              state.version,
-            )
-          : null,
-      )
-      .catch(() => null);
+    const rejected = decision as Envelope;
+    if (state) {
+      await taskStateStore
+        .update(
+          tenant.tenantId,
+          conversationId,
+          {
+            status: 'failed',
+            pendingPreviewId: null,
+            pendingIntentHash: null,
+            pendingContract: null,
+            pendingContractVersion: null,
+            pendingExpiresAt: null,
+            intent: null,
+            idempotencyKey: null,
+            pendingExecutionAttemptId: null,
+          },
+          state.version,
+        )
+        .catch(() => null);
+    }
 
     return NextResponse.json({
       status: 'failed',
       approved: false,
       reply: '已拒绝。预览快照与令牌均已作废，如需继续请重新发起。',
-      diff: decision.diff,
-      traceId: decision.traceId,
-      auditId: decision.auditId,
+      diff: rejected.diff,
+      traceId: rejected.traceId,
+      auditId: rejected.auditId,
     });
   }
 
-  // 批准通过：用 agent client 执行。traceId 沿用预览那一条，
-  // 这样 audit.trace 能把预览、批准、执行串成同一条决策链。
-  const traceId = decision.traceId ?? `tr_exec_${Date.now()}`;
-  const state = await taskStateStore.load(tenant.tenantId, conversationId);
-  const idempotencyKey = state?.idempotencyKey ?? `idem_${Date.now()}`;
-  const contractOperation = state?.pendingPreview?.contract ?? 'create_order';
+  const contractOperation =
+    state?.pendingPreview?.contract ??
+    (state?.intent?.kind === 'operation' ? state.intent.contract : undefined) ??
+    'create_order';
   const plan = resolveExecutionPlan(contractOperation);
+
+  // 重试必须沿用未结算尝试的 key；没有 key 就无法命中原 attempt，
+  // 生成新 key 会绕过 Phase 1 的尝试检查，绝不能静默降级。
+  if (unresolvedAttemptId && !state?.idempotencyKey) {
+    return NextResponse.json(
+      {
+        status: 'executing',
+        approved: true,
+        reply: '执行结果待对账，但缺少幂等键，需人工对账后再试。',
+        traceId,
+      },
+      { status: 409 },
+    );
+  }
+  const idempotencyKey = state?.idempotencyKey ?? `idem_${Date.now()}`;
 
   const agent = await connectTefClient({
     principal: { ...humanPrincipal, clientKind: 'agent' },
@@ -148,7 +193,7 @@ export async function POST(request: Request) {
     await agent.close();
   }
 
-  const outcome = resolveConfirmationOutcome(executed, plan, contractOperation);
+  const outcome = resolveConfirmationOutcome(executed, plan, contractOperation, idempotencyKey);
   if (state) {
     await taskStateStore
       .update(
@@ -164,10 +209,17 @@ export async function POST(request: Request) {
               pendingExpiresAt: null,
               intent: null,
               activeOrderId: outcome.activeOrderId,
+              // 确定结果后清空执行锚点，下一次操作必须拿到新 key。
+              idempotencyKey: null,
+              pendingExecutionAttemptId: null,
             }
-          : // 执行结果待对账：只推进状态并保留幂等键，pending 预览与过期时间
-            // 必须原样保留。用户下一步仍用同一确认操作重试，不重新预览。
-            { status: outcome.nextStatus, idempotencyKey },
+          : // 执行结果待对账：推进状态并写入显式 marker，保留幂等键、pending
+            // 预览与过期时间。用户下一步仍用同一确认操作重试，不重新预览。
+            {
+              status: outcome.nextStatus,
+              idempotencyKey,
+              pendingExecutionAttemptId: outcome.pendingExecutionAttemptId,
+            },
         state.version,
       )
       .catch(() => null);
