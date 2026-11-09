@@ -1,5 +1,4 @@
-import type { Prisma } from '@/generated/prisma';
-import { formatCNY, toCents } from '@lymatrix/tef-core';
+import { TefError, formatCNY, toCents } from '@lymatrix/tef-core';
 import type {
   AuditSpec,
   Check,
@@ -8,6 +7,7 @@ import type {
   Effect,
   ExecContext,
   ExecResult,
+  OrderRecord,
   RiskResult,
 } from '@lymatrix/tef-core';
 import type { PrismaTx } from '@lymatrix/tef-mcp-kit';
@@ -50,7 +50,7 @@ function normalize(raw: unknown): CompensateOrderParams {
     : { orderId: parsed.orderId, reason: parsed.reason };
 }
 
-function parseOrderItems(value: Prisma.JsonValue | null): CreateOrderItem[] {
+function parseOrderItems(value: unknown): CreateOrderItem[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
     if (!item || typeof item !== 'object') return [];
@@ -77,18 +77,7 @@ function inferPaymentRole(remark: string | null, method: string): PaymentRole | 
   return null;
 }
 
-function toOrderEvidence(row: {
-  id: string;
-  orderNo: string;
-  status: string;
-  customerId: string;
-  items: Prisma.JsonValue;
-  totalAmount: number;
-  deposit: number;
-  balance: number;
-  previewId: string | null;
-  traceId: string | null;
-}): OrderEvidence {
+function toOrderEvidence(row: OrderRecord): OrderEvidence {
   return {
     id: row.id,
     orderNo: row.orderNo,
@@ -96,10 +85,10 @@ function toOrderEvidence(row: {
     customerId: row.customerId,
     items: parseOrderItems(row.items),
     totalAmount: row.totalAmount,
-    deposit: row.deposit,
+    deposit: row.deposit ?? 0,
     balance: row.balance,
-    previewId: row.previewId,
-    traceId: row.traceId,
+    previewId: row.previewId ?? null,
+    traceId: row.traceId ?? null,
   };
 }
 
@@ -162,11 +151,12 @@ async function loadEvidence(
   params: CompensateOrderParams,
   ctx: ExecContext<PrismaTx>,
 ): Promise<CompensateOrderEvidence> {
-  const orderRow = await ctx.db.order.findFirst({
-    where: { id: params.orderId, tenantId: ctx.tenantId },
-    include: { payments: true },
-  });
+  const gateway = ctx.gateway;
+  if (!gateway) throw new TefError('INTERNAL', 'BusinessGateway is not configured');
 
+  const orderRow = await gateway.getOrder({ tenantId: ctx.tenantId, orderId: params.orderId });
+
+  // 原始预览快照是 TEF 治理状态，不属于业务网关，仍从租户事务内读取。
   const originalSnapshot = orderRow?.previewId
     ? await ctx.db.previewSnapshot.findFirst({
         where: { id: orderRow.previewId, tenantId: ctx.tenantId },
@@ -177,10 +167,10 @@ async function loadEvidence(
 
   const [customerRow, productRows] = await Promise.all([
     orderRow
-      ? ctx.db.customer.findFirst({ where: { id: orderRow.customerId, tenantId: ctx.tenantId } })
+      ? gateway.getCustomer({ tenantId: ctx.tenantId, customerId: orderRow.customerId })
       : Promise.resolve(null),
     skus.length > 0
-      ? ctx.db.product.findMany({ where: { tenantId: ctx.tenantId, sku: { in: skus } } })
+      ? gateway.getProducts({ tenantId: ctx.tenantId, skus })
       : Promise.resolve([]),
   ]);
 
@@ -202,8 +192,8 @@ async function loadEvidence(
       amount: payment.amount,
       method: payment.method,
       status: payment.status,
-      remark: payment.remark,
-      role: inferPaymentRole(payment.remark, payment.method),
+      remark: payment.remark ?? null,
+      role: inferPaymentRole(payment.remark ?? null, payment.method),
     })),
     products: productRows.map(toProductEvidence),
     customer: customerRow ? toCustomerEvidence(customerRow) : null,

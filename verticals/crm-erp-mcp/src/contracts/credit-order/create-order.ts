@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { classifyRisk, formatCNY, fromCents, prorateCents, toCents } from '@lymatrix/tef-core';
+import { TefError, classifyRisk, formatCNY, fromCents, prorateCents, toCents } from '@lymatrix/tef-core';
 import type { Check, Contract, DiffEntry, Effect, ExecContext, RiskResult } from '@lymatrix/tef-core';
 import type { PrismaTx } from '@lymatrix/tef-mcp-kit';
 import {
@@ -76,13 +76,16 @@ function normalize(raw: unknown): CreateOrderParams {
 }
 
 async function loadEvidence(params: CreateOrderParams, ctx: ExecContext<PrismaTx>): Promise<CreateOrderEvidence> {
+  const gateway = ctx.gateway;
+  if (!gateway) throw new TefError('INTERNAL', 'BusinessGateway is not configured');
+
   const skus = [...new Set(params.items.map((item) => item.sku))];
 
   // 每个查询都带 tenantId：跨租户的客户 ID 在这里直接查不到，
   // 后续会以 NOT_FOUND 阻断，而不是泄露"该 ID 在别的租户存在"。
   const [customerRow, productRows] = await Promise.all([
-    ctx.db.customer.findFirst({ where: { id: params.customerId, tenantId: ctx.tenantId } }),
-    ctx.db.product.findMany({ where: { tenantId: ctx.tenantId, sku: { in: skus } } }),
+    gateway.getCustomer({ tenantId: ctx.tenantId, customerId: params.customerId }),
+    gateway.getProducts({ tenantId: ctx.tenantId, skus }),
   ]);
 
   const overdueThreshold = ctx.tenantThresholds[OVERDUE_THRESHOLD_KEY];

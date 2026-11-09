@@ -7,6 +7,7 @@ import {
   type PrismaTx,
 } from '@lymatrix/tef-mcp-kit';
 import { createCreditOrderAdapters, registerCreditOrderContracts } from '../contracts/credit-order';
+import { createPrismaCrmGateway } from '../gateway/prisma-gateway';
 
 /**
  * 赊账订单垂直的两个写入操作：
@@ -26,7 +27,13 @@ export function orderPreviewCreate(
   args: Record<string, unknown>,
   options: WriteOptions,
 ): Promise<Envelope> {
-  return previewContract(principal, 'create_order', args, options, 'order.preview_create');
+  return previewContract(
+    principal,
+    'create_order',
+    args,
+    { ...options, gatewayFactory: createPrismaCrmGateway },
+    'order.preview_create',
+  );
 }
 
 export function orderExecuteCreate(
@@ -37,7 +44,7 @@ export function orderExecuteCreate(
   return executeContract(
     principal,
     args,
-    options,
+    { ...options, gatewayFactory: createPrismaCrmGateway },
     'order.execute_create',
     'create_order',
     'failure',
@@ -50,7 +57,13 @@ export function orderPreviewCompensate(
   args: Record<string, unknown>,
   options: WriteOptions,
 ): Promise<Envelope> {
-  return previewContract(principal, 'compensate_order', args, options, 'order.preview_compensate');
+  return previewContract(
+    principal,
+    'compensate_order',
+    args,
+    { ...options, gatewayFactory: createPrismaCrmGateway },
+    'order.preview_compensate',
+  );
 }
 
 export function orderExecuteCompensate(
@@ -61,7 +74,7 @@ export function orderExecuteCompensate(
   return executeContract(
     principal,
     args,
-    options,
+    { ...options, gatewayFactory: createPrismaCrmGateway },
     'order.execute_compensate',
     'compensate_order',
     'compensation_failed',

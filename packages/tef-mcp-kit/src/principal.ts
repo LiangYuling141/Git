@@ -1,6 +1,6 @@
 import type { Prisma } from '@/generated/prisma';
 import { TefError } from '@lymatrix/tef-core';
-import type { ExecContext, TenantRole, WhitelistLevel } from '@lymatrix/tef-core';
+import type { BusinessGateway, ExecContext, TenantRole, WhitelistLevel } from '@lymatrix/tef-core';
 import { toThresholdRecord, type ClientKind } from './tenant';
 import type { PrismaTx } from './prisma';
 
@@ -28,6 +28,8 @@ type CtxDb = Pick<Prisma.TransactionClient, 'whitelistEntry' | 'tenant' | 'audit
 export interface ExecContextOptions {
   traceId: string;
   now?: Date;
+  /** 业务数据端口；垂直通过工厂在租户事务内构造，缺省时契约必须拒绝执行。 */
+  gateway?: BusinessGateway;
 }
 
 export async function buildExecContext(
@@ -69,5 +71,6 @@ export async function buildExecContext(
     whitelistLevel: (whitelist?.level ?? 'none') as WhitelistLevel,
     tenantThresholds: toThresholdRecord(tenant.thresholds),
     db,
+    gateway: options.gateway,
   };
 }

@@ -1,7 +1,7 @@
 import { contractEngine, contractRegistry, executeEffects, redactArgs } from '@lymatrix/tef-core';
 import { EffectExecutionError, type EntityAdapters } from '@lymatrix/tef-core';
 import { TefError, isTefError } from '@lymatrix/tef-core';
-import type { AuditResultType, Envelope } from '@lymatrix/tef-core';
+import type { AuditResultType, BusinessGateway, Envelope } from '@lymatrix/tef-core';
 import { auditChain } from '../audit-chain';
 import { previewStore } from '../preview-store';
 import { tokenStore } from '../token';
@@ -25,6 +25,8 @@ export interface ContractWriteOptions {
   traceId: string;
   secret: string;
   now?: Date;
+  /** 在租户事务内构造业务数据端口；契约通过 ctx.gateway 读取业务事实。 */
+  gatewayFactory?: (tx: PrismaTx, tenantId: string) => BusinessGateway;
 }
 
 export type AdapterFactory = (
@@ -44,7 +46,11 @@ export async function previewContract(
 
   try {
     return await withTenantScope(principal.tenantId, async (tx) => {
-      const ctx = await buildExecContext(principal, tx, { traceId: options.traceId, now });
+      const ctx = await buildExecContext(principal, tx, {
+        traceId: options.traceId,
+        now,
+        gateway: options.gatewayFactory?.(tx, principal.tenantId),
+      });
 
       const contract = contractRegistry.get(operation);
       if (!contract) {
@@ -206,7 +212,11 @@ export async function executeContract(
         return { ...replayed, data: { ...(replayed.data ?? {}), replayed: true } } as Envelope;
       }
 
-      const ctx = await buildExecContext(principal, tx, { traceId: options.traceId, now });
+      const ctx = await buildExecContext(principal, tx, {
+        traceId: options.traceId,
+        now,
+        gateway: options.gatewayFactory?.(tx, principal.tenantId),
+      });
 
       // 1. 验签 + 验绑定 + 原子消费。重放、跨租户、未批准都在这里被挡下。
       const consumedToken = await tokenStore.consume(
