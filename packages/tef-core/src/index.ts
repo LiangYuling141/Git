@@ -1,3 +1,10 @@
-// @lymatrix/tef-core public entry.
-// 迁移期间保持为空；Task 2 填充导出。
-export {};
+export * from './types';
+export * from './errors';
+export * from './money';
+export * from './canonical';
+export * from './hashing';
+export * from './redaction';
+export * from './risk';
+export * from './contract-engine';
+export * from './contract-registry';
+export * from './effect-executor';
