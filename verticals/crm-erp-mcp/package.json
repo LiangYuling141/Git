@@ -1,0 +1,15 @@
+{
+  "name": "@lymatrix/vertical-crm-erp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LyMatrix TEF CRM-ERP vertical MCP: query tools and credit-order contracts.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts", "./*": "./src/*.ts" },
+  "dependencies": {
+    "@lymatrix/tef-core": "*",
+    "@lymatrix/tef-mcp-kit": "*",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  }
+}

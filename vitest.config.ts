@@ -24,6 +24,30 @@ export default defineConfig({
         replacement: fileURLToPath(new URL('./packages/tef-core/src/index.ts', import.meta.url)),
       },
       {
+        find: /^@lymatrix\/tef-mcp-kit\/(.*)$/,
+        replacement: `${fileURLToPath(new URL('./packages/tef-mcp-kit/src', import.meta.url))}/$1`,
+      },
+      {
+        find: '@lymatrix/tef-mcp-kit',
+        replacement: fileURLToPath(new URL('./packages/tef-mcp-kit/src/index.ts', import.meta.url)),
+      },
+      {
+        find: /^@lymatrix\/tef-runtime\/(.*)$/,
+        replacement: `${fileURLToPath(new URL('./packages/tef-runtime/src', import.meta.url))}/$1`,
+      },
+      {
+        find: '@lymatrix/tef-runtime',
+        replacement: fileURLToPath(new URL('./packages/tef-runtime/src/index.ts', import.meta.url)),
+      },
+      {
+        find: /^@lymatrix\/vertical-crm-erp\/(.*)$/,
+        replacement: `${fileURLToPath(new URL('./verticals/crm-erp-mcp/src', import.meta.url))}/$1`,
+      },
+      {
+        find: '@lymatrix/vertical-crm-erp',
+        replacement: fileURLToPath(new URL('./verticals/crm-erp-mcp/src/index.ts', import.meta.url)),
+      },
+      {
         find: '@',
         replacement: fileURLToPath(new URL('./src', import.meta.url)),
       },
@@ -31,7 +55,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'packages/**/*.test.ts', 'tests/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'packages/**/*.test.ts', 'verticals/**/*.test.ts', 'tests/**/*.test.ts'],
     exclude: ['node_modules', '.next', 'BASE', 'src/generated'],
     // 真实数据库集成测试共享 demo 租户夹具；并行文件会互相 reset，
     // 导致"单独跑通过、全量跑失败"的假象。顺序执行文件成本很低。

@@ -5,7 +5,13 @@
     "paths": {
       "@/*": ["./src/*"],
       "@lymatrix/tef-core": ["./packages/tef-core/src/index.ts"],
-      "@lymatrix/tef-core/*": ["./packages/tef-core/src/*"]
+      "@lymatrix/tef-core/*": ["./packages/tef-core/src/*"],
+      "@lymatrix/tef-mcp-kit": ["./packages/tef-mcp-kit/src/index.ts"],
+      "@lymatrix/tef-mcp-kit/*": ["./packages/tef-mcp-kit/src/*"],
+      "@lymatrix/tef-runtime": ["./packages/tef-runtime/src/index.ts"],
+      "@lymatrix/tef-runtime/*": ["./packages/tef-runtime/src/*"],
+      "@lymatrix/vertical-crm-erp": ["./verticals/crm-erp-mcp/src/index.ts"],
+      "@lymatrix/vertical-crm-erp/*": ["./verticals/crm-erp-mcp/src/*"]
     },
     "plugins": [
       {
