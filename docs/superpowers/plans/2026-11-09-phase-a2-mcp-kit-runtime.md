@@ -944,10 +944,12 @@ Expected: intent 17 + intent.model 3 + LLMClient 11 通过；全量 295。
 
 **Files:**
 - Modify: `eslint.config.mjs`
+- Modify: `verticals/crm-erp-mcp/package.json`
 - Modify: `README.md`
 - Modify: `docs/00-framework.md`
 - Modify: `docs/00-positioning.md`
 - Modify: `docs/superpowers/specs/2026-11-09-tef-extraction-design.md`
+- Modify: `docs/superpowers/plans/2026-11-09-phase-a2-mcp-kit-runtime.md`
 
 **Interfaces:**
 - Consumes: Task 1–4 的包结构
@@ -955,7 +957,44 @@ Expected: intent 17 + intent.model 3 + LLMClient 11 通过；全量 295。
 
 - [ ] **Step 1：增加包边界 lint**
 
-在 `eslint.config.mjs` 追加：
+在 `eslint.config.mjs` 追加。
+
+首先把现有 I2 规则的范围从 shim 扩展到真实 runtime 代码，并排除带 Prisma 类型的 `task-state.ts`：
+
+```js
+{
+  files: ['src/agent-runtime/**/*.ts', 'packages/tef-runtime/**/*.ts'],
+  ignores: ['packages/tef-runtime/src/task-state.ts'],
+  rules: {
+    'no-restricted-imports': ['error', {
+      paths: [
+        { name: '@/lib/prisma', message: 'Agent Runtime must not hold database credentials (axiom I2); go through an MCP tool.' },
+        { name: '@/generated/prisma', message: 'Agent Runtime must not import the Prisma client (axiom I2).' },
+        { name: '@/engine/BusinessEngine', message: 'Agent Runtime must not import BusinessEngine (axiom I2); go through an MCP tool.' },
+        { name: '@/engine', message: 'Agent Runtime must not import the business engine (axiom I2).' },
+      ],
+      patterns: [
+        { group: ['@/contracts/*'], message: 'Contract internals live in trust domain B; the Runtime may only call tools.' },
+        { group: ['@/mcp-server/*'], message: 'The Runtime must not import MCP implementation modules; use the injected connector.' },
+        { group: ['@/tef/preview-store', '@/tef/token', '@/tef/audit-chain'], message: 'Token, snapshot and audit stores belong to the tool layer (L4/L5), not the Runtime.' },
+        { group: ['@lymatrix/vertical-*'], message: 'The Runtime must not depend on a vertical package; use the injected MCP connector.' },
+      ],
+    }],
+  },
+},
+{
+  files: ['packages/tef-runtime/src/task-state.ts'],
+  rules: {
+    'no-restricted-imports': ['error', {
+      patterns: [
+        { group: ['@/contracts/*', '@/mcp-server/*', '@/tef/preview-store', '@/tef/token', '@/tef/audit-chain', '@lymatrix/vertical-*', 'next', 'next/*'], message: 'TaskState may use Prisma types but must not import contracts, MCP implementations or verticals.' },
+      ],
+    }],
+  },
+},
+```
+
+然后追加三个包的边界规则：
 
 ```js
 {
@@ -964,16 +1003,6 @@ Expected: intent 17 + intent.model 3 + LLMClient 11 通过；全量 295。
     'no-restricted-imports': ['error', {
       patterns: [
         { group: ['@/contracts/*', '@/agent-runtime/*', '@lymatrix/vertical-*', 'next', 'next/*'], message: 'tef-mcp-kit must not depend on verticals, runtime or Next.js.' },
-      ],
-    }],
-  },
-},
-{
-  files: ['packages/tef-runtime/**/*.ts'],
-  rules: {
-    'no-restricted-imports': ['error', {
-      patterns: [
-        { group: ['@/contracts/*', '@/mcp-server/*', '@/tef/preview-store', '@/tef/token', '@/tef/audit-chain', '@lymatrix/vertical-*', 'next', 'next/*'], message: 'tef-runtime must not import contracts or governance stores; use the MCP client.' },
       ],
     }],
   },
@@ -990,6 +1019,16 @@ Expected: intent 17 + intent.model 3 + LLMClient 11 通过；全量 295。
 },
 ```
 
+- [ ] **Step 1b：修复垂直包的目录索引导出**
+
+在 `verticals/crm-erp-mcp/package.json` 的 `exports` 中增加显式子路径：
+
+```json
+"./contracts/credit-order": "./src/contracts/credit-order/index.ts",
+```
+
+保留现有 `"."` 与 `"./*"`。
+
 - [ ] **Step 2：更新文档结构**
 
 把 README 仓库结构表与 `docs/00-framework.md` 代码映射更新为：
@@ -1002,6 +1041,12 @@ Expected: intent 17 + intent.model 3 + LLMClient 11 通过；全量 295。
 ```
 
 在 `docs/00-positioning.md` 的 L2 状态中注明：核心、MCP Kit、Runtime 已拆包；SDK 与服务化仍待完成。
+
+同时：
+
+- 把设计文档头部状态改为 `实施中（Phase A1、A2 已完成，B–D 待实施）`。
+- 在 A2 计划标题下增加 `> **执行状态**：Phase A2 已完成（2026-11-09，commits 21a9433..最终提交）。`
+- 更新 `docs/00-framework.md` §8.1 目录树与 §8.2 模块表，补上 `packages/tef-mcp-kit/`、`packages/tef-runtime/`、`verticals/crm-erp-mcp/`，并标注 `src/` 下对应路径为迁移 shim。
 
 - [ ] **Step 3：最终验收**
 
