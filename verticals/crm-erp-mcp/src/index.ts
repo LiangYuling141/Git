@@ -3,6 +3,10 @@ export { createPrismaCrmGateway } from './gateway/prisma-gateway';
 export { createCrmGateway } from './gateway/factory';
 export { createHttpCrmGateway, type HttpCrmGatewayOptions } from './gateway/http-gateway';
 export {
+  createInProcessCrmEffectsExecutor,
+  executeCrmEffectsInProcess,
+} from './gateway/effects-executor';
+export {
   CRM_QUERY,
   type CrmBusinessGateway,
   type CrmQueryOperation,

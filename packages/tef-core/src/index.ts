@@ -9,4 +9,5 @@ export * from './risk';
 export * from './contract-engine';
 export * from './contract-registry';
 export * from './effect-executor';
+export * from './effects-executor-port';
 export * from './execution';
