@@ -153,6 +153,8 @@ export interface ExecContext<DB = unknown> {
   whitelistLevel: WhitelistLevel;
   tenantThresholds: Record<string, number>;
   db: DB;
+  /** 业务数据端口；由 MCP Kit 的运行时通过工厂注入。 */
+  gateway?: import('./business-gateway').BusinessGateway;
 }
 
 export interface Contract<P = unknown, EV = unknown, DB = unknown> {

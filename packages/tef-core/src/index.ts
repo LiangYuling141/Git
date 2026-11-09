@@ -1,4 +1,5 @@
 export * from './types';
+export * from './business-gateway';
 export * from './errors';
 export * from './money';
 export * from './canonical';
