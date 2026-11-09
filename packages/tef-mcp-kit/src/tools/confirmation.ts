@@ -1,6 +1,6 @@
-import { redactArgs } from '@lymatrix/tef-core';
-import { TefError } from '@lymatrix/tef-core';
-import type { Envelope } from '@lymatrix/tef-core';
+import { redactArgs } from '@lymtrix/tef-core';
+import { TefError } from '@lymtrix/tef-core';
+import type { Envelope } from '@lymtrix/tef-core';
 import { auditChain } from '../audit-chain';
 import { previewStore } from '../preview-store';
 import { tokenStore } from '../token';

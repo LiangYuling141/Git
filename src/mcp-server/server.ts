@@ -1,6 +1,6 @@
-export { createCrmErpServer as createTefServer } from '@lymatrix/vertical-crm-erp';
+export { createCrmErpServer as createTefServer } from '@lymtrix/vertical-crm-erp';
 export {
   approveOutOfBand,
   visibleToolsFor,
   type TefServerOptions,
-} from '@lymatrix/tef-mcp-kit';
+} from '@lymtrix/tef-mcp-kit';

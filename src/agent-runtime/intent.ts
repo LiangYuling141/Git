@@ -1,1 +1,1 @@
-export * from '@lymatrix/tef-runtime/intent';
+export * from '@lymtrix/tef-runtime/intent';

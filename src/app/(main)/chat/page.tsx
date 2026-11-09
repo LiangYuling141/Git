@@ -69,7 +69,7 @@ const WELCOME: Message = {
   id: 'welcome',
   role: 'assistant',
   content:
-    '我是 LyMatrix TEF 参考实现助手。业务写入必须经过 preview → confirm → execute，我不会直接改数据。\n\n可以试试：\n· 给伟业公司下一单，5000 个圣诞球，单价 2 块，先付 30% 定金，余款 30 天账期\n· 查一下伟业公司的信用额度\n· 圣诞球还有多少库存',
+    '我是 LyMtrix-TEF 参考实现助手。业务写入必须经过 preview → confirm → execute，我不会直接改数据。\n\n可以试试：\n· 给伟业公司下一单，5000 个圣诞球，单价 2 块，先付 30% 定金，余款 30 天账期\n· 查一下伟业公司的信用额度\n· 圣诞球还有多少库存',
   timestamp: new Date(),
 };
 

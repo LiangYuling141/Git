@@ -1,5 +1,5 @@
 // =============================================================================
-// Prisma Schema for LyMatrix TEF reference implementation (CRM-ERP)
+// Prisma Schema for LyMtrix-TEF reference implementation (CRM-ERP)
 //
 // 多租户约定：所有租户隔离表都带 tenantId，默认值为 DEFAULT_TENANT_ID
 // （"t_yiwu_demo"，定义于 src/tef/tenant.ts）。该默认值只为让既有演示数据无损

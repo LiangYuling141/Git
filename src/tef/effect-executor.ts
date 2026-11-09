@@ -1,1 +1,1 @@
-export * from '@lymatrix/tef-core/effect-executor';
+export * from '@lymtrix/tef-core/effect-executor';

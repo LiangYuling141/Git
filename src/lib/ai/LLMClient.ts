@@ -1,1 +1,1 @@
-export * from '@lymatrix/tef-runtime/LLMClient';
+export * from '@lymtrix/tef-runtime/LLMClient';

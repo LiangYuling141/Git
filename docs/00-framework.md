@@ -1,4 +1,4 @@
-# LyMatrix TEF 项目框架总览
+# LyMtrix-TEF 项目框架总览
 
 > **文档版本**：v1.1（2026-11-09）
 > **代码基线**：`feature/tef-extraction` 工作区（2026-11-09）
@@ -30,7 +30,7 @@
 
 ### 2.1 一句话定位
 
-> **LyMatrix TEF（Trusted Execution Framework）为 AI Agent 的副作用建立确定性执行边界。**
+> **LyMtrix-TEF（Trusted Execution Framework）为 AI Agent 的副作用建立确定性执行边界。**
 > 它不追求模型输出确定，而是保证写操作只有在契约校验、证据加载、风险定级、预览快照、一次性令牌确认和幂等执行之后才产生副作用。
 
 ### 2.2 是什么与不是什么
@@ -57,7 +57,7 @@ CRM-ERP 是框架的第一个验证垂直，不是项目最终形态。框架核
 |------|------|----------|
 | L0 设计 | 架构、契约、威胁模型成文 | 已完成 |
 | L1 参考实现 | 一个垂直端到端跑通 | 进行中：Phase 0 闭环与 Phase 1 补偿运行时已跑通并持续验证；崩溃恢复与并发压测未完成，因此尚未达到完整 L1 |
-| L2 框架 Beta | 核心与垂直解耦，具备 SDK、文档与测试 | 进行中：@lymatrix/tef-core、@lymatrix/tef-mcp-kit 与 @lymatrix/tef-runtime 已独立成包且由 ESLint/边界检查约束；SDK 与服务化仍待完成 |
+| L2 框架 Beta | 核心与垂直解耦，具备 SDK、文档与测试 | 进行中：@lymtrix/tef-core、@lymtrix/tef-mcp-kit 与 @lymtrix/tef-runtime 已独立成包且由 ESLint/边界检查约束；SDK 与服务化仍待完成 |
 | L3 工业级 | 安全评审、压测、兼容性、SLA | 未开始 |
 
 对外表述必须注明当前级别。不得把 L0/L1 表述为 L3，也不得把“Phase 0 闭环跑通”等同于“L1 已完成”。
@@ -475,7 +475,7 @@ Agent Runtime 与 MCP Server 之间使用真实的 MCP 协议栈和进程内 `In
 
 **为什么不是全量 FORCE**：开发库连接角色是表 owner，而 owner 默认不受 RLS 约束，只有 `FORCE` 才生效。一旦对 `customers`/`orders`/`payments` 强制启用，尚未迁移到租户作用域的遗留 REST 路由会静默返回空结果集，这比没有隔离更危险。
 
-**策略本身已被证明正确**：CI 先创建 `NOSUPERUSER NOBYPASSRLS` 且不拥有任何表的应用角色 `lymatrix_app`，再用它执行 `rls:verify`。在这个角色下所有启用 RLS 的表都真正受约束。生产部署使用非 owner 角色连接即可，无需改策略。
+**策略本身已被证明正确**：CI 先创建 `NOSUPERUSER NOBYPASSRLS` 且不拥有任何表的应用角色 `lymtrix_app`，再用它执行 `rls:verify`。在这个角色下所有启用 RLS 的表都真正受约束。生产部署使用非 owner 角色连接即可，无需改策略。
 
 **超级用户陷阱**：超级用户与 `BYPASSRLS` 角色永远绕过 RLS，`FORCE` 也拦不住。`rls:verify` 会先检查当前角色，发现是超级用户时直接拒绝执行并给出修复指令。
 
@@ -866,7 +866,7 @@ npm run rls:verify
 | `DEEPSEEK_API_BASE` | 否 | OpenAI 兼容 API 地址，默认 `https://api.deepseek.com/v1` |
 | `DEEPSEEK_MODEL` | 否 | 模型名，默认 `deepseek-chat`；可切换为 `deepseek-reasoner` 或其他兼容模型 |
 | `LOG_DIR` | 否 | 文件日志目录，默认 `./logs`；仅 production 写文件 |
-| `APP_DB_ROLE` | 否 | RLS 验证用应用角色，默认 `lymatrix_app`，仅 `npm run rls:*` 使用 |
+| `APP_DB_ROLE` | 否 | RLS 验证用应用角色，默认 `lymtrix_app`，仅 `npm run rls:*` 使用 |
 | `APP_DB_PASSWORD` | 否 | 上述角色密码，仅 `prepare-app-role` / `app-role-url` 使用 |
 | `TEF_DB_TESTS` | 否 | 设为 `1` 时 `npm test` 额外执行真实数据库集成测试 |
 | `TEF_MODEL_TESTS` | 否 | 设为 `1` 时测试保留真实 `DEEPSEEK_API_KEY` 并调用模型；默认清空 Key，走确定性解析器 |

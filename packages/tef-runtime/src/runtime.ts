@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { ClarifyQuestion, Envelope, IntentResult, TaskState, TaskStatus, TenantRole } from '@lymatrix/tef-core';
-import type { TefClientSession } from '@lymatrix/tef-mcp-kit';
+import type { ClarifyQuestion, Envelope, IntentResult, TaskState, TaskStatus, TenantRole } from '@lymtrix/tef-core';
+import type { TefClientSession } from '@lymtrix/tef-mcp-kit';
 import { parseIntent } from './intent';
 import type { TaskStatePatch } from './task-state';
 

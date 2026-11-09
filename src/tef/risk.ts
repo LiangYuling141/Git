@@ -1,1 +1,1 @@
-export * from '@lymatrix/tef-core/risk';
+export * from '@lymtrix/tef-core/risk';

@@ -1,1 +1,1 @@
-export * from '@lymatrix/tef-core/errors';
+export * from '@lymtrix/tef-core/errors';

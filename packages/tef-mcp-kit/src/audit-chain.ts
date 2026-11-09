@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@/generated/prisma';
-import { GENESIS_HASH, computeAuditPayloadDigest, computeChainHash } from '@lymatrix/tef-core';
-import { TefError, riskFromDb, riskToDb } from '@lymatrix/tef-core';
-import type { ActorType, AuditDecision, AuditEventPayload, AuditResultType, RiskOutcome } from '@lymatrix/tef-core';
+import { GENESIS_HASH, computeAuditPayloadDigest, computeChainHash } from '@lymtrix/tef-core';
+import { TefError, riskFromDb, riskToDb } from '@lymtrix/tef-core';
+import type { ActorType, AuditDecision, AuditEventPayload, AuditResultType, RiskOutcome } from '@lymtrix/tef-core';
 
 /**
  * 审计哈希链（§10）。

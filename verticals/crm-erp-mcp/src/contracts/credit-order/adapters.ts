@@ -1,5 +1,5 @@
-import { EffectExecutionError, type EntityAdapters } from '@lymatrix/tef-core';
-import type { PrismaTx } from '@lymatrix/tef-mcp-kit';
+import { EffectExecutionError, type EntityAdapters } from '@lymtrix/tef-core';
+import type { PrismaTx } from '@lymtrix/tef-mcp-kit';
 
 /**
  * 赊账订单契约的实体适配器。

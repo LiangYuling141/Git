@@ -1,1 +1,1 @@
-export * from '@lymatrix/tef-mcp-kit/tenant-scope';
+export * from '@lymtrix/tef-mcp-kit/tenant-scope';

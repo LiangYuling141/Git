@@ -5,8 +5,8 @@ import {
   type CustomerRecord,
   type OrderRecord,
   type ProductRecord,
-} from '@lymatrix/tef-core';
-import type { PrismaTx } from '@lymatrix/tef-mcp-kit';
+} from '@lymtrix/tef-core';
+import type { PrismaTx } from '@lymtrix/tef-mcp-kit';
 
 /**
  * CRM-ERP 的进程内业务网关实现。

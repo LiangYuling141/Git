@@ -184,7 +184,7 @@ Expected: core 测试通过；typecheck 0；boundary check 通过。
 - Modify: `verticals/crm-erp-mcp/src/index.ts`
 
 **Interfaces:**
-- Consumes: `BusinessGateway` from `@lymatrix/tef-core`
+- Consumes: `BusinessGateway` from `@lymtrix/tef-core`
 - Produces: `createPrismaCrmGateway(tx, tenantId): BusinessGateway`
 - 查询工具改为通过网关读取业务数据，返回结构不变。
 
@@ -199,8 +199,8 @@ import type {
   CustomerRecord,
   OrderRecord,
   ProductRecord,
-} from '@lymatrix/tef-core';
-import type { PrismaTx } from '@lymatrix/tef-mcp-kit';
+} from '@lymtrix/tef-core';
+import type { PrismaTx } from '@lymtrix/tef-mcp-kit';
 
 function toCustomer(row: {
   id: string; name: string; phone: string; status: string; customerType: string;
@@ -406,7 +406,7 @@ Expected: 304 passed（277 单元 + 27 集成）；lint 0 错误 / 28 警告。
 - `ExecContextOptions` 增加：
 
 ```ts
-gateway?: import('@lymatrix/tef-core').BusinessGateway;
+gateway?: import('@lymtrix/tef-core').BusinessGateway;
 ```
 
 - 返回的 `ExecContext` 增加 `gateway: options.gateway`。
@@ -415,7 +415,7 @@ gateway?: import('@lymatrix/tef-core').BusinessGateway;
 - `ContractWriteOptions` 增加：
 
 ```ts
-gatewayFactory?: (tx: PrismaTx, tenantId: string) => import('@lymatrix/tef-core').BusinessGateway;
+gatewayFactory?: (tx: PrismaTx, tenantId: string) => import('@lymtrix/tef-core').BusinessGateway;
 ```
 
 - `buildExecContext(principal, tx, { traceId, now, gateway: options.gatewayFactory?.(tx, principal.tenantId) })`。

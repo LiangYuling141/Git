@@ -1,6 +1,6 @@
 import type { Prisma } from '@/generated/prisma';
-import { TefError, riskFromDb, riskToDb } from '@lymatrix/tef-core';
-import type { Check, DiffEntry, RiskOutcome } from '@lymatrix/tef-core';
+import { TefError, riskFromDb, riskToDb } from '@lymtrix/tef-core';
+import type { Check, DiffEntry, RiskOutcome } from '@lymtrix/tef-core';
 
 /**
  * 预览快照存储（§4.1）。

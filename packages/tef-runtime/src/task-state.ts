@@ -1,6 +1,6 @@
 import type { Prisma } from '@/generated/prisma';
-import { TefError, MAX_CLARIFICATION_ROUNDS, type IntentResult, type TaskState, type TaskStatus } from '@lymatrix/tef-core';
-import { withTenantScope } from '@lymatrix/tef-mcp-kit/tenant-scope';
+import { TefError, MAX_CLARIFICATION_ROUNDS, type IntentResult, type TaskState, type TaskStatus } from '@lymtrix/tef-core';
+import { withTenantScope } from '@lymtrix/tef-mcp-kit/tenant-scope';
 
 /**
  * TaskState 存储（§8）。

@@ -1,1 +1,1 @@
-export * from '@lymatrix/tef-core/money';
+export * from '@lymtrix/tef-core/money';

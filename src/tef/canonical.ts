@@ -1,1 +1,1 @@
-export * from '@lymatrix/tef-core/canonical';
+export * from '@lymtrix/tef-core/canonical';

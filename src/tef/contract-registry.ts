@@ -1,1 +1,1 @@
-export * from '@lymatrix/tef-core/contract-registry';
+export * from '@lymtrix/tef-core/contract-registry';

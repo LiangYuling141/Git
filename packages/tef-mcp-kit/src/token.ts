@@ -1,7 +1,7 @@
 import type { Prisma } from '@/generated/prisma';
-import { canonicalize, hashToken, hmacSign, hmacVerify } from '@lymatrix/tef-core';
-import { TefError, riskFromDb, riskToDb } from '@lymatrix/tef-core';
-import type { RiskOutcome } from '@lymatrix/tef-core';
+import { canonicalize, hashToken, hmacSign, hmacVerify } from '@lymtrix/tef-core';
+import { TefError, riskFromDb, riskToDb } from '@lymtrix/tef-core';
+import type { RiskOutcome } from '@lymtrix/tef-core';
 
 /**
  * 一次性确认令牌（§4.3）。

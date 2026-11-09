@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { TefError, type BusinessGateway } from '@lymatrix/tef-core';
-import type { PrismaTx } from '@lymatrix/tef-mcp-kit';
+import { TefError, type BusinessGateway } from '@lymtrix/tef-core';
+import type { PrismaTx } from '@lymtrix/tef-mcp-kit';
 import { createPrismaCrmGateway } from './prisma-gateway';
 
 const BOUND_TENANT = 't_yiwu_demo';

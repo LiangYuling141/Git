@@ -1,1 +1,1 @@
-export * from '@lymatrix/vertical-crm-erp/contracts/credit-order/create-order';
+export * from '@lymtrix/vertical-crm-erp/contracts/credit-order/create-order';

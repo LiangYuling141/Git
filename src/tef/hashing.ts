@@ -1,1 +1,1 @@
-export * from '@lymatrix/tef-core/hashing';
+export * from '@lymtrix/tef-core/hashing';

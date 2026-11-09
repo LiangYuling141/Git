@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { IntentResult } from '@lymatrix/tef-core';
+import type { IntentResult } from '@lymtrix/tef-core';
 import { isDeepSeekConfigured } from './LLMClient';
 
 /**

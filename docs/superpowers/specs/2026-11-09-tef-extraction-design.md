@@ -9,7 +9,7 @@
 
 ### 1.1 目标
 
-项目的最终产品是 **LyMatrix TEF（Trusted Execution Framework）**，CRM-ERP 只是第一个参考垂直。当前代码虽然是单一 Next.js 应用，但框架核心、MCP 工具层、垂直契约与业务实现混在同一进程、同一数据库、同一 Prisma schema 中。
+项目的最终产品是 **LyMtrix-TEF（Trusted Execution Framework）**，CRM-ERP 只是第一个参考垂直。当前代码虽然是单一 Next.js 应用，但框架核心、MCP 工具层、垂直契约与业务实现混在同一进程、同一数据库、同一 Prisma schema 中。
 
 本次工作的目标是：
 

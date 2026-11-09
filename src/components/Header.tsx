@@ -30,7 +30,7 @@ export default function Header() {
       <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
         <div className="flex items-center gap-6">
           <Link href="/" className="text-lg font-semibold text-gray-900">
-            LyMatrix TEF
+            LyMtrix-TEF
           </Link>
           <nav className="flex items-center gap-4">
             {NAV_ITEMS.map((item) => {

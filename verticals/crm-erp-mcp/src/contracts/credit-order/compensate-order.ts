@@ -1,4 +1,4 @@
-import { TefError, formatCNY, toCents } from '@lymatrix/tef-core';
+import { TefError, formatCNY, toCents } from '@lymtrix/tef-core';
 import type {
   AuditSpec,
   Check,
@@ -9,8 +9,8 @@ import type {
   ExecResult,
   OrderRecord,
   RiskResult,
-} from '@lymatrix/tef-core';
-import type { PrismaTx } from '@lymatrix/tef-mcp-kit';
+} from '@lymtrix/tef-core';
+import type { PrismaTx } from '@lymtrix/tef-mcp-kit';
 import { CREATE_ORDER_OPERATION, createOrderContract } from './create-order';
 import {
   compensateOrderParamsSchema,

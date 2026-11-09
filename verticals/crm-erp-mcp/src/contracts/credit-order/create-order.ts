@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { TefError, classifyRisk, formatCNY, fromCents, prorateCents, toCents } from '@lymatrix/tef-core';
-import type { Check, Contract, DiffEntry, Effect, ExecContext, RiskResult } from '@lymatrix/tef-core';
-import type { PrismaTx } from '@lymatrix/tef-mcp-kit';
+import { TefError, classifyRisk, formatCNY, fromCents, prorateCents, toCents } from '@lymtrix/tef-core';
+import type { Check, Contract, DiffEntry, Effect, ExecContext, RiskResult } from '@lymtrix/tef-core';
+import type { PrismaTx } from '@lymtrix/tef-mcp-kit';
 import {
   DEFAULT_OVERDUE_DAYS_L2_THRESHOLD,
   OVERDUE_THRESHOLD_KEY,

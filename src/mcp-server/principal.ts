@@ -1,1 +1,1 @@
-export * from '@lymatrix/tef-mcp-kit/principal';
+export * from '@lymtrix/tef-mcp-kit/principal';

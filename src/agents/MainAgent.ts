@@ -17,7 +17,7 @@ const logger = loggerManager.getLogger(LogCategory.SYSTEM, 'MainAgent');
 
 const HOOK_PIPELINE = ['pre_processing', 'pre_agent', 'stop', 'pre_tool', 'post_execution'] as const;
 
-const INTENT_SYSTEM_PROMPT = `You are an Intent Parser for the LyMatrix TEF reference implementation (CRM-ERP).
+const INTENT_SYSTEM_PROMPT = `You are an Intent Parser for the LyMtrix-TEF reference implementation (CRM-ERP).
 Your job is to understand user natural language input and convert it to structured operations.
 
  ENTITY TYPES:

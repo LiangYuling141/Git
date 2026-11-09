@@ -1,2 +1,2 @@
-export * from '@lymatrix/tef-core/types';
-export type { PrismaTx } from '@lymatrix/tef-mcp-kit';
+export * from '@lymtrix/tef-core/types';
+export type { PrismaTx } from '@lymtrix/tef-mcp-kit';

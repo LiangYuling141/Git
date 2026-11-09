@@ -1,10 +1,10 @@
 # 定位与命名
 
-> 本文档定义 LyMatrix TEF 的身份、边界与成熟度口径。当 README、商业材料或对外介绍与本文冲突时，以本文为准；技术设计仍以 [technical/14-unified-architecture.md](technical/14-unified-architecture.md) 为权威。
+> 本文档定义 LyMtrix-TEF 的身份、边界与成熟度口径。当 README、商业材料或对外介绍与本文冲突时，以本文为准；技术设计仍以 [technical/14-unified-architecture.md](technical/14-unified-architecture.md) 为权威。
 
 ## 1. 一句话定位
 
-**LyMatrix TEF（Trusted Execution Framework）是一个为 AI Agent 的副作用建立确定性执行边界的可信执行框架。**
+**LyMtrix-TEF（Trusted Execution Framework）是一个为 AI Agent 的副作用建立确定性执行边界的可信执行框架。**
 
 它不试图让 LLM 的输出变得确定，而是保证：模型提出的任何写操作，只有在经过契约校验、证据加载、风险定级、预览快照、一次性令牌确认和幂等执行之后，才可能产生副作用；否则被阻断、拒绝或要求人工确认。
 
@@ -66,7 +66,7 @@ TEF 的判断是：模型输出无法被证明确定，但**执行边界可以�
 |------|------|----------|
 | L0 设计 | 架构、契约、威胁模型成文 | 已完成 |
 | L1 参考实现 | 一个垂直端到端跑通 | 进行中：Phase 0 闭环与 Phase 1 补偿运行时已跑通并有自动化验证（2026-11-09，308 个测试，含 27 个真实数据库集成测试）；崩溃恢复与并发压测未完成，因此尚未达到完整 L1 |
-| L2 框架 Beta | 核心与垂直解耦，具备 SDK、文档与测试 | 进行中：核心（`@lymatrix/tef-core`）、MCP Kit（`@lymatrix/tef-mcp-kit`）与 Runtime（`@lymatrix/tef-runtime`）已拆包且包边界由 ESLint 与目录检查器共同约束；SDK 与服务化仍待完成 |
+| L2 框架 Beta | 核心与垂直解耦，具备 SDK、文档与测试 | 进行中：核心（`@lymtrix/tef-core`）、MCP Kit（`@lymtrix/tef-mcp-kit`）与 Runtime（`@lymtrix/tef-runtime`）已拆包且包边界由 ESLint 与目录检查器共同约束；SDK 与服务化仍待完成 |
 | L3 工业级 | 安全评审、压测、兼容性、SLA | 未开始 |
 
 对外表述必须注明当前级别，不得把 L0 / L1 表述为 L3。"Phase 0 闭环已跑通"与"L1 已完成"是两件事，前者不构成后者的充分条件。
@@ -75,11 +75,11 @@ TEF 的判断是：模型输出无法被证明确定，但**执行边界可以�
 
 | 项 | 名称 |
 |------|------|
-| 项目名 | LyMatrix TEF |
-| 全称 | LyMatrix Trusted Execution Framework |
-| 中文名 | LyMatrix 可信执行框架 |
-| 包名 | `lymatrix-tef` |
-| 仓库 | `lymatrix-tef` |
+| 项目名 | LyMtrix-TEF |
+| 全称 | LyMtrix Trusted Execution Framework |
+| 中文名 | LyMtrix 可信执行框架 |
+| 包名 | `lymtrix-tef` |
+| 仓库 | `lymtrix-tef` |
 | 参考实现 | `apps/crm-erp`（规划） |
 | 权威技术文档 | [technical/14-unified-architecture.md](technical/14-unified-architecture.md) |
 

@@ -1,4 +1,4 @@
-import { contractRegistry } from '@lymatrix/tef-core';
+import { contractRegistry } from '@lymtrix/tef-core';
 import {
   COMPENSATE_ORDER_OPERATION,
   COMPENSATE_ORDER_VERSION,

@@ -1,1 +1,1 @@
-export * from '@lymatrix/tef-mcp-kit/envelope';
+export * from '@lymtrix/tef-mcp-kit/envelope';

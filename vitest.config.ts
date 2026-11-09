@@ -16,35 +16,35 @@ export default defineConfig({
   resolve: {
     alias: [
       {
-        find: /^@lymatrix\/tef-core\/(.*)$/,
+        find: /^@lymtrix\/tef-core\/(.*)$/,
         replacement: `${fileURLToPath(new URL('./packages/tef-core/src', import.meta.url))}/$1`,
       },
       {
-        find: '@lymatrix/tef-core',
+        find: '@lymtrix/tef-core',
         replacement: fileURLToPath(new URL('./packages/tef-core/src/index.ts', import.meta.url)),
       },
       {
-        find: /^@lymatrix\/tef-mcp-kit\/(.*)$/,
+        find: /^@lymtrix\/tef-mcp-kit\/(.*)$/,
         replacement: `${fileURLToPath(new URL('./packages/tef-mcp-kit/src', import.meta.url))}/$1`,
       },
       {
-        find: '@lymatrix/tef-mcp-kit',
+        find: '@lymtrix/tef-mcp-kit',
         replacement: fileURLToPath(new URL('./packages/tef-mcp-kit/src/index.ts', import.meta.url)),
       },
       {
-        find: /^@lymatrix\/tef-runtime\/(.*)$/,
+        find: /^@lymtrix\/tef-runtime\/(.*)$/,
         replacement: `${fileURLToPath(new URL('./packages/tef-runtime/src', import.meta.url))}/$1`,
       },
       {
-        find: '@lymatrix/tef-runtime',
+        find: '@lymtrix/tef-runtime',
         replacement: fileURLToPath(new URL('./packages/tef-runtime/src/index.ts', import.meta.url)),
       },
       {
-        find: /^@lymatrix\/vertical-crm-erp\/(.*)$/,
+        find: /^@lymtrix\/vertical-crm-erp\/(.*)$/,
         replacement: `${fileURLToPath(new URL('./verticals/crm-erp-mcp/src', import.meta.url))}/$1`,
       },
       {
-        find: '@lymatrix/vertical-crm-erp',
+        find: '@lymtrix/vertical-crm-erp',
         replacement: fileURLToPath(new URL('./verticals/crm-erp-mcp/src/index.ts', import.meta.url)),
       },
       {

@@ -1,1 +1,1 @@
-export * from '@lymatrix/tef-mcp-kit/audit-chain';
+export * from '@lymtrix/tef-mcp-kit/audit-chain';

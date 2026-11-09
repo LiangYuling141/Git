@@ -10,7 +10,7 @@ import { loggerManager, LogCategory } from '@/lib/logger';
 
 const logger = loggerManager.getLogger(LogCategory.SYSTEM, 'SubAgent1');
 
-const SYSTEM_PROMPT = `You are a Business Rule Validator Agent for the LyMatrix TEF reference implementation (CRM-ERP).
+const SYSTEM_PROMPT = `You are a Business Rule Validator Agent for the LyMtrix-TEF reference implementation (CRM-ERP).
 Your role is to validate business rules for operations.
 
 VALIDATION RULES:

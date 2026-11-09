@@ -34,7 +34,7 @@ export function createTefServer(
   const writeOptions = { traceId, secret };
   const queryOptions = { traceId };
 
-  const server = new McpServer({ name: 'lymatrix-tef', version: '0.1.0' });
+  const server = new McpServer({ name: 'lymtrix-tef', version: '0.1.0' });
   const visible = new Set(toolsForClient(principal.clientKind).filter((tool) => canCallTool(principal.role, tool)));
   const register = (tool: string): boolean => visible.has(tool);
 

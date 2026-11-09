@@ -1,14 +1,14 @@
 {
-  "name": "@lymatrix/tef-runtime",
+  "name": "@lymtrix/tef-runtime",
   "version": "0.1.0",
   "private": true,
-  "description": "LyMatrix TEF agent runtime: context, intent, LLM client and task state.",
+  "description": "LyMtrix-TEF agent runtime: context, intent, LLM client and task state.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": { ".": "./src/index.ts", "./*": "./src/*.ts" },
   "dependencies": {
-    "@lymatrix/tef-core": "*",
-    "@lymatrix/tef-mcp-kit": "*",
+    "@lymtrix/tef-core": "*",
+    "@lymtrix/tef-mcp-kit": "*",
     "zod": "^4.6.7"
   }
 }

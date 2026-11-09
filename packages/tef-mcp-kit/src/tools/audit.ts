@@ -1,5 +1,5 @@
-import { GENESIS_HASH } from '@lymatrix/tef-core';
-import type { Envelope } from '@lymatrix/tef-core';
+import { GENESIS_HASH } from '@lymtrix/tef-core';
+import type { Envelope } from '@lymtrix/tef-core';
 import { auditChain } from '../audit-chain';
 import { canCallTool, toolsForClient } from '../tenant';
 import { withTenantScope } from '../tenant-scope';

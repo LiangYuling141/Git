@@ -1,7 +1,7 @@
-import { contractEngine, contractRegistry, executeEffects, redactArgs } from '@lymatrix/tef-core';
-import { EffectExecutionError, type EntityAdapters } from '@lymatrix/tef-core';
-import { TefError, isTefError } from '@lymatrix/tef-core';
-import type { AuditResultType, BusinessGateway, Envelope } from '@lymatrix/tef-core';
+import { contractEngine, contractRegistry, executeEffects, redactArgs } from '@lymtrix/tef-core';
+import { EffectExecutionError, type EntityAdapters } from '@lymtrix/tef-core';
+import { TefError, isTefError } from '@lymtrix/tef-core';
+import type { AuditResultType, BusinessGateway, Envelope } from '@lymtrix/tef-core';
 import { auditChain } from '../audit-chain';
 import { previewStore } from '../preview-store';
 import { tokenStore } from '../token';

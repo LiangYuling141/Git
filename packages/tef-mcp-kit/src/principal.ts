@@ -1,6 +1,6 @@
 import type { Prisma } from '@/generated/prisma';
-import { TefError } from '@lymatrix/tef-core';
-import type { BusinessGateway, ExecContext, TenantRole, WhitelistLevel } from '@lymatrix/tef-core';
+import { TefError } from '@lymtrix/tef-core';
+import type { BusinessGateway, ExecContext, TenantRole, WhitelistLevel } from '@lymtrix/tef-core';
 import { toThresholdRecord, type ClientKind } from './tenant';
 import type { PrismaTx } from './prisma';
 

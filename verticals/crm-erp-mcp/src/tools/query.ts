@@ -1,4 +1,4 @@
-import { redactArgs, type BusinessGateway, type Envelope } from '@lymatrix/tef-core';
+import { redactArgs, type BusinessGateway, type Envelope } from '@lymtrix/tef-core';
 import {
   auditChain,
   buildExecContext,
@@ -7,7 +7,7 @@ import {
   withTenantScope,
   type Principal,
   type PrismaTx,
-} from '@lymatrix/tef-mcp-kit';
+} from '@lymtrix/tef-mcp-kit';
 import { createPrismaCrmGateway } from '../gateway/prisma-gateway';
 
 /**

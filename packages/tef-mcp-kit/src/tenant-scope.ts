@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { TefError } from '@lymatrix/tef-core';
+import { TefError } from '@lymtrix/tef-core';
 import type { PrismaTx } from './prisma';
 
 /**

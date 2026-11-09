@@ -1,11 +1,11 @@
-import type { Envelope } from '@lymatrix/tef-core';
+import type { Envelope } from '@lymtrix/tef-core';
 import {
   executeContract,
   previewContract,
   type ContractWriteOptions,
   type Principal,
   type PrismaTx,
-} from '@lymatrix/tef-mcp-kit';
+} from '@lymtrix/tef-mcp-kit';
 import { createCreditOrderAdapters, registerCreditOrderContracts } from '../contracts/credit-order';
 import { createPrismaCrmGateway } from '../gateway/prisma-gateway';
 

@@ -8,6 +8,9 @@ import { canonicalize } from './canonical';
  * 时会得到相同的值，跨用途的哈希就能互相冒充。
  */
 
+// 品牌更名为 LyMtrix，但哈希域必须保持稳定：
+// 改动 DOMAIN 会让历史审计链、已签发令牌与预览快照全部失效。
+// 如确需更换域，必须发布链迁移方案，而不是跟随品牌改名。
 const DOMAIN = 'lymatrix-tef';
 const VERSION = 'v1';
 

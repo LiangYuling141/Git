@@ -1,1 +1,1 @@
-export * from '@lymatrix/tef-mcp-kit/tools/confirmation';
+export * from '@lymtrix/tef-mcp-kit/tools/confirmation';

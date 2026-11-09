@@ -1,1 +1,1 @@
-export * from '@lymatrix/tef-mcp-kit/token';
+export * from '@lymtrix/tef-mcp-kit/token';

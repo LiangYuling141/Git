@@ -4,14 +4,14 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@lymatrix/tef-core": ["./packages/tef-core/src/index.ts"],
-      "@lymatrix/tef-core/*": ["./packages/tef-core/src/*"],
-      "@lymatrix/tef-mcp-kit": ["./packages/tef-mcp-kit/src/index.ts"],
-      "@lymatrix/tef-mcp-kit/*": ["./packages/tef-mcp-kit/src/*"],
-      "@lymatrix/tef-runtime": ["./packages/tef-runtime/src/index.ts"],
-      "@lymatrix/tef-runtime/*": ["./packages/tef-runtime/src/*"],
-      "@lymatrix/vertical-crm-erp": ["./verticals/crm-erp-mcp/src/index.ts"],
-      "@lymatrix/vertical-crm-erp/*": ["./verticals/crm-erp-mcp/src/*"]
+      "@lymtrix/tef-core": ["./packages/tef-core/src/index.ts"],
+      "@lymtrix/tef-core/*": ["./packages/tef-core/src/*"],
+      "@lymtrix/tef-mcp-kit": ["./packages/tef-mcp-kit/src/index.ts"],
+      "@lymtrix/tef-mcp-kit/*": ["./packages/tef-mcp-kit/src/*"],
+      "@lymtrix/tef-runtime": ["./packages/tef-runtime/src/index.ts"],
+      "@lymtrix/tef-runtime/*": ["./packages/tef-runtime/src/*"],
+      "@lymtrix/vertical-crm-erp": ["./verticals/crm-erp-mcp/src/index.ts"],
+      "@lymtrix/vertical-crm-erp/*": ["./verticals/crm-erp-mcp/src/*"]
     },
     "plugins": [
       {

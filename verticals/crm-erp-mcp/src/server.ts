@@ -7,7 +7,7 @@ import {
   type TefClientSession,
   type TefServerOptions,
   type VerticalToolContext,
-} from '@lymatrix/tef-mcp-kit';
+} from '@lymtrix/tef-mcp-kit';
 import {
   orderExecuteCompensate,
   orderExecuteCreate,
@@ -19,7 +19,7 @@ import { creditGet, customerGet, customerSearch, inventoryCheck, orderGet } from
 /**
  * CRM-ERP 垂直 MCP Server（L4 工具层）。
  *
- * 通用治理工具（确认、审计、策略）由 @lymatrix/tef-mcp-kit 的 createTefServer 注册；
+ * 通用治理工具（确认、审计、策略）由 @lymtrix/tef-mcp-kit 的 createTefServer 注册；
  * 这里只注册义乌赊账订单垂直暴露给模型的查询与写入工具。
  */
 

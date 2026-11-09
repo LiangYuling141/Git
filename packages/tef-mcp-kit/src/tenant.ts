@@ -1,6 +1,6 @@
 import type { Prisma } from '@/generated/prisma';
-import { TefError } from '@lymatrix/tef-core';
-import type { TenantRole } from '@lymatrix/tef-core';
+import { TefError } from '@lymtrix/tef-core';
+import type { TenantRole } from '@lymtrix/tef-core';
 
 /**
  * 租户识别与工具 scope（§11）。

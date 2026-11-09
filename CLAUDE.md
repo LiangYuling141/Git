@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**LyMatrix TEF（Trusted Execution Framework）** — 一个为 AI Agent 的副作用建立确定性执行边界的可信执行框架。它不追求 LLM 输出确定，而是保证写操作只有在契约校验、证据加载、风险定级、预览快照、一次性令牌确认和幂等执行之后才产生副作用。
+**LyMtrix-TEF（Trusted Execution Framework）** — 一个为 AI Agent 的副作用建立确定性执行边界的可信执行框架。它不追求 LLM 输出确定，而是保证写操作只有在契约校验、证据加载、风险定级、预览快照、一次性令牌确认和幂等执行之后才产生副作用。
 
 **参考实现**：义乌赊账订单场景的 CRM-ERP（`src/`，Phase 0 建设中）。CRM-ERP 不是项目的最终形态，而是框架的第一个验证垂直。
 
@@ -263,7 +263,7 @@ git merge --no-ff feature/customer-management
 
 ## Key Files
 
-- [docs/00-positioning.md](docs/00-positioning.md) — **定位与命名**：LyMatrix TEF 的核心命题、边界、成熟度与参考实现关系
+- [docs/00-positioning.md](docs/00-positioning.md) — **定位与命名**：LyMtrix-TEF 的核心命题、边界、成熟度与参考实现关系
 - [docs/00-framework.md](docs/00-framework.md) — **项目框架总览**：分层架构、信任域、核心机制、MCP 工具、数据模型、核心流程、代码映射与实施进度
 - [docs/technical/14-unified-architecture.md](docs/technical/14-unified-architecture.md) — **统一架构框架（裁决版，单一权威）**：六条公理、信任域分层、L0/L1/L2/Block、预览快照、双层哈希、契约引擎、澄清协议、审计合规、多租户
 - [README.md](README.md) — 完整项目文档

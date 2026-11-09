@@ -1,5 +1,5 @@
-import type { Check, DiffEntry, Envelope, EnvelopeStatus, ErrorCode, RiskOutcome, ToolError } from '@lymatrix/tef-core';
-import { ContractValidationError, TefError, isTefError } from '@lymatrix/tef-core';
+import type { Check, DiffEntry, Envelope, EnvelopeStatus, ErrorCode, RiskOutcome, ToolError } from '@lymtrix/tef-core';
+import { ContractValidationError, TefError, isTefError } from '@lymtrix/tef-core';
 
 /**
  * §6.2 统一返回信封 与 §6.3 稳定错误码。

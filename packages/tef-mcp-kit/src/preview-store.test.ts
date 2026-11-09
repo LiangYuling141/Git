@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PREVIEW_TTL_MS, PreviewStore, type NewPreview } from './preview-store';
-import { TefError } from '@lymatrix/tef-core';
+import { TefError } from '@lymtrix/tef-core';
 
 const T0 = new Date('2026-11-07T10:00:00.000Z');
 

@@ -6,7 +6,7 @@
 
 **Goal:** 把 MCP 工具层、CRM 垂直实现与 Agent Runtime 从单一 `src/` 应用拆成三个 workspace 包，保持运行时行为不变，最终 304 个测试通过，且既有测试不减少。
 
-**Architecture:** `@lymatrix/tef-mcp-kit` 提供通用 MCP Server 工厂、治理工具、契约运行时与状态存储；`@lymatrix/vertical-crm-erp` 用 kit 注册 CRM 查询/订单工具与契约；`@lymatrix/tef-runtime` 承载意图解析、LLM 客户端、TaskState 与编排，并通过注入的会话连接器调用 MCP。旧路径全部保留 re-export shim。
+**Architecture:** `@lymtrix/tef-mcp-kit` 提供通用 MCP Server 工厂、治理工具、契约运行时与状态存储；`@lymtrix/vertical-crm-erp` 用 kit 注册 CRM 查询/订单工具与契约；`@lymtrix/tef-runtime` 承载意图解析、LLM 客户端、TaskState 与编排，并通过注入的会话连接器调用 MCP。旧路径全部保留 re-export shim。
 
 **Tech Stack:** Node 22、npm workspaces、TypeScript 5.7、Vitest 3、ESLint 9、MCP SDK 1.32.2、Next.js 16。
 
@@ -15,7 +15,7 @@
 - 不改变运行时行为；旧导入路径 `@/mcp-server/*`、`@/tef/*`、`@/agent-runtime/*`、`@/lib/ai/LLMClient` 必须继续可用。
 - 每个任务结束时 `npm run typecheck`、`npm run lint` 为 0 错误；`npm test` 通过数不得低于 277 单元测试。
 - 最后一项任务执行 `TEF_DB_TESTS=1 npm test`，必须 304 全部通过；`npm run build` 必须成功。
-- 包名固定：`@lymatrix/tef-mcp-kit`、`@lymatrix/vertical-crm-erp`、`@lymatrix/tef-runtime`。
+- 包名固定：`@lymtrix/tef-mcp-kit`、`@lymtrix/vertical-crm-erp`、`@lymtrix/tef-runtime`。
 - 不修改 `strict`、`target`、`moduleResolution` 等全局 TypeScript 选项。
 - 默认不执行 git commit；只有用户明确授权后才提交（本阶段已获授权，仅本地提交，不推送）。
 - 本计划只覆盖 Phase A2；Phase B（服务化/API）、C（P1 收尾）、D（P2 准备）另行成计划。
@@ -36,7 +36,7 @@
 - Create: `verticals/crm-erp-mcp/src/index.ts`
 
 **Interfaces:**
-- Consumes: `@lymatrix/tef-core`（已有）
+- Consumes: `@lymtrix/tef-core`（已有）
 - Produces: 三个可解析的 workspace 包骨架。
 
 - [ ] **Step 1：创建包清单**
@@ -45,15 +45,15 @@
 
 ```json
 {
-  "name": "@lymatrix/tef-mcp-kit",
+  "name": "@lymtrix/tef-mcp-kit",
   "version": "0.1.0",
   "private": true,
-  "description": "LyMatrix TEF MCP toolkit: server factory, governance tools, contract runtime.",
+  "description": "LyMtrix-TEF MCP toolkit: server factory, governance tools, contract runtime.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": { ".": "./src/index.ts", "./*": "./src/*.ts" },
   "dependencies": {
-    "@lymatrix/tef-core": "*",
+    "@lymtrix/tef-core": "*",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "zod": "^4.6.7"
   }
@@ -64,16 +64,16 @@
 
 ```json
 {
-  "name": "@lymatrix/tef-runtime",
+  "name": "@lymtrix/tef-runtime",
   "version": "0.1.0",
   "private": true,
-  "description": "LyMatrix TEF agent runtime: context, intent, LLM client and task state.",
+  "description": "LyMtrix-TEF agent runtime: context, intent, LLM client and task state.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": { ".": "./src/index.ts", "./*": "./src/*.ts" },
   "dependencies": {
-    "@lymatrix/tef-core": "*",
-    "@lymatrix/tef-mcp-kit": "*",
+    "@lymtrix/tef-core": "*",
+    "@lymtrix/tef-mcp-kit": "*",
     "zod": "^4.6.7"
   }
 }
@@ -83,16 +83,16 @@
 
 ```json
 {
-  "name": "@lymatrix/vertical-crm-erp",
+  "name": "@lymtrix/vertical-crm-erp",
   "version": "0.1.0",
   "private": true,
-  "description": "LyMatrix TEF CRM-ERP vertical MCP: query tools and credit-order contracts.",
+  "description": "LyMtrix-TEF CRM-ERP vertical MCP: query tools and credit-order contracts.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": { ".": "./src/index.ts", "./*": "./src/*.ts" },
   "dependencies": {
-    "@lymatrix/tef-core": "*",
-    "@lymatrix/tef-mcp-kit": "*",
+    "@lymtrix/tef-core": "*",
+    "@lymtrix/tef-mcp-kit": "*",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "zod": "^4.6.7"
   }
@@ -110,12 +110,12 @@ export {};
 在 `tsconfig.json` 的 `paths` 中追加：
 
 ```json
-"@lymatrix/tef-mcp-kit": ["./packages/tef-mcp-kit/src/index.ts"],
-"@lymatrix/tef-mcp-kit/*": ["./packages/tef-mcp-kit/src/*"],
-"@lymatrix/tef-runtime": ["./packages/tef-runtime/src/index.ts"],
-"@lymatrix/tef-runtime/*": ["./packages/tef-runtime/src/*"],
-"@lymatrix/vertical-crm-erp": ["./verticals/crm-erp-mcp/src/index.ts"],
-"@lymatrix/vertical-crm-erp/*": ["./verticals/crm-erp-mcp/src/*"]
+"@lymtrix/tef-mcp-kit": ["./packages/tef-mcp-kit/src/index.ts"],
+"@lymtrix/tef-mcp-kit/*": ["./packages/tef-mcp-kit/src/*"],
+"@lymtrix/tef-runtime": ["./packages/tef-runtime/src/index.ts"],
+"@lymtrix/tef-runtime/*": ["./packages/tef-runtime/src/*"],
+"@lymtrix/vertical-crm-erp": ["./verticals/crm-erp-mcp/src/index.ts"],
+"@lymtrix/vertical-crm-erp/*": ["./verticals/crm-erp-mcp/src/*"]
 ```
 
 - [ ] **Step 3：更新 Vitest 别名与 include**
@@ -124,27 +124,27 @@ export {};
 
 ```ts
 {
-  find: /^@lymatrix\/tef-mcp-kit\/(.*)$/,
+  find: /^@lymtrix\/tef-mcp-kit\/(.*)$/,
   replacement: `${fileURLToPath(new URL('./packages/tef-mcp-kit/src', import.meta.url))}/$1`,
 },
 {
-  find: '@lymatrix/tef-mcp-kit',
+  find: '@lymtrix/tef-mcp-kit',
   replacement: fileURLToPath(new URL('./packages/tef-mcp-kit/src/index.ts', import.meta.url)),
 },
 {
-  find: /^@lymatrix\/tef-runtime\/(.*)$/,
+  find: /^@lymtrix\/tef-runtime\/(.*)$/,
   replacement: `${fileURLToPath(new URL('./packages/tef-runtime/src', import.meta.url))}/$1`,
 },
 {
-  find: '@lymatrix/tef-runtime',
+  find: '@lymtrix/tef-runtime',
   replacement: fileURLToPath(new URL('./packages/tef-runtime/src/index.ts', import.meta.url)),
 },
 {
-  find: /^@lymatrix\/vertical-crm-erp\/(.*)$/,
+  find: /^@lymtrix\/vertical-crm-erp\/(.*)$/,
   replacement: `${fileURLToPath(new URL('./verticals/crm-erp-mcp/src', import.meta.url))}/$1`,
 },
 {
-  find: '@lymatrix/vertical-crm-erp',
+  find: '@lymtrix/vertical-crm-erp',
   replacement: fileURLToPath(new URL('./verticals/crm-erp-mcp/src/index.ts', import.meta.url)),
 },
 ```
@@ -162,10 +162,10 @@ include: ['src/**/*.test.ts', 'packages/**/*.test.ts', 'verticals/**/*.test.ts',
 ```ts
 const nextConfig: NextConfig = {
   transpilePackages: [
-    '@lymatrix/tef-core',
-    '@lymatrix/tef-mcp-kit',
-    '@lymatrix/tef-runtime',
-    '@lymatrix/vertical-crm-erp',
+    '@lymtrix/tef-core',
+    '@lymtrix/tef-mcp-kit',
+    '@lymtrix/tef-runtime',
+    '@lymtrix/vertical-crm-erp',
   ],
 };
 ```
@@ -214,7 +214,7 @@ Expected: 仅本任务文件变更；不执行提交（除非进入任务提交�
 - Create: 旧路径 shim
 
 **Interfaces:**
-- Consumes: `@lymatrix/tef-core`
+- Consumes: `@lymtrix/tef-core`
 - Produces:
   - `createTefServer(options, registerVertical?)`
   - `connectTefClient(options, createServer)`
@@ -249,17 +249,17 @@ git mv src/tef/tenant-scope.ts packages/tef-mcp-kit/src/tenant-scope.ts
 
 | 旧导入 | 新导入 |
 |--------|--------|
-| `@/tef/{types,errors,hashing,canonical,redaction,contract-engine,contract-registry,effect-executor}` | `@lymatrix/tef-core` 或 `@lymatrix/tef-core/<module>` |
+| `@/tef/{types,errors,hashing,canonical,redaction,contract-engine,contract-registry,effect-executor}` | `@lymtrix/tef-core` 或 `@lymtrix/tef-core/<module>` |
 | `@/tef/{tenant,token,preview-store,audit-chain,tenant-scope}` | `./tenant`、`./token`、`./preview-store`、`./audit-chain`、`./tenant-scope`（kit 内） |
 | `@/mcp-server/{envelope,principal}`、`@/mcp-server/tools/{contract,confirmation,audit}` | `./envelope`、`./principal`、`./tools/<name>`（kit 内） |
-| `@/tef/types` 的 `PrismaTx` | `./prisma` 或 `@lymatrix/tef-mcp-kit` |
+| `@/tef/types` 的 `PrismaTx` | `./prisma` 或 `@lymtrix/tef-mcp-kit` |
 
 具体步骤：
 
-1. 核心模块导入改为 `@lymatrix/tef-core`：
+1. 核心模块导入改为 `@lymtrix/tef-core`：
    - `contract-engine`、`contract-registry`、`effect-executor`、`errors`、`redaction`、`types`、`hashing`、`canonical`。
 2. 包内文件保持相对导入（`./envelope`、`./principal`、`./token` 等）。
-3. 移动后的测试文件中，`./errors`、`./hashing`、`./redaction`、`./canonical` 改为 `@lymatrix/tef-core`；`./preview-store`、`./token`、`./audit-chain` 保持相对导入。
+3. 移动后的测试文件中，`./errors`、`./hashing`、`./redaction`、`./canonical` 改为 `@lymtrix/tef-core`；`./preview-store`、`./token`、`./audit-chain` 保持相对导入。
 4. `PrismaTx` 不再从 `@/tef/types` 获取。创建 `packages/tef-mcp-kit/src/prisma.ts`：
 
 ```ts
@@ -269,7 +269,7 @@ import type { Prisma } from '@/generated/prisma';
 export type PrismaTx = Prisma.TransactionClient;
 ```
 
-   把 `contract.ts`、`principal.ts`、`tenant-scope.ts` 及垂直包中的 `PrismaTx` 导入改为 `./prisma` 或 `@lymatrix/tef-mcp-kit`。
+   把 `contract.ts`、`principal.ts`、`tenant-scope.ts` 及垂直包中的 `PrismaTx` 导入改为 `./prisma` 或 `@lymtrix/tef-mcp-kit`。
 5. 下列过渡依赖暂时保留：
    - `@/lib/prisma`、`@/generated/prisma`（Phase B 再拆独立存储）。
 6. `tools/audit.ts` 的 `policyGet` 仍需读取 tenant/whitelist，使用 `./tenant` 与 `./tenant-scope`。
@@ -317,7 +317,7 @@ export function createTefServer(
   const writeOptions = { traceId, secret };
   const queryOptions = { traceId };
 
-  const server = new McpServer({ name: 'lymatrix-tef', version: '0.1.0' });
+  const server = new McpServer({ name: 'lymtrix-tef', version: '0.1.0' });
   const visible = new Set(toolsForClient(principal.clientKind).filter((tool) => canCallTool(principal.role, tool)));
   const register = (tool: string): boolean => visible.has(tool);
 
@@ -413,7 +413,7 @@ export function visibleToolsFor(principal: Principal): string[] {
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { Envelope } from '@lymatrix/tef-core';
+import type { Envelope } from '@lymtrix/tef-core';
 import type { TefServerOptions } from './server';
 
 export type TefServerFactory = (options: TefServerOptions) => McpServer;
@@ -470,68 +470,68 @@ export type { PrismaTx } from './prisma';
 `src/mcp-server/envelope.ts`：
 
 ```ts
-export * from '@lymatrix/tef-mcp-kit/envelope';
+export * from '@lymtrix/tef-mcp-kit/envelope';
 ```
 
 `src/mcp-server/principal.ts`：
 
 ```ts
-export * from '@lymatrix/tef-mcp-kit/principal';
+export * from '@lymtrix/tef-mcp-kit/principal';
 ```
 
 `src/mcp-server/tools/contract.ts`：
 
 ```ts
-export * from '@lymatrix/tef-mcp-kit/tools/contract';
+export * from '@lymtrix/tef-mcp-kit/tools/contract';
 ```
 
 `src/mcp-server/tools/confirmation.ts`：
 
 ```ts
-export * from '@lymatrix/tef-mcp-kit/tools/confirmation';
+export * from '@lymtrix/tef-mcp-kit/tools/confirmation';
 ```
 
 `src/mcp-server/tools/audit.ts`：
 
 ```ts
-export * from '@lymatrix/tef-mcp-kit/tools/audit';
+export * from '@lymtrix/tef-mcp-kit/tools/audit';
 ```
 
 `src/tef/preview-store.ts`：
 
 ```ts
-export * from '@lymatrix/tef-mcp-kit/preview-store';
+export * from '@lymtrix/tef-mcp-kit/preview-store';
 ```
 
 `src/tef/token.ts`：
 
 ```ts
-export * from '@lymatrix/tef-mcp-kit/token';
+export * from '@lymtrix/tef-mcp-kit/token';
 ```
 
 `src/tef/audit-chain.ts`：
 
 ```ts
-export * from '@lymatrix/tef-mcp-kit/audit-chain';
+export * from '@lymtrix/tef-mcp-kit/audit-chain';
 ```
 
 `src/tef/tenant.ts`：
 
 ```ts
-export * from '@lymatrix/tef-mcp-kit/tenant';
+export * from '@lymtrix/tef-mcp-kit/tenant';
 ```
 
 `src/tef/tenant-scope.ts`：
 
 ```ts
-export * from '@lymatrix/tef-mcp-kit/tenant-scope';
+export * from '@lymtrix/tef-mcp-kit/tenant-scope';
 ```
 
 `src/tef/types.ts`（把 PrismaTx 来源改到 kit）：
 
 ```ts
-export * from '@lymatrix/tef-core/types';
-export type { PrismaTx } from '@lymatrix/tef-mcp-kit';
+export * from '@lymtrix/tef-core/types';
+export type { PrismaTx } from '@lymtrix/tef-mcp-kit';
 ```
 
 - [ ] **Step 7：保留旧 transport**
@@ -561,7 +561,7 @@ Expected: kit 测试（preview-store 10、token 26、audit-chain 25）与 server
 - Create: 旧路径 shim
 
 **Interfaces:**
-- Consumes: `@lymatrix/tef-mcp-kit` 的工厂与契约运行时、`@lymatrix/tef-core` 的类型
+- Consumes: `@lymtrix/tef-mcp-kit` 的工厂与契约运行时、`@lymtrix/tef-core` 的类型
 - Produces:
   - `createCrmErpServer(options): McpServer`
   - `connectCrmErpClient(options): Promise<TefClientSession>`
@@ -580,9 +580,9 @@ git mv src/contracts/credit-order verticals/crm-erp-mcp/src/contracts/credit-ord
 
 - [ ] **Step 2：更新导入**
 
-- `tools/query.ts`：`../envelope`、`../principal` 改为 `@lymatrix/tef-mcp-kit` 导出；`@/tef/*` 改为 `@lymatrix/tef-core` 或 mcp-kit。
-- `tools/order.ts`：`./contract` 改为 `@lymatrix/tef-mcp-kit` 的 `previewContract/executeContract`；契约路径改为 `../contracts/credit-order`；`PrismaTx` 从 `@lymatrix/tef-mcp-kit` 导入。
-- 契约与适配器：`@/tef/*` 改为 `@lymatrix/tef-core`；`@/generated/prisma` 保留（垂直暂时使用应用 Prisma）。
+- `tools/query.ts`：`../envelope`、`../principal` 改为 `@lymtrix/tef-mcp-kit` 导出；`@/tef/*` 改为 `@lymtrix/tef-core` 或 mcp-kit。
+- `tools/order.ts`：`./contract` 改为 `@lymtrix/tef-mcp-kit` 的 `previewContract/executeContract`；契约路径改为 `../contracts/credit-order`；`PrismaTx` 从 `@lymtrix/tef-mcp-kit` 导入。
+- 契约与适配器：`@/tef/*` 改为 `@lymtrix/tef-core`；`@/generated/prisma` 保留（垂直暂时使用应用 Prisma）。
 - 契约测试移动到 `verticals/crm-erp-mcp/src/contracts/credit-order/` 并更新 import。
 
 - [ ] **Step 3：创建垂直 Server 工厂**
@@ -599,7 +599,7 @@ import {
   type TefClientSession,
   type TefServerOptions,
   type VerticalToolContext,
-} from '@lymatrix/tef-mcp-kit';
+} from '@lymtrix/tef-mcp-kit';
 import {
   orderExecuteCompensate,
   orderExecuteCreate,
@@ -701,61 +701,61 @@ export { createCreditOrderAdapters, registerCreditOrderContracts } from './contr
 `src/mcp-server/server.ts`：
 
 ```ts
-export { createCrmErpServer as createTefServer } from '@lymatrix/vertical-crm-erp';
+export { createCrmErpServer as createTefServer } from '@lymtrix/vertical-crm-erp';
 export {
   approveOutOfBand,
   visibleToolsFor,
   type TefServerOptions,
-} from '@lymatrix/tef-mcp-kit';
+} from '@lymtrix/tef-mcp-kit';
 ```
 
 `src/mcp-server/transport.ts`（替换 Task 2 保留的旧 transport）：
 
 ```ts
-export { connectCrmErpClient as connectTefClient } from '@lymatrix/vertical-crm-erp';
-export type { TefClientSession } from '@lymatrix/tef-mcp-kit';
+export { connectCrmErpClient as connectTefClient } from '@lymtrix/vertical-crm-erp';
+export type { TefClientSession } from '@lymtrix/tef-mcp-kit';
 ```
 
 `src/mcp-server/tools/query.ts`：
 
 ```ts
-export * from '@lymatrix/vertical-crm-erp/tools/query';
+export * from '@lymtrix/vertical-crm-erp/tools/query';
 ```
 
 `src/mcp-server/tools/order.ts`：
 
 ```ts
-export * from '@lymatrix/vertical-crm-erp/tools/order';
+export * from '@lymtrix/vertical-crm-erp/tools/order';
 ```
 
 `src/contracts/credit-order/index.ts`：
 
 ```ts
-export * from '@lymatrix/vertical-crm-erp/contracts/credit-order';
+export * from '@lymtrix/vertical-crm-erp/contracts/credit-order';
 ```
 
 `src/contracts/credit-order/adapters.ts`：
 
 ```ts
-export * from '@lymatrix/vertical-crm-erp/contracts/credit-order/adapters';
+export * from '@lymtrix/vertical-crm-erp/contracts/credit-order/adapters';
 ```
 
 `src/contracts/credit-order/create-order.ts`：
 
 ```ts
-export * from '@lymatrix/vertical-crm-erp/contracts/credit-order/create-order';
+export * from '@lymtrix/vertical-crm-erp/contracts/credit-order/create-order';
 ```
 
 `src/contracts/credit-order/compensate-order.ts`：
 
 ```ts
-export * from '@lymatrix/vertical-crm-erp/contracts/credit-order/compensate-order';
+export * from '@lymtrix/vertical-crm-erp/contracts/credit-order/compensate-order';
 ```
 
 `src/contracts/credit-order/types.ts`：
 
 ```ts
-export * from '@lymatrix/vertical-crm-erp/contracts/credit-order/types';
+export * from '@lymtrix/vertical-crm-erp/contracts/credit-order/types';
 ```
 
 - [ ] **Step 6：更新 `src/mcp-server/index.ts`**
@@ -799,7 +799,7 @@ Expected: 契约测试（create-order 52、compensate-order 33）与 kit 测试�
 - Create: 旧路径 shim
 
 **Interfaces:**
-- Consumes: `@lymatrix/tef-core`、`@lymatrix/tef-mcp-kit` 的 `TefClientSession`
+- Consumes: `@lymtrix/tef-core`、`@lymtrix/tef-mcp-kit` 的 `TefClientSession`
 - Produces:
   - `runAgentTurn(input)`，其中 `input.connectSession` 为注入的会话连接器
   - `parseIntent`、`parseIntentDeterministic`
@@ -820,9 +820,9 @@ git mv src/tef/task-state.ts packages/tef-runtime/src/task-state.ts
 
 - [ ] **Step 2：更新导入**
 
-- `intent.ts`：`@/tef/types` → `@lymatrix/tef-core` 的类型；`@/lib/ai/LLMClient` 的静态导入与 `chatWithRetry` 的动态 `import('@/lib/ai/LLMClient')` 都改为 `./LLMClient`。
-- `runtime.ts`：`@/mcp-server` 的类型改为 `@lymatrix/tef-mcp-kit`；`@/tef/types`、`@/tef/task-state` 改为包内相对或 `@lymatrix/tef-core`。
-- `task-state.ts`：`@lymatrix/tef-core` 提供 `TefError`、`IntentResult`、`TaskState`、`TaskStatus`、`MAX_CLARIFICATION_ROUNDS`；`withTenantScope` 从 `@lymatrix/tef-mcp-kit` 导入；`@/generated/prisma` 保留（Phase B3 再拆独立 schema）。
+- `intent.ts`：`@/tef/types` → `@lymtrix/tef-core` 的类型；`@/lib/ai/LLMClient` 的静态导入与 `chatWithRetry` 的动态 `import('@/lib/ai/LLMClient')` 都改为 `./LLMClient`。
+- `runtime.ts`：`@/mcp-server` 的类型改为 `@lymtrix/tef-mcp-kit`；`@/tef/types`、`@/tef/task-state` 改为包内相对或 `@lymtrix/tef-core`。
+- `task-state.ts`：`@lymtrix/tef-core` 提供 `TefError`、`IntentResult`、`TaskState`、`TaskStatus`、`MAX_CLARIFICATION_ROUNDS`；`withTenantScope` 从 `@lymtrix/tef-mcp-kit` 导入；`@/generated/prisma` 保留（Phase B3 再拆独立 schema）。
 - `LLMClient.ts`：`@/lib/logger` 改为从 `@/lib/logger` 保留（日志属于运行时基础设施）；或后续再抽包。
 
 - [ ] **Step 3：注入会话连接器**
@@ -830,8 +830,8 @@ git mv src/tef/task-state.ts packages/tef-runtime/src/task-state.ts
 在 `runtime.ts` 中新增：
 
 ```ts
-import type { TefClientSession } from '@lymatrix/tef-mcp-kit';
-import type { TenantRole } from '@lymatrix/tef-core';
+import type { TefClientSession } from '@lymtrix/tef-mcp-kit';
+import type { TenantRole } from '@lymtrix/tef-core';
 
 export interface RuntimePrincipal {
   tenantId: string;
@@ -909,25 +909,25 @@ export { taskStateStore, type TaskStatePatch } from './task-state';
 `src/agent-runtime/intent.ts`：
 
 ```ts
-export * from '@lymatrix/tef-runtime/intent';
+export * from '@lymtrix/tef-runtime/intent';
 ```
 
 `src/agent-runtime/runtime.ts`：
 
 ```ts
-export * from '@lymatrix/tef-runtime/runtime';
+export * from '@lymtrix/tef-runtime/runtime';
 ```
 
 `src/lib/ai/LLMClient.ts`：
 
 ```ts
-export * from '@lymatrix/tef-runtime/LLMClient';
+export * from '@lymtrix/tef-runtime/LLMClient';
 ```
 
 `src/tef/task-state.ts`：
 
 ```ts
-export * from '@lymatrix/tef-runtime/task-state';
+export * from '@lymtrix/tef-runtime/task-state';
 ```
 
 - [ ] **Step 7：验证**
@@ -985,7 +985,7 @@ Expected: intent 17 + intent.model 3 + LLMClient 11 通过；全量 295（A2 前
         { group: ['@/contracts/*'], message: 'Contract internals live in trust domain B; the Runtime may only call tools.' },
         { group: ['@/mcp-server/*'], message: 'The Runtime must not import MCP implementation modules; use the injected connector.' },
         { group: ['@/tef/preview-store', '@/tef/token', '@/tef/audit-chain'], message: 'Token, snapshot and audit stores belong to the tool layer (L4/L5), not the Runtime.' },
-        { group: ['@lymatrix/vertical-*'], message: 'The Runtime must not depend on a vertical package; use the injected MCP connector.' },
+        { group: ['@lymtrix/vertical-*'], message: 'The Runtime must not depend on a vertical package; use the injected MCP connector.' },
       ],
     }],
   },
@@ -995,7 +995,7 @@ Expected: intent 17 + intent.model 3 + LLMClient 11 通过；全量 295（A2 前
   rules: {
     'no-restricted-imports': ['error', {
       patterns: [
-        { group: ['@/contracts/*', '@/mcp-server/*', '@/tef/preview-store', '@/tef/token', '@/tef/audit-chain', '@lymatrix/vertical-*', 'next', 'next/*'], message: 'TaskState may use Prisma types but must not import contracts, MCP implementations or verticals.' },
+        { group: ['@/contracts/*', '@/mcp-server/*', '@/tef/preview-store', '@/tef/token', '@/tef/audit-chain', '@lymtrix/vertical-*', 'next', 'next/*'], message: 'TaskState may use Prisma types but must not import contracts, MCP implementations or verticals.' },
       ],
     }],
   },
@@ -1010,7 +1010,7 @@ Expected: intent 17 + intent.model 3 + LLMClient 11 通过；全量 295（A2 前
   rules: {
     'no-restricted-imports': ['error', {
       patterns: [
-        { group: ['@/contracts/*', '@/agent-runtime/*', '@lymatrix/vertical-*', 'next', 'next/*'], message: 'tef-mcp-kit must not depend on verticals, runtime or Next.js.' },
+        { group: ['@/contracts/*', '@/agent-runtime/*', '@lymtrix/vertical-*', 'next', 'next/*'], message: 'tef-mcp-kit must not depend on verticals, runtime or Next.js.' },
       ],
     }],
   },

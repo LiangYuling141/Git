@@ -1,1 +1,1 @@
-export * from '@lymatrix/tef-core/redaction';
+export * from '@lymtrix/tef-core/redaction';

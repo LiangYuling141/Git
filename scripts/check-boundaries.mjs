@@ -5,7 +5,7 @@
 // - ESLint（no-restricted-imports）覆盖静态 import/export 与 type-only 语义，
 //   能区分 `import type` 在运行时被擦除的情况；
 // - 本脚本覆盖动态 import()、跨包相对路径逃逸、深层子路径，以及
-//   `@lymatrix/vertical-*` 这类裸包前缀——ESLint 不解析动态导入。
+//   `@lymtrix/vertical-*` 这类裸包前缀——ESLint 不解析动态导入。
 // 两者在 CI 中同时执行：`npm run lint` 与 `npm run boundaries:check`。
 //
 // ESLint 规则按文件模式生效，容易漏掉新增目录；这个脚本直接递归扫描四个包的
@@ -20,7 +20,7 @@ const SCRIPT_PATH = fileURLToPath(import.meta.url);
 
 /**
  * 每个包的扫描目录与禁止导入前缀。
- * prefix 以 `*` 结尾时按去掉 `*` 后的原始前缀匹配（如 `@lymatrix/vertical-*`）；
+ * prefix 以 `*` 结尾时按去掉 `*` 后的原始前缀匹配（如 `@lymtrix/vertical-*`）；
  * prefix 以 `-` 或 `/` 结尾时按原始前缀匹配；否则匹配自身及其子路径。
  */
 export const PACKAGES = [
@@ -29,9 +29,9 @@ export const PACKAGES = [
     scanDir: 'packages/tef-core/src',
     forbidden: [
       { prefix: '@/', message: 'tef-core must not reach into the application layer.' },
-      { prefix: '@lymatrix/tef-mcp-kit', message: 'tef-core is the bottom of the dependency graph; it must not depend on the MCP kit.' },
-      { prefix: '@lymatrix/tef-runtime', message: 'tef-core must not depend on the Agent Runtime.' },
-      { prefix: '@lymatrix/vertical-', message: 'tef-core must not depend on a vertical package.' },
+      { prefix: '@lymtrix/tef-mcp-kit', message: 'tef-core is the bottom of the dependency graph; it must not depend on the MCP kit.' },
+      { prefix: '@lymtrix/tef-runtime', message: 'tef-core must not depend on the Agent Runtime.' },
+      { prefix: '@lymtrix/vertical-', message: 'tef-core must not depend on a vertical package.' },
       { prefix: 'next', message: 'tef-core must not depend on Next.js.' },
       { prefix: '@modelcontextprotocol/', message: 'tef-core must not depend on the MCP SDK; the kit owns transport.' },
       { prefix: '@prisma/', message: 'tef-core must stay infrastructure-free; Prisma belongs to the kit.' },
@@ -52,8 +52,8 @@ export const PACKAGES = [
       { prefix: '@/contracts', message: 'tef-mcp-kit must not depend on vertical contract internals.' },
       { prefix: '@/agent-runtime', message: 'tef-mcp-kit must not depend on the Agent Runtime.' },
       { prefix: '@/app', message: 'tef-mcp-kit must not depend on the Next.js app layer.' },
-      { prefix: '@lymatrix/tef-runtime', message: 'tef-mcp-kit must not depend on the Agent Runtime.' },
-      { prefix: '@lymatrix/vertical-', message: 'tef-mcp-kit must not depend on a vertical package.' },
+      { prefix: '@lymtrix/tef-runtime', message: 'tef-mcp-kit must not depend on the Agent Runtime.' },
+      { prefix: '@lymtrix/vertical-', message: 'tef-mcp-kit must not depend on a vertical package.' },
       { prefix: 'next', message: 'tef-mcp-kit must not depend on Next.js.' },
     ],
   },
@@ -65,10 +65,10 @@ export const PACKAGES = [
     forbidden: [
       { prefix: '@/contracts', message: 'the Runtime may only call MCP tools, not contract internals.' },
       { prefix: '@/mcp-server', message: 'the Runtime must not import the MCP server barrel or its implementation modules.' },
-      { prefix: '@/tef', message: 'the Runtime must import core primitives from @lymatrix/tef-core, not migration shims.' },
+      { prefix: '@/tef', message: 'the Runtime must import core primitives from @lymtrix/tef-core, not migration shims.' },
       { prefix: '@/generated/prisma', message: 'the Runtime must not import the Prisma client (axiom I2).' },
-      { prefix: '@lymatrix/tef-mcp-kit/index', message: 'the Runtime must not import kit implementation subpaths; call MCP tools through the injected connector.' },
-      { prefix: '@lymatrix/vertical-', message: 'the Runtime must not depend on a vertical package.' },
+      { prefix: '@lymtrix/tef-mcp-kit/index', message: 'the Runtime must not import kit implementation subpaths; call MCP tools through the injected connector.' },
+      { prefix: '@lymtrix/vertical-', message: 'the Runtime must not depend on a vertical package.' },
       { prefix: 'next', message: 'the Runtime must not depend on Next.js.' },
     ],
   },
@@ -78,7 +78,7 @@ export const PACKAGES = [
     forbidden: [
       { prefix: '@/agent-runtime', message: 'the CRM vertical must not depend on the Agent Runtime.' },
       { prefix: '@/app', message: 'the CRM vertical must not depend on the Next.js app layer.' },
-      { prefix: '@lymatrix/tef-runtime', message: 'the CRM vertical must not depend on the Agent Runtime.' },
+      { prefix: '@lymtrix/tef-runtime', message: 'the CRM vertical must not depend on the Agent Runtime.' },
       { prefix: 'next', message: 'the CRM vertical must not depend on Next.js.' },
     ],
   },
@@ -179,11 +179,11 @@ export function checkSource(filePath, source) {
     // Runtime 对 kit 的导入按公理 I2 单独判定：
     // - 根路径只允许 `import type`；
     // - 子路径全部禁止，唯一例外是 task-state.ts 值导入 tenant-scope。
-    if (pkg.root === 'packages/tef-runtime' && matchesPrefix(specifier, '@lymatrix/tef-mcp-kit')) {
-      const isKitRoot = specifier === '@lymatrix/tef-mcp-kit';
+    if (pkg.root === 'packages/tef-runtime' && matchesPrefix(specifier, '@lymtrix/tef-mcp-kit')) {
+      const isKitRoot = specifier === '@lymtrix/tef-mcp-kit';
       const isTaskStateTenantScope =
         file === 'packages/tef-runtime/src/task-state.ts' &&
-        specifier === '@lymatrix/tef-mcp-kit/tenant-scope';
+        specifier === '@lymtrix/tef-mcp-kit/tenant-scope';
 
       const isTypeOnlyRoot =
         isKitRoot && typeOnlySpecifiers.has(specifier) && !valueSpecifiers.has(specifier);

@@ -23,13 +23,13 @@ const RUNTIME_KIT_SUBPATHS = [
 
 const runtimeKitRestrictedPaths = [
   {
-    name: '@lymatrix/tef-mcp-kit',
+    name: '@lymtrix/tef-mcp-kit',
     allowTypeImports: true,
     message:
       'Runtime may only type-import from the kit root; kit values and implementation subpaths are forbidden (axiom I2). Call MCP tools through the injected connector.',
   },
   ...RUNTIME_KIT_SUBPATHS.map((subpath) => ({
-    name: `@lymatrix/tef-mcp-kit/${subpath}`,
+    name: `@lymtrix/tef-mcp-kit/${subpath}`,
     message:
       'Kit implementation subpaths are forbidden to the Runtime (axiom I2), including type imports; only type imports from the kit root are allowed. Call MCP tools through the injected connector.',
   })),
@@ -39,14 +39,14 @@ const runtimeKitRestrictedPaths = [
 // tenant-scope；其余 kit 子路径全部禁止，类型导入也不例外。
 const taskStateKitRestrictedPaths = [
   {
-    name: '@lymatrix/tef-mcp-kit',
+    name: '@lymtrix/tef-mcp-kit',
     allowTypeImports: true,
     message:
       'TaskState may only type-import from the kit root; kit values and implementation subpaths are forbidden (axiom I2).',
   },
   ...RUNTIME_KIT_SUBPATHS.filter((subpath) => subpath !== 'tenant-scope').map(
     (subpath) => ({
-      name: `@lymatrix/tef-mcp-kit/${subpath}`,
+      name: `@lymtrix/tef-mcp-kit/${subpath}`,
       message:
         'TaskState may only use the kit tenant-scoped store; other kit implementation subpaths are forbidden (axiom I2), including type imports.',
     }),
@@ -90,9 +90,9 @@ export default defineConfig([
             { group: ['@/contracts/*'], message: 'Contract internals live in trust domain B; the Runtime may only call tools.' },
             { group: ['@/mcp-server'], message: 'The Runtime must not import the MCP server barrel; use the injected connector.' },
             { group: ['@/mcp-server/*'], message: 'The Runtime must not import MCP implementation modules; use the injected connector.' },
-            { group: ['@/tef/*'], message: 'The Runtime must import core primitives from @lymatrix/tef-core, not migration shims.' },
+            { group: ['@/tef/*'], message: 'The Runtime must import core primitives from @lymtrix/tef-core, not migration shims.' },
             { group: ['@/tef/preview-store', '@/tef/token', '@/tef/audit-chain'], message: 'Token, snapshot and audit stores belong to the tool layer (L4/L5), not the Runtime.' },
-            { group: ['@lymatrix/vertical-*'], message: 'The Runtime must not depend on a vertical package; use the injected MCP connector.' },
+            { group: ['@lymtrix/vertical-*'], message: 'The Runtime must not depend on a vertical package; use the injected MCP connector.' },
             { group: ['next', 'next/*'], message: 'The Runtime must not depend on Next.js; it is a framework package, not an app.' },
           ],
         },
@@ -123,11 +123,11 @@ export default defineConfig([
           ],
           patterns: [
             {
-              group: ['@/contracts/*', '@/mcp-server/*', '@/tef/preview-store', '@/tef/token', '@/tef/audit-chain', '@lymatrix/vertical-*', 'next', 'next/*'],
+              group: ['@/contracts/*', '@/mcp-server/*', '@/tef/preview-store', '@/tef/token', '@/tef/audit-chain', '@lymtrix/vertical-*', 'next', 'next/*'],
               message: 'TaskState may use Prisma types but must not import contracts, MCP implementations or verticals.',
             },
             { group: ['@/mcp-server'], message: 'TaskState must not import the MCP server barrel; use the kit tenant-scoped store.' },
-            { group: ['@/tef/*'], message: 'TaskState must import core primitives from @lymatrix/tef-core, not migration shims.' },
+            { group: ['@/tef/*'], message: 'TaskState must import core primitives from @lymtrix/tef-core, not migration shims.' },
           ],
         },
       ],
@@ -161,13 +161,13 @@ export default defineConfig([
                 '@prisma/*',
                 '@prisma/client',
                 '@modelcontextprotocol/*',
-                '@lymatrix/tef-mcp-kit',
-                '@lymatrix/tef-mcp-kit/*',
-                '@lymatrix/tef-mcp-kit*',
-                '@lymatrix/tef-runtime',
-                '@lymatrix/tef-runtime/*',
-                '@lymatrix/tef-runtime*',
-                '@lymatrix/vertical-*',
+                '@lymtrix/tef-mcp-kit',
+                '@lymtrix/tef-mcp-kit/*',
+                '@lymtrix/tef-mcp-kit*',
+                '@lymtrix/tef-runtime',
+                '@lymtrix/tef-runtime/*',
+                '@lymtrix/tef-runtime*',
+                '@lymtrix/vertical-*',
                 'node:fs',
                 'node:fs/promises',
                 'node:child_process',
@@ -192,7 +192,7 @@ export default defineConfig([
         {
           patterns: [
             {
-              group: ['@/contracts/*', '@/agent-runtime/*', '@lymatrix/vertical-*', '@lymatrix/tef-runtime', '@lymatrix/tef-runtime/*', '@lymatrix/tef-runtime*', 'next', 'next/*'],
+              group: ['@/contracts/*', '@/agent-runtime/*', '@lymtrix/vertical-*', '@lymtrix/tef-runtime', '@lymtrix/tef-runtime/*', '@lymtrix/tef-runtime*', 'next', 'next/*'],
               message: 'tef-mcp-kit must not depend on verticals, runtime or Next.js.',
             },
           ],
@@ -209,7 +209,7 @@ export default defineConfig([
         {
           patterns: [
             {
-              group: ['@/agent-runtime/*', '@/app/*', '@lymatrix/tef-runtime', '@lymatrix/tef-runtime/*', '@lymatrix/tef-runtime*', 'next', 'next/*'],
+              group: ['@/agent-runtime/*', '@/app/*', '@lymtrix/tef-runtime', '@lymtrix/tef-runtime/*', '@lymtrix/tef-runtime*', 'next', 'next/*'],
               message: 'The CRM vertical must not depend on the runtime or the app.',
             },
           ],

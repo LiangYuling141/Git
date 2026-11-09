@@ -4,7 +4,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 建立 npm workspaces 骨架，把不依赖 IO 的治理核心迁入 `@lymatrix/tef-core`，同时保持现有 295 个测试全部通过、运行时行为不变。
+**Goal:** 建立 npm workspaces 骨架，把不依赖 IO 的治理核心迁入 `@lymtrix/tef-core`，同时保持现有 295 个测试全部通过、运行时行为不变。
 
 **Architecture:** 只做包边界迁移，不改变任何业务流程。旧路径保留 re-export 兼容层，Next.js 应用继续通过 `@/tef/*` 工作；核心包通过 ESLint 规则禁止导入 Prisma、Next、垂直契约与 MCP 实现。
 
@@ -15,7 +15,7 @@
 - 不改变任何运行时行为；迁移期间旧导入路径必须继续可用。
 - 每个任务结束时执行 `npm run typecheck` 与 `npm run lint`，结果必须为 0 错误。
 - 每个任务结束时执行 `npm test`，通过数不得低于 268（单元测试）；最后一项任务执行 `TEF_DB_TESTS=1 npm test`，必须 295 全部通过。
-- 包名固定为：`@lymatrix/tef-core`。后续阶段使用 `@lymatrix/tef-mcp-kit`、`@lymatrix/tef-runtime`、`@lymatrix/tef-server`、`@lymatrix/tef-sdk`、`@lymatrix/vertical-crm-erp`。
+- 包名固定为：`@lymtrix/tef-core`。后续阶段使用 `@lymtrix/tef-mcp-kit`、`@lymtrix/tef-runtime`、`@lymtrix/tef-server`、`@lymtrix/tef-sdk`、`@lymtrix/vertical-crm-erp`。
 - 不修改 `strict`、`target`、`moduleResolution` 等 TypeScript 全局选项。
 - 默认不执行 git commit；只有用户明确授权后才提交。
 - 本计划只覆盖 Phase A1。A2（mcp-kit/垂直/运行时）、B（服务化）、C（P1 收尾）、D（P2 准备）在 A1 完成后分别编写独立计划。
@@ -35,7 +35,7 @@
 
 **Interfaces:**
 - Consumes: 无
-- Produces: workspace 包 `@lymatrix/tef-core`；根 tsconfig 与 Vitest 可解析该包及其子路径。
+- Produces: workspace 包 `@lymtrix/tef-core`；根 tsconfig 与 Vitest 可解析该包及其子路径。
 
 - [ ] **Step 1：在根 package.json 增加 workspaces**
 
@@ -84,8 +84,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@lymatrix/tef-core": ["./packages/tef-core/src/index.ts"],
-      "@lymatrix/tef-core/*": ["./packages/tef-core/src/*"]
+      "@lymtrix/tef-core": ["./packages/tef-core/src/index.ts"],
+      "@lymtrix/tef-core/*": ["./packages/tef-core/src/*"]
     },
     "plugins": [
       {
@@ -114,11 +114,11 @@ export default defineConfig({
   resolve: {
     alias: [
       {
-        find: /^@lymatrix\/tef-core\/(.*)$/,
+        find: /^@lymtrix\/tef-core\/(.*)$/,
         replacement: `${fileURLToPath(new URL('./packages/tef-core/src', import.meta.url))}/$1`,
       },
       {
-        find: '@lymatrix/tef-core',
+        find: '@lymtrix/tef-core',
         replacement: fileURLToPath(new URL('./packages/tef-core/src/index.ts', import.meta.url)),
       },
       {
@@ -142,10 +142,10 @@ export default defineConfig({
 
 ```json
 {
-  "name": "@lymatrix/tef-core",
+  "name": "@lymtrix/tef-core",
   "version": "0.1.0",
   "private": true,
-  "description": "LyMatrix TEF governance core: contracts, risk, hashing, effects.",
+  "description": "LyMtrix-TEF governance core: contracts, risk, hashing, effects.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
@@ -163,7 +163,7 @@ export default defineConfig({
 创建 `packages/tef-core/src/index.ts`：
 
 ```ts
-// @lymatrix/tef-core public entry.
+// @lymtrix/tef-core public entry.
 // 迁移期间保持为空；Task 2 填充导出。
 export {};
 ```
@@ -177,7 +177,7 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   // workspace 包直接以 TypeScript 源码被应用引用，Next 需要转译它们。
-  transpilePackages: ['@lymatrix/tef-core'],
+  transpilePackages: ['@lymtrix/tef-core'],
 };
 
 export default nextConfig;
@@ -191,7 +191,7 @@ Run:
 npm install
 ```
 
-Expected: 命令成功，`package-lock.json` 更新，`node_modules/@lymatrix/tef-core` 成为指向 `packages/tef-core` 的符号链接。
+Expected: 命令成功，`package-lock.json` 更新，`node_modules/@lymtrix/tef-core` 成为指向 `packages/tef-core` 的符号链接。
 
 - [ ] **Step 9：验证类型检查与测试**
 
@@ -241,8 +241,8 @@ Expected: 只出现本任务涉及的文件变更；不执行提交。
 - Modify: `packages/tef-core/src/index.ts`
 
 **Interfaces:**
-- Consumes: `@lymatrix/tef-core` 包骨架（Task 1）
-- Produces: `@lymatrix/tef-core` 导出 `Contract`、`ContractEngine`、`contractEngine`、`contractRegistry`、`classifyRisk`、`resolveAmountThreshold`、`executeEffects`、`canonicalize`、`hash*`、`toCents`、`fromCents`、`prorateCents`、`formatCNY` 等公开符号；旧路径 `@/tef/*` 继续可用。
+- Consumes: `@lymtrix/tef-core` 包骨架（Task 1）
+- Produces: `@lymtrix/tef-core` 导出 `Contract`、`ContractEngine`、`contractEngine`、`contractRegistry`、`classifyRisk`、`resolveAmountThreshold`、`executeEffects`、`canonicalize`、`hash*`、`toCents`、`fromCents`、`prorateCents`、`formatCNY` 等公开符号；旧路径 `@/tef/*` 继续可用。
 
 - [ ] **Step 1：移动文件**
 
@@ -301,61 +301,61 @@ export type DbTx = unknown;
 `src/tef/errors.ts`：
 
 ```ts
-export * from '@lymatrix/tef-core/errors';
+export * from '@lymtrix/tef-core/errors';
 ```
 
 `src/tef/money.ts`：
 
 ```ts
-export * from '@lymatrix/tef-core/money';
+export * from '@lymtrix/tef-core/money';
 ```
 
 `src/tef/canonical.ts`：
 
 ```ts
-export * from '@lymatrix/tef-core/canonical';
+export * from '@lymtrix/tef-core/canonical';
 ```
 
 `src/tef/hashing.ts`：
 
 ```ts
-export * from '@lymatrix/tef-core/hashing';
+export * from '@lymtrix/tef-core/hashing';
 ```
 
 `src/tef/redaction.ts`：
 
 ```ts
-export * from '@lymatrix/tef-core/redaction';
+export * from '@lymtrix/tef-core/redaction';
 ```
 
 `src/tef/risk.ts`：
 
 ```ts
-export * from '@lymatrix/tef-core/risk';
+export * from '@lymtrix/tef-core/risk';
 ```
 
 `src/tef/contract-engine.ts`：
 
 ```ts
-export * from '@lymatrix/tef-core/contract-engine';
+export * from '@lymtrix/tef-core/contract-engine';
 ```
 
 `src/tef/contract-registry.ts`：
 
 ```ts
-export * from '@lymatrix/tef-core/contract-registry';
+export * from '@lymtrix/tef-core/contract-registry';
 ```
 
 `src/tef/effect-executor.ts`：
 
 ```ts
-export * from '@lymatrix/tef-core/effect-executor';
+export * from '@lymtrix/tef-core/effect-executor';
 ```
 
 `src/tef/types.ts`（特殊：保留迁移期 Prisma 事务类型）：
 
 ```ts
-export * from '@lymatrix/tef-core/types';
+export * from '@lymtrix/tef-core/types';
 
 import type { Prisma } from '@/generated/prisma';
 
@@ -546,7 +546,7 @@ Expected: 只有 `eslint.config.mjs` 变更；不执行提交。
 把 L2 一行的括号说明改为：
 
 ```markdown
-| L2 框架 Beta | 核心与垂直解耦，具备 SDK、文档与测试 | 进行中：`@lymatrix/tef-core` 已独立成包且禁止基础设施依赖；MCP Kit、Runtime、SDK 与服务化在后续阶段完成 |
+| L2 框架 Beta | 核心与垂直解耦，具备 SDK、文档与测试 | 进行中：`@lymtrix/tef-core` 已独立成包且禁止基础设施依赖；MCP Kit、Runtime、SDK 与服务化在后续阶段完成 |
 ```
 
 - [ ] **Step 4：运行最终验收**
