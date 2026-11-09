@@ -2,6 +2,58 @@ import { defineConfig, globalIgnores } from 'eslint/config';
 import nextVitals from 'eslint-config-next/core-web-vitals';
 import nextTs from 'eslint-config-next/typescript';
 
+// 公理 I2：Runtime 只能引用 kit 的公共类型；kit 的实现子路径属于工具层。
+// 这里显式列出全部子路径，避免新增子路径绕过规则（例如 tenant-scope）。
+const RUNTIME_KIT_SUBPATHS = [
+  'token',
+  'preview-store',
+  'audit-chain',
+  'tools/contract',
+  'tools/confirmation',
+  'tools/audit',
+  'tenant-scope',
+  'prisma',
+  'server',
+  'transport',
+  'principal',
+  'envelope',
+  'tenant',
+];
+
+const runtimeKitRestrictedPaths = [
+  {
+    name: '@lymatrix/tef-mcp-kit',
+    allowTypeImports: true,
+    message:
+      'Runtime may only type-import from the kit root; kit values and implementation subpaths are forbidden (axiom I2). Call MCP tools through the injected connector.',
+  },
+  ...RUNTIME_KIT_SUBPATHS.map((subpath) => ({
+    name: `@lymatrix/tef-mcp-kit/${subpath}`,
+    allowTypeImports: true,
+    message:
+      'Kit implementation subpaths are forbidden to the Runtime (axiom I2); only type imports from the kit root are allowed. Call MCP tools through the injected connector.',
+  })),
+];
+
+// TaskState 唯一的例外：它需要在 kit 的租户作用域内完成持久化，因此允许值导入
+// tenant-scope；其余 kit 子路径仍只允许类型导入。
+const taskStateKitRestrictedPaths = [
+  {
+    name: '@lymatrix/tef-mcp-kit',
+    allowTypeImports: true,
+    message:
+      'TaskState may only type-import from the kit root; kit values and implementation subpaths are forbidden (axiom I2).',
+  },
+  ...RUNTIME_KIT_SUBPATHS.filter((subpath) => subpath !== 'tenant-scope').map(
+    (subpath) => ({
+      name: `@lymatrix/tef-mcp-kit/${subpath}`,
+      allowTypeImports: true,
+      message:
+        'TaskState may only use the kit tenant-scoped store; other kit implementation subpaths are forbidden (axiom I2).',
+    }),
+  ),
+];
+
 export default defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -35,23 +87,16 @@ export default defineConfig([
             { group: ['@/mcp-server/*'], message: 'The Runtime must not import MCP implementation modules; use the injected connector.' },
             { group: ['@/tef/preview-store', '@/tef/token', '@/tef/audit-chain'], message: 'Token, snapshot and audit stores belong to the tool layer (L4/L5), not the Runtime.' },
             { group: ['@lymatrix/vertical-*'], message: 'The Runtime must not depend on a vertical package; use the injected MCP connector.' },
+            { group: ['next', 'next/*'], message: 'The Runtime must not depend on Next.js; it is a framework package, not an app.' },
           ],
         },
       ],
       // TypeScript 版本才能用 allowTypeImports：Runtime 可以引用 kit 的公共类型，
-      // 但 kit 中的令牌、快照、审计与契约运行时属于工具层，Runtime 不得取值导入。
+      // 但 kit 的任何实现子路径都属于工具层，Runtime 不得取值导入。
       '@typescript-eslint/no-restricted-imports': [
         'error',
         {
-          paths: [
-            { name: '@lymatrix/tef-mcp-kit', allowTypeImports: true, message: 'Runtime may import kit types from the root, but not kit values; use explicit allowed subpaths.' },
-            { name: '@lymatrix/tef-mcp-kit/token', message: 'Token store belongs to the tool layer, not the Runtime (axiom I2).' },
-            { name: '@lymatrix/tef-mcp-kit/preview-store', message: 'Preview store belongs to the tool layer, not the Runtime (axiom I2).' },
-            { name: '@lymatrix/tef-mcp-kit/audit-chain', message: 'Audit chain belongs to the tool layer, not the Runtime (axiom I2).' },
-            { name: '@lymatrix/tef-mcp-kit/tools/contract', message: 'Contract runtime belongs to the tool layer; the Runtime may only call MCP tools.' },
-            { name: '@lymatrix/tef-mcp-kit/tools/confirmation', message: 'Confirmation tools belong to the tool layer.' },
-            { name: '@lymatrix/tef-mcp-kit/tools/audit', message: 'Audit tools belong to the tool layer.' },
-          ],
+          paths: runtimeKitRestrictedPaths,
         },
       ],
     },
@@ -76,6 +121,14 @@ export default defineConfig([
               message: 'TaskState may use Prisma types but must not import contracts, MCP implementations or verticals.',
             },
           ],
+        },
+      ],
+      // TaskState 允许值导入 tenant-scope（持久化必须经过 kit 的租户作用域），
+      // 其余 kit 子路径与 kit 根值导入仍然禁止。
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: taskStateKitRestrictedPaths,
         },
       ],
     },

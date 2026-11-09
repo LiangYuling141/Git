@@ -52,15 +52,13 @@ export const PACKAGES = [
   {
     root: 'packages/tef-runtime',
     scanDir: 'packages/tef-runtime/src',
+    // kit 的导入由 checkSource 单独判定：根路径只允许类型导入，
+    // 子路径全部禁止（task-state.ts 的 tenant-scope 值导入除外）。
     forbidden: [
       { prefix: '@/contracts', message: 'the Runtime may only call MCP tools, not contract internals.' },
       { prefix: '@/mcp-server', message: 'the Runtime must not import MCP implementation modules.' },
       { prefix: '@lymatrix/vertical-', message: 'the Runtime must not depend on a vertical package.' },
       { prefix: 'next', message: 'the Runtime must not depend on Next.js.' },
-      { prefix: '@lymatrix/tef-mcp-kit/token', message: 'the token store belongs to the tool layer.' },
-      { prefix: '@lymatrix/tef-mcp-kit/preview-store', message: 'the preview store belongs to the tool layer.' },
-      { prefix: '@lymatrix/tef-mcp-kit/audit-chain', message: 'the audit chain belongs to the tool layer.' },
-      { prefix: '@lymatrix/tef-mcp-kit/tools/', message: 'MCP tool implementations belong to the tool layer.' },
     ],
   },
   {
@@ -111,6 +109,19 @@ export function extractSpecifiers(source) {
   return [...specifiers];
 }
 
+// 只识别 `import type ... from '...'` 形式；类型导入在运行时被擦除，
+// 因此 Runtime 允许从 kit 根路径引用公共类型。
+const TYPE_IMPORT_PATTERN = /\bimport\s+type\b[^'"]*\bfrom\s*['"]([^'"]+)['"]/g;
+
+export function extractTypeOnlySpecifiers(source) {
+  const specifiers = new Set();
+  TYPE_IMPORT_PATTERN.lastIndex = 0;
+  for (const match of source.matchAll(TYPE_IMPORT_PATTERN)) {
+    specifiers.add(match[1]);
+  }
+  return specifiers;
+}
+
 /**
  * 检查单个源码文件的内容。
  *
@@ -125,6 +136,9 @@ export function checkSource(filePath, source) {
 
   const absoluteFile = resolve(REPO_ROOT, file);
   const packageRoot = resolve(REPO_ROOT, pkg.root);
+  const typeOnlySpecifiers = extractTypeOnlySpecifiers(source);
+  // 去掉纯类型导入后再提取值导入，避免“同名类型 + 值导入”被误判为纯类型。
+  const valueSpecifiers = new Set(extractSpecifiers(source.replace(TYPE_IMPORT_PATTERN, '')));
   const violations = [];
 
   for (const specifier of extractSpecifiers(source)) {
@@ -143,6 +157,32 @@ export function checkSource(filePath, source) {
           message: `relative import escapes ${pkg.root}; use the package's public entry instead.`,
         });
       }
+      continue;
+    }
+
+    // Runtime 对 kit 的导入按公理 I2 单独判定：
+    // - 根路径只允许 `import type`；
+    // - 子路径全部禁止，唯一例外是 task-state.ts 值导入 tenant-scope。
+    if (pkg.root === 'packages/tef-runtime' && matchesPrefix(specifier, '@lymatrix/tef-mcp-kit')) {
+      const isKitRoot = specifier === '@lymatrix/tef-mcp-kit';
+      const isTaskStateTenantScope =
+        file === 'packages/tef-runtime/src/task-state.ts' &&
+        specifier === '@lymatrix/tef-mcp-kit/tenant-scope';
+
+      const isTypeOnlyRoot =
+        isKitRoot && typeOnlySpecifiers.has(specifier) && !valueSpecifiers.has(specifier);
+      if (isTypeOnlyRoot || isTaskStateTenantScope) {
+        continue;
+      }
+
+      violations.push({
+        file,
+        specifier,
+        rule: 'forbidden-import',
+        message: isKitRoot
+          ? 'the Runtime may only type-import from the kit root; kit values belong to the tool layer.'
+          : 'the Runtime must not import kit implementation subpaths; call MCP tools through the injected connector.',
+      });
       continue;
     }
 

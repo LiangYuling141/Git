@@ -1,10 +1,10 @@
 # Phase A2：tef-mcp-kit、CRM 垂直 MCP 与 tef-runtime 提取实施计划
 
-> **执行状态**：Phase A2 已完成（2026-11-09，commits 21a9433..3c49f25）。
+> **执行状态**：Phase A2 已完成（2026-11-09，commits 21a9433..0e0135f）。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把 MCP 工具层、CRM 垂直实现与 Agent Runtime 从单一 `src/` 应用拆成三个 workspace 包，保持运行时行为与 295 个测试不变。
+**Goal:** 把 MCP 工具层、CRM 垂直实现与 Agent Runtime 从单一 `src/` 应用拆成三个 workspace 包，保持运行时行为与 301 个测试不变。
 
 **Architecture:** `@lymatrix/tef-mcp-kit` 提供通用 MCP Server 工厂、治理工具、契约运行时与状态存储；`@lymatrix/vertical-crm-erp` 用 kit 注册 CRM 查询/订单工具与契约；`@lymatrix/tef-runtime` 承载意图解析、LLM 客户端、TaskState 与编排，并通过注入的会话连接器调用 MCP。旧路径全部保留 re-export shim。
 
@@ -13,8 +13,8 @@
 ## Global Constraints
 
 - 不改变运行时行为；旧导入路径 `@/mcp-server/*`、`@/tef/*`、`@/agent-runtime/*`、`@/lib/ai/LLMClient` 必须继续可用。
-- 每个任务结束时 `npm run typecheck`、`npm run lint` 为 0 错误；`npm test` 通过数不得低于 268 单元测试。
-- 最后一项任务执行 `TEF_DB_TESTS=1 npm test`，必须 295 全部通过；`npm run build` 必须成功。
+- 每个任务结束时 `npm run typecheck`、`npm run lint` 为 0 错误；`npm test` 通过数不得低于 274 单元测试。
+- 最后一项任务执行 `TEF_DB_TESTS=1 npm test`，必须 301 全部通过；`npm run build` 必须成功。
 - 包名固定：`@lymatrix/tef-mcp-kit`、`@lymatrix/vertical-crm-erp`、`@lymatrix/tef-runtime`。
 - 不修改 `strict`、`target`、`moduleResolution` 等全局 TypeScript 选项。
 - 默认不执行 git commit；只有用户明确授权后才提交（本阶段已获授权，仅本地提交，不推送）。
@@ -180,7 +180,7 @@ npm run typecheck
 npm test
 ```
 
-Expected: 安装成功；typecheck 0；`268 passed | 27 skipped (295)`。
+Expected: 安装成功；typecheck 0；`268 passed | 27 skipped (295)`（A2 前基线）。
 
 - [ ] **Step 6：检查点**
 
@@ -546,7 +546,7 @@ npm run typecheck
 npm test
 ```
 
-Expected: kit 测试（preview-store 10、token 26、audit-chain 25）与 server.test.ts（14）通过；全量 295。
+Expected: kit 测试（preview-store 10、token 26、audit-chain 25）与 server.test.ts（14）通过；全量 295（A2 前基线）。
 
 ---
 
@@ -781,7 +781,7 @@ npm run typecheck
 npm test
 ```
 
-Expected: 契约测试（create-order 52、compensate-order 33）与 kit 测试通过；全量 295。
+Expected: 契约测试（create-order 52、compensate-order 33）与 kit 测试通过；全量 295（A2 前基线）。
 
 ---
 
@@ -938,7 +938,7 @@ npm run typecheck
 npm test
 ```
 
-Expected: intent 17 + intent.model 3 + LLMClient 11 通过；全量 295。
+Expected: intent 17 + intent.model 3 + LLMClient 11 通过；全量 295（A2 前基线）。
 
 ---
 
@@ -955,7 +955,7 @@ Expected: intent 17 + intent.model 3 + LLMClient 11 通过；全量 295。
 
 **Interfaces:**
 - Consumes: Task 1–4 的包结构
-- Produces: 可执行的包边界规则与同步文档；最终 295 验收。
+- Produces: 可执行的包边界规则与同步文档；最终 301 验收。
 
 - [ ] **Step 1：增加包边界 lint**
 
@@ -1060,7 +1060,7 @@ TEF_DB_TESTS=1 npm test
 npm run build
 ```
 
-Expected: secrets 通过；typecheck 0；lint 0 错误 / 28 警告；295 passed；build 成功。
+Expected: secrets 通过；typecheck 0；lint 0 错误 / 28 警告；301 passed；build 成功。
 
 - [ ] **Step 4：检查点**
 
