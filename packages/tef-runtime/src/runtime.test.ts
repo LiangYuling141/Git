@@ -139,7 +139,7 @@ async function turn(
     },
     taskState,
     traceId: 'tr_runtime',
-    secret: 'test-secret-test-secret-test-secret',
+    secret: 'test-secret-that-is-long-enough-to-be-accepted',
     connectSession: async () => session,
   });
 }

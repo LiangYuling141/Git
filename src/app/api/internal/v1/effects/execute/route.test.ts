@@ -19,14 +19,14 @@ vi.mock('@lymtrix/vertical-crm-erp', () => ({
 import { EffectsExecutionUnknownError } from '@lymtrix/tef-core';
 import { POST } from './route';
 
-const TOKEN = 'route-test-service-token';
+const AUTH_VALUE = 'route-test-service-token';
 
 function effectsRequest(body: unknown): Request {
   return new Request('http://localhost/api/internal/v1/effects/execute', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${TOKEN}`,
+      authorization: `Bearer ${AUTH_VALUE}`,
     },
     body: JSON.stringify(body),
   });
@@ -52,7 +52,7 @@ let savedEnabled: string | undefined;
 beforeEach(() => {
   savedToken = process.env.TEF_CRM_SERVICE_TOKEN;
   savedEnabled = process.env.TEF_CRM_EFFECTS_ENABLED;
-  process.env.TEF_CRM_SERVICE_TOKEN = TOKEN;
+  process.env.TEF_CRM_SERVICE_TOKEN = AUTH_VALUE;
   process.env.TEF_CRM_EFFECTS_ENABLED = '1';
   mocks.execute.mockReset();
 });
