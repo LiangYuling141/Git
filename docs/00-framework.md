@@ -744,6 +744,8 @@ sequenceDiagram
 | 确认执行计划 | 根据契约选择执行工具与成功状态 | `src/app/api/agent/confirm/execute-plan.ts` | `execute-plan.test.ts`（3） |
 | 闭环集成 | 真实数据库端到端、攻击场景与补偿 | `tests/integration/` | 27（需 `TEF_DB_TESTS=1`） |
 
+> 另有遗留测试 `src/agents/SubAgent.validation.test.ts`（2 个）计入 268 个单元测试总数；它属于旧投票路径，不在 TEF 模块映射内。
+
 ---
 
 ## 9. 运维、测试与 CI
