@@ -56,7 +56,10 @@ export const PACKAGES = [
     // 子路径全部禁止（task-state.ts 的 tenant-scope 值导入除外）。
     forbidden: [
       { prefix: '@/contracts', message: 'the Runtime may only call MCP tools, not contract internals.' },
-      { prefix: '@/mcp-server', message: 'the Runtime must not import MCP implementation modules.' },
+      { prefix: '@/mcp-server', message: 'the Runtime must not import the MCP server barrel or its implementation modules.' },
+      { prefix: '@/tef', message: 'the Runtime must import core primitives from @lymatrix/tef-core, not migration shims.' },
+      { prefix: '@/generated/prisma', message: 'the Runtime must not import the Prisma client (axiom I2).' },
+      { prefix: '@lymatrix/tef-mcp-kit/index', message: 'the Runtime must not import kit implementation subpaths; call MCP tools through the injected connector.' },
       { prefix: '@lymatrix/vertical-', message: 'the Runtime must not depend on a vertical package.' },
       { prefix: 'next', message: 'the Runtime must not depend on Next.js.' },
     ],
@@ -183,6 +186,19 @@ export function checkSource(filePath, source) {
           ? 'the Runtime may only type-import from the kit root; kit values belong to the tool layer.'
           : 'the Runtime must not import kit implementation subpaths; call MCP tools through the injected connector.',
       });
+      continue;
+    }
+
+    // TaskState 只允许 Prisma 生成的类型声明：`import type ... from '@/generated/prisma'`
+    // 放行，值导入（PrismaClient 等）落入下方 forbidden 规则。其余 Runtime 文件
+    // 无论类型还是值导入都禁止。
+    if (
+      pkg.root === 'packages/tef-runtime' &&
+      specifier === '@/generated/prisma' &&
+      file === 'packages/tef-runtime/src/task-state.ts' &&
+      typeOnlySpecifiers.has(specifier) &&
+      !valueSpecifiers.has(specifier)
+    ) {
       continue;
     }
 

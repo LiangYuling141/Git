@@ -1,10 +1,10 @@
 # Phase A2：tef-mcp-kit、CRM 垂直 MCP 与 tef-runtime 提取实施计划
 
-> **执行状态**：Phase A2 已完成（2026-11-09，commits 21a9433..0e0135f）。
+> **执行状态**：Phase A2 已完成（2026-11-09，commits 21a9433..A2 最终提交（含 0e0135f、0f25aac 及后续修复））。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把 MCP 工具层、CRM 垂直实现与 Agent Runtime 从单一 `src/` 应用拆成三个 workspace 包，保持运行时行为与 301 个测试不变。
+**Goal:** 把 MCP 工具层、CRM 垂直实现与 Agent Runtime 从单一 `src/` 应用拆成三个 workspace 包，保持运行时行为不变，最终 301 个测试通过，且既有测试不减少。
 
 **Architecture:** `@lymatrix/tef-mcp-kit` 提供通用 MCP Server 工厂、治理工具、契约运行时与状态存储；`@lymatrix/vertical-crm-erp` 用 kit 注册 CRM 查询/订单工具与契约；`@lymatrix/tef-runtime` 承载意图解析、LLM 客户端、TaskState 与编排，并通过注入的会话连接器调用 MCP。旧路径全部保留 re-export shim。
 

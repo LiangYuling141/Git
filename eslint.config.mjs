@@ -3,8 +3,9 @@ import nextVitals from 'eslint-config-next/core-web-vitals';
 import nextTs from 'eslint-config-next/typescript';
 
 // 公理 I2：Runtime 只能引用 kit 的公共类型；kit 的实现子路径属于工具层。
-// 这里显式列出全部子路径，避免新增子路径绕过规则（例如 tenant-scope）。
+// 这里显式列出全部子路径，避免新增子路径绕过规则（例如 tenant-scope、index）。
 const RUNTIME_KIT_SUBPATHS = [
+  'index',
   'token',
   'preview-store',
   'audit-chain',
@@ -29,14 +30,13 @@ const runtimeKitRestrictedPaths = [
   },
   ...RUNTIME_KIT_SUBPATHS.map((subpath) => ({
     name: `@lymatrix/tef-mcp-kit/${subpath}`,
-    allowTypeImports: true,
     message:
-      'Kit implementation subpaths are forbidden to the Runtime (axiom I2); only type imports from the kit root are allowed. Call MCP tools through the injected connector.',
+      'Kit implementation subpaths are forbidden to the Runtime (axiom I2), including type imports; only type imports from the kit root are allowed. Call MCP tools through the injected connector.',
   })),
 ];
 
 // TaskState 唯一的例外：它需要在 kit 的租户作用域内完成持久化，因此允许值导入
-// tenant-scope；其余 kit 子路径仍只允许类型导入。
+// tenant-scope；其余 kit 子路径全部禁止，类型导入也不例外。
 const taskStateKitRestrictedPaths = [
   {
     name: '@lymatrix/tef-mcp-kit',
@@ -47,11 +47,15 @@ const taskStateKitRestrictedPaths = [
   ...RUNTIME_KIT_SUBPATHS.filter((subpath) => subpath !== 'tenant-scope').map(
     (subpath) => ({
       name: `@lymatrix/tef-mcp-kit/${subpath}`,
-      allowTypeImports: true,
       message:
-        'TaskState may only use the kit tenant-scoped store; other kit implementation subpaths are forbidden (axiom I2).',
+        'TaskState may only use the kit tenant-scoped store; other kit implementation subpaths are forbidden (axiom I2), including type imports.',
     }),
   ),
+  {
+    name: '@/generated/prisma',
+    allowTypeImports: true,
+    message: 'TaskState may import Prisma types only, never the generated client.',
+  },
 ];
 
 export default defineConfig([
@@ -84,7 +88,9 @@ export default defineConfig([
           ],
           patterns: [
             { group: ['@/contracts/*'], message: 'Contract internals live in trust domain B; the Runtime may only call tools.' },
+            { group: ['@/mcp-server'], message: 'The Runtime must not import the MCP server barrel; use the injected connector.' },
             { group: ['@/mcp-server/*'], message: 'The Runtime must not import MCP implementation modules; use the injected connector.' },
+            { group: ['@/tef/*'], message: 'The Runtime must import core primitives from @lymatrix/tef-core, not migration shims.' },
             { group: ['@/tef/preview-store', '@/tef/token', '@/tef/audit-chain'], message: 'Token, snapshot and audit stores belong to the tool layer (L4/L5), not the Runtime.' },
             { group: ['@lymatrix/vertical-*'], message: 'The Runtime must not depend on a vertical package; use the injected MCP connector.' },
             { group: ['next', 'next/*'], message: 'The Runtime must not depend on Next.js; it is a framework package, not an app.' },
@@ -120,6 +126,8 @@ export default defineConfig([
               group: ['@/contracts/*', '@/mcp-server/*', '@/tef/preview-store', '@/tef/token', '@/tef/audit-chain', '@lymatrix/vertical-*', 'next', 'next/*'],
               message: 'TaskState may use Prisma types but must not import contracts, MCP implementations or verticals.',
             },
+            { group: ['@/mcp-server'], message: 'TaskState must not import the MCP server barrel; use the kit tenant-scoped store.' },
+            { group: ['@/tef/*'], message: 'TaskState must import core primitives from @lymatrix/tef-core, not migration shims.' },
           ],
         },
       ],
