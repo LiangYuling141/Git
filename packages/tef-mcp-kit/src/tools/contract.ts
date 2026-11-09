@@ -13,7 +13,7 @@ import type {
   Envelope,
   RevalidateOutcome,
 } from '@lymtrix/tef-core';
-import { auditChain } from '../audit-chain';
+import { auditChain, type AuditEventInput } from '../audit-chain';
 import { previewStore, type StoredPreview } from '../preview-store';
 import { tokenStore, type TokenClaims } from '../token';
 import { withTenantScope } from '../tenant-scope';
@@ -60,6 +60,21 @@ export type ContractToolOptions = ContractWriteBaseOptions & {
   effectsExecutor?: EffectsExecutor;
 };
 
+/**
+ * 派生传给 effects 执行器的幂等键。
+ *
+ * TEF 的幂等域是 `(tenantId, toolName, idempotencyKey)`，而执行器的幂等域是
+ * `(tenantId, 'internal.effects.execute', idempotencyKey)`。同一个业务 key 可以
+ * 被不同工具复用（例如创建与补偿），如果原样透传，执行器会把另一个操作的结果
+ * 当成本次执行的重放，从而跳过真正的副作用。
+ *
+ * Task 4 的对账必须使用本函数，从 `attempt.toolName` + `attempt.idempotencyKey`
+ * 派生出与前台执行完全相同的键。
+ */
+export function scopedExecutorIdempotencyKey(toolName: string, idempotencyKey: string): string {
+  return `${toolName}:${idempotencyKey}`;
+}
+
 export type AdapterFactory = (
   tx: PrismaTx,
   tenantId: string,
@@ -70,7 +85,7 @@ export async function previewContract(
   principal: Principal,
   operation: string,
   args: Record<string, unknown>,
-  options: ContractToolOptions,
+  options: ContractWriteBaseOptions,
   toolName: string,
 ): Promise<Envelope> {
   const now = options.now ?? new Date();
@@ -249,11 +264,18 @@ function replayIdempotent(response: unknown): Envelope {
   return { ...replayed, data: { ...(replayed.data ?? {}), replayed: true } } as Envelope;
 }
 
+/** 把数据库里的 Json 结果还原成信封；不是信封形状时返回 null。 */
+function storedEnvelope(value: unknown): Envelope | null {
+  if (value && typeof value === 'object' && 'status' in value) {
+    return value as Envelope;
+  }
+  return null;
+}
+
 /** 已结算失败尝试的响应：优先返回 Phase 3 存储的原始信封。 */
 function storedFailureEnvelope(attempt: ExistingAttempt): Envelope {
-  if (attempt.result && typeof attempt.result === 'object' && 'status' in attempt.result) {
-    return attempt.result as Envelope;
-  }
+  const stored = storedEnvelope(attempt.result);
+  if (stored) return stored;
   if (attempt.errorCode === 'CONFLICT') {
     return conflict(attempt.errorMessage ?? 'execution failed', { traceId: attempt.traceId });
   }
@@ -278,6 +300,30 @@ function existingAttemptEnvelope(attempt: ExistingAttempt): Envelope {
     return conflict('execution in progress or awaiting reconciliation', { traceId: attempt.traceId });
   }
   return storedFailureEnvelope(attempt);
+}
+
+/**
+ * 尝试状态 → 响应信封。
+ *
+ * `succeeded` 的重放依赖幂等记录，而 Phase 1 的第一次记录查询发生在 attempt
+ * 查询之前：在 READ COMMITTED 下两条语句看到不同快照时，可能出现“attempt
+ * 已可见、记录尚未可见”的假缺失。这里在已经读到 succeeded 后于同一事务内
+ * 重读记录，消除该时序窗口；仍然缺失才按治理状态不一致交给人工对账。
+ */
+async function attemptEnvelope(
+  tx: PrismaTx,
+  tenantId: string,
+  toolName: string,
+  idempotencyKey: string,
+  attempt: ExistingAttempt,
+): Promise<Envelope> {
+  if (attempt.status === 'succeeded') {
+    const record = await tx.idempotencyRecord.findFirst({
+      where: { tenantId, toolName, idempotencyKey },
+    });
+    if (record) return replayIdempotent(record.response);
+  }
+  return existingAttemptEnvelope(attempt);
 }
 
 /**
@@ -315,7 +361,10 @@ async function runPhase1(
       },
     });
     if (attempt) {
-      return { kind: 'envelope', envelope: existingAttemptEnvelope(attempt) };
+      return {
+        kind: 'envelope',
+        envelope: await attemptEnvelope(tx, principal.tenantId, toolName, idempotencyKey, attempt),
+      };
     }
 
     const ctx = await buildExecContext(principal, tx, {
@@ -420,6 +469,9 @@ async function runPhase1(
         status: 'executing',
         risk: riskToDb(claims.risk),
         effects: revalidated.effects as unknown as Prisma.InputJsonValue,
+        // expectedEvidenceVersion 当前取预览快照的 evidenceDigest，仅作为证据版本
+        // 标识透传给执行器。进程内执行器尚未比较该值；版本冲突 → CONFLICT 的
+        // 语义（以及冲突后的重新预览）延后到 Task 4 落地，在此之前它不参与执行判定。
         expectedEvidenceVersion: snapshot.evidenceDigest,
       },
     });
@@ -467,7 +519,8 @@ async function runPhase1(
  * 读取并发竞争留下的执行尝试。
  *
  * attempt 创建命中唯一约束时，本事务已经整体回滚（令牌与快照消费不会提交）。
- * 在新事务里先看幂等记录，再看尝试状态，映射规则与 Phase 1 完全一致。
+ * 在新事务里先看幂等记录，再看尝试状态，映射规则与 Phase 1 完全一致
+ * （包括 succeeded 时同一事务内重读幂等记录，见 attemptEnvelope）。
  */
 async function resolveExistingAttempt(
   tenantId: string,
@@ -483,11 +536,92 @@ async function resolveExistingAttempt(
     const attempt = await tx.executionAttempt.findUnique({
       where: { tenantId_toolName_idempotencyKey: { tenantId, toolName, idempotencyKey } },
     });
-    return attempt ? existingAttemptEnvelope(attempt) : null;
+    return attempt ? attemptEnvelope(tx, tenantId, toolName, idempotencyKey, attempt) : null;
   });
 }
 
-/** 结算成功：attempt succeeded + 确定性结果审计 + TEF 幂等记录，同一事务提交。 */
+/**
+ * 条件认领结算权：只有仍处于 executing/unknown 的尝试才能被本次调用结算。
+ *
+ * 对账（Task 4）与前台请求可能同时看到同一个未结算尝试；条件更新的原子性
+ * 保证只有一个调用者能写入终态，另一个必须重放或返回冲突，不能覆盖结果。
+ */
+async function claimAttemptForSettlement(
+  tx: PrismaTx,
+  tenantId: string,
+  attemptId: string,
+  data: Prisma.ExecutionAttemptUpdateManyMutationInput,
+): Promise<boolean> {
+  const claimed = await tx.executionAttempt.updateMany({
+    where: {
+      attemptId,
+      tenantId,
+      status: { in: ['executing', 'unknown'] },
+    },
+    data,
+  });
+  return claimed.count === 1;
+}
+
+/**
+ * 结果审计至多一次。
+ *
+ * 追加前检查 `resultAuditEventId`：对账可能已经补齐结果事件，重复追加会让
+ * 同一次执行出现两条结果记录。事件 ID 仍保持确定性的 `${attemptId}:result`。
+ */
+async function ensureResultAudit(
+  tx: PrismaTx,
+  tenantId: string,
+  attemptId: string,
+  spec: Omit<AuditEventInput, 'eventId' | 'tenantId'>,
+  now: Date,
+): Promise<string> {
+  const current = await tx.executionAttempt.findFirst({
+    where: { attemptId, tenantId },
+    select: { resultAuditEventId: true },
+  });
+  if (current?.resultAuditEventId) return current.resultAuditEventId;
+
+  const appended = await auditChain.append(
+    { eventId: `${attemptId}:result`, tenantId, ...spec },
+    tx,
+    now,
+  );
+  await tx.executionAttempt.update({
+    where: { attemptId },
+    data: { resultAuditEventId: appended.eventId },
+  });
+  return appended.eventId;
+}
+
+/**
+ * 条件结算失败时的响应。
+ *
+ * updateMany 命中 0 行说明另一个调用者（并发请求或对账）已经推进了终态：
+ * 优先重放已提交的幂等记录，其次返回 attempt 中存储的信封；两者都没有时
+ * 只能要求人工对账，绝不能伪造成功或覆盖已有结果。
+ */
+async function settlementRacedEnvelope(
+  tx: PrismaTx,
+  tenantId: string,
+  toolName: string,
+  idempotencyKey: string,
+  attemptId: string,
+  traceId: string,
+): Promise<Envelope> {
+  const record = await tx.idempotencyRecord.findFirst({
+    where: { tenantId, toolName, idempotencyKey },
+  });
+  if (record) return replayIdempotent(record.response);
+
+  const current = await tx.executionAttempt.findFirst({ where: { attemptId, tenantId } });
+  const stored = storedEnvelope(current?.result);
+  if (stored) return replayIdempotent(stored);
+
+  return conflict('execution attempt was settled concurrently; reconciliation required', { traceId });
+}
+
+/** 结算成功：条件迁移 attempt succeeded + 确定性结果审计 + TEF 幂等记录，同一事务提交。 */
 async function settleSuccess(
   principal: Principal,
   options: ContractWriteOptions,
@@ -497,19 +631,62 @@ async function settleSuccess(
   execResult: EffectsExecuteResult,
 ): Promise<Envelope> {
   const settledAt = options.now ?? new Date();
+  const auditEventId = `${attempt.attemptId}:result`;
+  const order = execResult.refs.order as Record<string, unknown> | undefined;
+  const normalizedArgs = attempt.snapshot.normalizedArgs as Record<string, unknown>;
+  const response = ok(
+    {
+      orderId: order?.id ?? normalizedArgs.orderId ?? null,
+      orderNo: order?.orderNo ?? null,
+      status: order?.status ?? (attempt.contract.auditResult === 'compensated' ? 'cancelled' : null),
+      totalAmount: order?.totalAmount ?? null,
+      deposit: order?.deposit ?? null,
+      balance: order?.balance ?? null,
+      termsDays: order?.termsDays ?? null,
+      depositPaymentId: (execResult.refs.depositPayment as Record<string, unknown> | undefined)?.id ?? null,
+      balancePaymentId: (execResult.refs.balancePayment as Record<string, unknown> | undefined)?.id ?? null,
+      ...(attempt.contract.auditResult === 'compensated' ? { compensated: true } : {}),
+      idempotencyKey,
+    },
+    {
+      risk: attempt.claims.risk,
+      reasons: attempt.revalidated.reasons,
+      auditId: auditEventId,
+      traceId: options.traceId,
+    },
+  );
+
+  const auditSpec = attempt.contract.audit(
+    attempt.snapshot.normalizedArgs as never,
+    attempt.revalidated.evidence,
+    execResult,
+  );
 
   return withTenantScope(principal.tenantId, async (tx) => {
-    const auditSpec = attempt.contract.audit(
-      attempt.snapshot.normalizedArgs as never,
-      attempt.revalidated.evidence,
-      execResult,
-    );
+    const claimed = await claimAttemptForSettlement(tx, principal.tenantId, attempt.attemptId, {
+      status: 'succeeded',
+      result: response as unknown as Prisma.InputJsonValue,
+      errorCode: null,
+      errorMessage: null,
+      settledAt,
+    });
+    if (!claimed) {
+      return settlementRacedEnvelope(
+        tx,
+        principal.tenantId,
+        toolName,
+        idempotencyKey,
+        attempt.attemptId,
+        options.traceId,
+      );
+    }
 
-    const appended = await auditChain.append(
+    const resultAuditEventId = await ensureResultAudit(
+      tx,
+      principal.tenantId,
+      attempt.attemptId,
       {
-        eventId: `${attempt.attemptId}:result`,
         traceId: options.traceId,
-        tenantId: principal.tenantId,
         actorId: principal.userId,
         actorType: 'agent',
         tool: toolName,
@@ -524,45 +701,8 @@ async function settleSuccess(
         result: attempt.contract.auditResult ?? 'success',
         subjectRef: auditSpec.subjectRef ?? null,
       },
-      tx,
       settledAt,
     );
-
-    const order = execResult.refs.order as Record<string, unknown> | undefined;
-    const normalizedArgs = attempt.snapshot.normalizedArgs as Record<string, unknown>;
-    const response = ok(
-      {
-        orderId: order?.id ?? normalizedArgs.orderId ?? null,
-        orderNo: order?.orderNo ?? null,
-        status: order?.status ?? (attempt.contract.auditResult === 'compensated' ? 'cancelled' : null),
-        totalAmount: order?.totalAmount ?? null,
-        deposit: order?.deposit ?? null,
-        balance: order?.balance ?? null,
-        termsDays: order?.termsDays ?? null,
-        depositPaymentId: (execResult.refs.depositPayment as Record<string, unknown> | undefined)?.id ?? null,
-        balancePaymentId: (execResult.refs.balancePayment as Record<string, unknown> | undefined)?.id ?? null,
-        ...(attempt.contract.auditResult === 'compensated' ? { compensated: true } : {}),
-        idempotencyKey,
-      },
-      {
-        risk: attempt.claims.risk,
-        reasons: attempt.revalidated.reasons,
-        auditId: appended.eventId,
-        traceId: options.traceId,
-      },
-    );
-
-    await tx.executionAttempt.update({
-      where: { attemptId: attempt.attemptId },
-      data: {
-        status: 'succeeded',
-        result: response as unknown as Prisma.InputJsonValue,
-        resultAuditEventId: appended.eventId,
-        errorCode: null,
-        errorMessage: null,
-        settledAt,
-      },
-    });
 
     await tx.idempotencyRecord.create({
       data: {
@@ -571,7 +711,7 @@ async function settleSuccess(
         idempotencyKey,
         status: 'completed',
         response: response as unknown as object,
-        auditEventId: appended.eventId,
+        auditEventId: resultAuditEventId,
       },
     });
 
@@ -598,19 +738,37 @@ async function settleFailure(
 ): Promise<Envelope> {
   const settledAt = options.now ?? new Date();
   const response = code === 'CONFLICT' ? conflict(message, { traceId: options.traceId }) : fail('INTERNAL', message);
+  const auditSpec = attempt.contract.audit(
+    attempt.snapshot.normalizedArgs as never,
+    attempt.revalidated.evidence,
+    null,
+  );
 
-  await withTenantScope(principal.tenantId, async (tx) => {
-    const auditSpec = attempt.contract.audit(
-      attempt.snapshot.normalizedArgs as never,
-      attempt.revalidated.evidence,
-      null,
-    );
+  return withTenantScope(principal.tenantId, async (tx) => {
+    const claimed = await claimAttemptForSettlement(tx, principal.tenantId, attempt.attemptId, {
+      status: 'failed',
+      result: response as unknown as Prisma.InputJsonValue,
+      errorCode: code,
+      errorMessage: message,
+      settledAt,
+    });
+    if (!claimed) {
+      return settlementRacedEnvelope(
+        tx,
+        principal.tenantId,
+        toolName,
+        idempotencyKey,
+        attempt.attemptId,
+        options.traceId,
+      );
+    }
 
-    const appended = await auditChain.append(
+    const resultAuditEventId = await ensureResultAudit(
+      tx,
+      principal.tenantId,
+      attempt.attemptId,
       {
-        eventId: `${attempt.attemptId}:result`,
         traceId: options.traceId,
-        tenantId: principal.tenantId,
         actorId: principal.userId,
         actorType: 'agent',
         tool: toolName,
@@ -625,21 +783,8 @@ async function settleFailure(
         result: failureResult,
         subjectRef: auditSpec.subjectRef ?? null,
       },
-      tx,
       settledAt,
     );
-
-    await tx.executionAttempt.update({
-      where: { attemptId: attempt.attemptId },
-      data: {
-        status: 'failed',
-        result: response as unknown as Prisma.InputJsonValue,
-        resultAuditEventId: appended.eventId,
-        errorCode: code,
-        errorMessage: message,
-        settledAt,
-      },
-    });
 
     if (code === 'CONFLICT') {
       await tx.idempotencyRecord.create({
@@ -649,13 +794,13 @@ async function settleFailure(
           idempotencyKey,
           status: 'completed',
           response: response as unknown as object,
-          auditEventId: appended.eventId,
+          auditEventId: resultAuditEventId,
         },
       });
     }
-  });
 
-  return response;
+    return response;
+  });
 }
 
 /**
@@ -684,7 +829,9 @@ async function settleUnknown(
           tenantId: principal.tenantId,
           status: { in: ['executing', 'unknown'] },
         },
-        data: { status: 'unknown', errorCode: 'INTERNAL', errorMessage: message },
+        // UNKNOWN 不是确定性错误：不能写成 INTERNAL，否则会把“可能已提交”
+        // 误标成“确定失败”，诱导调用方用新幂等键重试。
+        data: { status: 'unknown', errorCode: 'UNKNOWN', errorMessage: message },
       });
     });
   } catch (settleError) {
@@ -718,13 +865,17 @@ export async function executeContract(
     return fail('VALIDATION_ERROR', `${toolName} requires idempotency_key`);
   }
 
+  let phase1: Phase1Result | undefined;
+  // Phase 1 提交是语义分水岭：提交前失败可以写“确定失败”审计；
+  // 提交后副作用可能已经发生，任何失败审计都会与随后的对账结果矛盾。
+  let phase1Committed = false;
+
   try {
     // 配置错误必须在消费令牌、创建执行尝试之前失败。
     if (!options.effectsExecutor) {
       throw new TefError('INTERNAL', 'EffectsExecutor is not configured');
     }
 
-    let phase1: Phase1Result;
     try {
       phase1 = await runPhase1(principal, token, idempotencyKey, options, toolName, failureResult, now);
     } catch (error) {
@@ -740,20 +891,29 @@ export async function executeContract(
       throw error;
     }
 
+    if (!phase1) {
+      throw new TefError('INTERNAL', 'phase 1 did not return an execution attempt');
+    }
     if (phase1.kind === 'envelope') {
       return phase1.envelope;
     }
 
-    // Phase 2：外部副作用。执行器按 idempotencyKey 幂等，崩溃后可由对账重放。
+    // runPhase1 返回时租户事务已经提交；从这里开始副作用可能发生。
+    phase1Committed = true;
+    const executing = phase1;
+
+    // Phase 2：外部副作用。执行器幂等域只含单一内部工具名，必须用
+    // `toolName:key` 作用域，避免跨工具复用同一业务 key 时重放另一个操作。
+    const executorIdempotencyKey = scopedExecutorIdempotencyKey(toolName, idempotencyKey);
     let execResult: EffectsExecuteResult;
     try {
       execResult = await options.effectsExecutor.execute({
         tenantId: principal.tenantId,
-        idempotencyKey,
-        previewId: phase1.snapshot.previewId,
+        idempotencyKey: executorIdempotencyKey,
+        previewId: executing.snapshot.previewId,
         traceId: options.traceId,
-        expectedEvidenceVersion: phase1.snapshot.evidenceDigest,
-        effects: phase1.revalidated.effects,
+        expectedEvidenceVersion: executing.snapshot.evidenceDigest,
+        effects: executing.revalidated.effects,
       });
     } catch (error) {
       // 违反端口约定抛出的 EffectExecutionError 带确定性错误码；其余异常
@@ -765,23 +925,30 @@ export async function executeContract(
           toolName,
           idempotencyKey,
           failureResult,
-          phase1,
+          executing,
           error.code,
           error.message,
         );
       }
-      return settleUnknown(principal, phase1, error);
+      return settleUnknown(principal, executing, error);
     }
 
     // Phase 3：结算。
     if (execResult.ok) {
-      return settleSuccess(principal, options, toolName, idempotencyKey, phase1, execResult);
+      return settleSuccess(principal, options, toolName, idempotencyKey, executing, execResult);
     }
 
     const code = execResult.error?.code ?? 'INTERNAL';
     const message = execResult.error?.message ?? 'effects execution failed';
-    return settleFailure(principal, options, toolName, idempotencyKey, failureResult, phase1, code, message);
+    return settleFailure(principal, options, toolName, idempotencyKey, failureResult, executing, code, message);
   } catch (error) {
+    if (phase1Committed && phase1?.kind === 'execute') {
+      // Phase 1 已提交且后续步骤意外失败：副作用可能已经发生，尝试仍是
+      // executing。这里写失败审计会在对账补写成功审计后自相矛盾；正确做法
+      // 是把尝试标记为 unknown（或保留 executing），等待同一幂等键收敛。
+      return settleUnknown(principal, phase1, error);
+    }
+
     await auditFailureOutOfTransaction(
       principal,
       options,

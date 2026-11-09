@@ -3,6 +3,7 @@ import {
   executeContract,
   previewContract,
   type ContractToolOptions,
+  type ContractWriteBaseOptions,
   type ContractWriteOptions,
   type Principal,
   type PrismaTx,
@@ -27,9 +28,22 @@ registerCreditOrderContracts();
 
 export type WriteOptions = ContractToolOptions;
 
+/**
+ * 预览/只读路径：显式构造不含执行器的选项。
+ * 预览不执行副作用，注入执行器只会让调用方误以为它在治理链路里。
+ */
+function previewOptions(options: WriteOptions): ContractWriteBaseOptions {
+  return {
+    traceId: options.traceId,
+    secret: options.secret,
+    now: options.now,
+    gatewayFactory: options.gatewayFactory ?? createCrmGateway,
+  };
+}
+
 function withEffectsExecutor(options: WriteOptions): ContractWriteOptions {
   return {
-    ...options,
+    ...previewOptions(options),
     effectsExecutor: options.effectsExecutor ?? createInProcessCrmEffectsExecutor(),
   };
 }
@@ -39,13 +53,7 @@ export function orderPreviewCreate(
   args: Record<string, unknown>,
   options: WriteOptions,
 ): Promise<Envelope> {
-  return previewContract(
-    principal,
-    'create_order',
-    args,
-    { ...withEffectsExecutor(options), gatewayFactory: options.gatewayFactory ?? createCrmGateway },
-    'order.preview_create',
-  );
+  return previewContract(principal, 'create_order', args, previewOptions(options), 'order.preview_create');
 }
 
 export function orderExecuteCreate(
@@ -53,14 +61,7 @@ export function orderExecuteCreate(
   args: { confirmation_token?: string; idempotency_key?: string },
   options: WriteOptions,
 ): Promise<Envelope> {
-  return executeContract(
-    principal,
-    args,
-    { ...withEffectsExecutor(options), gatewayFactory: options.gatewayFactory ?? createCrmGateway },
-    'order.execute_create',
-    'create_order',
-    'failure',
-  );
+  return executeContract(principal, args, withEffectsExecutor(options), 'order.execute_create', 'create_order', 'failure');
 }
 
 export function orderPreviewCompensate(
@@ -68,13 +69,7 @@ export function orderPreviewCompensate(
   args: Record<string, unknown>,
   options: WriteOptions,
 ): Promise<Envelope> {
-  return previewContract(
-    principal,
-    'compensate_order',
-    args,
-    { ...withEffectsExecutor(options), gatewayFactory: options.gatewayFactory ?? createCrmGateway },
-    'order.preview_compensate',
-  );
+  return previewContract(principal, 'compensate_order', args, previewOptions(options), 'order.preview_compensate');
 }
 
 export function orderExecuteCompensate(
@@ -85,7 +80,7 @@ export function orderExecuteCompensate(
   return executeContract(
     principal,
     args,
-    { ...withEffectsExecutor(options), gatewayFactory: options.gatewayFactory ?? createCrmGateway },
+    withEffectsExecutor(options),
     'order.execute_compensate',
     'compensate_order',
     'compensation_failed',

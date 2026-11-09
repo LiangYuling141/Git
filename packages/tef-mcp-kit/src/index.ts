@@ -14,6 +14,7 @@ export { confirmationApprove, confirmationReject } from './tools/confirmation';
 export {
   previewContract,
   executeContract,
+  scopedExecutorIdempotencyKey,
   type ContractWriteOptions,
   type ContractWriteBaseOptions,
   type ContractToolOptions,

@@ -249,13 +249,17 @@ if (!options.effectsExecutor) {
 }
 const execResult = await options.effectsExecutor.execute({
   tenantId: principal.tenantId,
-  idempotencyKey,
+  // 执行器幂等域只有一个内部工具名，必须按工具作用域派生；
+  // 裸业务 key 会让跨工具复用（创建/补偿）互相重放（C Task 3 fix）。
+  idempotencyKey: scopedExecutorIdempotencyKey(toolName, idempotencyKey),
   previewId: snapshot.previewId,
   traceId: options.traceId,
   expectedEvidenceVersion: snapshot.evidenceDigest,
   effects: revalidated.effects,
 });
 ```
+
+**证据版本语义（Task 4 前）**：`expectedEvidenceVersion` 当前取预览快照的 `evidenceDigest`，仅作为证据版本标识透传；进程内执行器尚未比较该值。版本不一致 → `CONFLICT` 的判定与冲突后的重新预览流程延后到 Task 4 实现，在此之前它不参与执行判定。
 
 - [ ] **Step 3：Phase 3（结算）**
 
@@ -299,11 +303,11 @@ npm run lint
 查询 `executionAttempt` 中 status `executing` 且 `updatedAt < now - threshold`，以及 `unknown`：
 
 对每个 attempt：
-- 调用 `effectsExecutor.execute`（同一 idempotencyKey、previewId、traceId、effects）；
-- 成功 → 用 Phase 3 结算（succeeded + 结果审计 + 幂等记录）；
+- 调用 `effectsExecutor.execute`，幂等键必须用 `scopedExecutorIdempotencyKey(attempt.toolName, attempt.idempotencyKey)` 派生，与前台 Phase 2 完全一致；同时传 `attempt.previewId`、`attempt.traceId`、`attempt.effects`；
+- 成功 → 用 Phase 3 的条件结算（`status in (executing, unknown)` + `resultAuditEventId` 去重）：succeeded + 结果审计 + 幂等记录；
 - 确定失败 → failed + 失败审计；
 - 仍未知 → 保持 unknown。
-结果审计使用确定性 eventId，重复对账不重复写事件。
+结果审计使用确定性 eventId，重复对账不重复写事件；`updateMany` 命中 0 行时必须重放已有记录或返回冲突，不能覆盖终态。
 
 - [ ] **Step 2：故障注入测试**
 
