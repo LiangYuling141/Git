@@ -567,6 +567,7 @@ src/
 - [../00-framework.md](../00-framework.md) — 项目框架总览（分层架构、MCP 工具、数据模型、核心流程与实施进度）
 - [14-unified-architecture.md](14-unified-architecture.md) — 统一架构框架（裁决版，权威；operationHash 已拆分为 intentHash + evidenceDigest）
 - [06-system-architecture.md](06-system-architecture.md) — 整体技术架构设计
+- [../superpowers/specs/2026-11-09-tef-extraction-design.md](../superpowers/specs/2026-11-09-tef-extraction-design.md) — 框架剥离与 P1/P2 收尾设计（包边界、API 契约、执行状态机）
 - [03-mcp-tool-whitelist.md](03-mcp-tool-whitelist.md) — MCP 工具白名单体系
 - [04-business-engine.md](04-business-engine.md) — 统一业务引擎设计
 - [07-data-flow-design.md](07-data-flow-design.md) — 核心请求全流程设计

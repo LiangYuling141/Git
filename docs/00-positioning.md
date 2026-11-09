@@ -102,3 +102,4 @@ CRM-ERP 不再是项目的最终形态，而是框架的第一个参考实现与
 - [technical/14-unified-architecture.md](technical/14-unified-architecture.md) — 统一架构框架（裁决版，单一权威）
 - [technical/13-trusted-execution-architecture.md](technical/13-trusted-execution-architecture.md) — 可信执行架构详细设计
 - [technical/06-system-architecture.md](technical/06-system-architecture.md) — 整体技术架构设计
+- [superpowers/specs/2026-11-09-tef-extraction-design.md](superpowers/specs/2026-11-09-tef-extraction-design.md) — 框架剥离与 P1/P2 收尾设计：包边界、API 契约、跨服务执行状态机

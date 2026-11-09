@@ -701,6 +701,7 @@ execute 失败
 - [../00-framework.md](../00-framework.md) — 项目框架总览（全景索引与代码映射，架构裁决仍以本篇为准）
 - [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md) — 可信执行架构详细设计（契约、MCP 工具链、preview/confirm/execute、评测基准）
 - [06-system-architecture.md](06-system-architecture.md) — 整体技术架构设计
+- [../superpowers/specs/2026-11-09-tef-extraction-design.md](../superpowers/specs/2026-11-09-tef-extraction-design.md) — 框架剥离与 P1/P2 收尾设计（包边界、API 契约、执行状态机）
 - [03-mcp-tool-whitelist.md](03-mcp-tool-whitelist.md) — MCP 工具白名单体系（工具命名与分类以 14 号为准）
 - [04-business-engine.md](04-business-engine.md) — 统一业务引擎设计（规则系统已并入契约 Check）
 - [08-risk-classification.md](08-risk-classification.md) — 风险分级素材（等级模型已由 14 号裁决为 L0/L1/L2/Block）
