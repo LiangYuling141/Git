@@ -172,6 +172,46 @@ describe('响应映射：保留契约依赖的关键字段', () => {
   });
 });
 
+describe('端口级参数防御：缺少业务标识时拒绝且不触库', () => {
+  async function expectValidationError(call: () => Promise<unknown>, message: string): Promise<void> {
+    const error = await call().then(
+      () => {
+        throw new Error('expected the gateway to reject, but it resolved');
+      },
+      (reason: unknown) => reason,
+    );
+    expect(error).toBeInstanceOf(TefError);
+    expect((error as TefError).code).toBe('VALIDATION_ERROR');
+    expect((error as TefError).message).toBe(message);
+  }
+
+  it('customer.get / credit.get 缺少 customerId 抛 VALIDATION_ERROR', async () => {
+    const { tx, touched } = untouchableTx();
+    const gateway = createPrismaCrmGateway(tx, BOUND_TENANT);
+
+    for (const operation of [CRM_QUERY.customerGet, CRM_QUERY.creditGet]) {
+      await expectValidationError(
+        () => gateway.query({ tenantId: BOUND_TENANT, operation, params: {} }),
+        'customerId is required',
+      );
+    }
+    expect(touched).toEqual([]);
+  });
+
+  it('products.get 的 skus 缺失或不是数组时抛 VALIDATION_ERROR', async () => {
+    const { tx, touched } = untouchableTx();
+    const gateway = createPrismaCrmGateway(tx, BOUND_TENANT);
+
+    for (const params of [{}, { skus: 'SKU-1' }]) {
+      await expectValidationError(
+        () => gateway.query({ tenantId: BOUND_TENANT, operation: CRM_QUERY.productsGet, params }),
+        'skus must be an array',
+      );
+    }
+    expect(touched).toEqual([]);
+  });
+});
+
 describe('泛型 query 分发', () => {
   it('按 CRM_QUERY 分发到类型化读方法；未知 operation 抛 VALIDATION_ERROR', async () => {
     const customerRow = {

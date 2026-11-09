@@ -99,12 +99,20 @@ export function createPrismaCrmGateway(tx: PrismaTx, tenantId: string): CrmBusin
 
     async getCustomer(input) {
       assertBoundTenant(tenantId, input.tenantId);
+      // 防御纵深：query 端口以 `params as never` 透传，运行时可能缺少 customerId；
+      // Prisma 会忽略 undefined 过滤条件并返回本租户任意客户，必须在触库前拒绝。
+      if (typeof input.customerId !== 'string' || input.customerId.length === 0) {
+        throw new TefError('VALIDATION_ERROR', 'customerId is required');
+      }
       const row = await tx.customer.findFirst({ where: { id: input.customerId, tenantId } });
       return row ? toCustomer(row) : null;
     },
 
     async getCredit(input) {
       assertBoundTenant(tenantId, input.tenantId);
+      if (typeof input.customerId !== 'string' || input.customerId.length === 0) {
+        throw new TefError('VALIDATION_ERROR', 'customerId is required');
+      }
       const [customer, openOrders] = await Promise.all([
         tx.customer.findFirst({ where: { id: input.customerId, tenantId } }),
         tx.order.findMany({
@@ -127,6 +135,10 @@ export function createPrismaCrmGateway(tx: PrismaTx, tenantId: string): CrmBusin
 
     async getProducts(input) {
       assertBoundTenant(tenantId, input.tenantId);
+      // skus 缺失或不是数组时直接读 .length 会抛 TypeError 或静默查空，必须显式拒绝。
+      if (!Array.isArray(input.skus)) {
+        throw new TefError('VALIDATION_ERROR', 'skus must be an array');
+      }
       if (input.skus.length === 0) return [];
       const rows = await tx.product.findMany({ where: { tenantId, sku: { in: input.skus } } });
       return rows.map(toProduct);

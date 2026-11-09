@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { POST } from '@/app/api/internal/v1/query/route';
 
 /**
@@ -16,23 +16,48 @@ const OTHER_TENANT = 't_e2e_other';
 const CUSTOMER = 'c_weiye_import';
 const TOKEN = 'test-internal-token';
 
-process.env.TEF_CRM_SERVICE_TOKEN = TOKEN;
+let savedToken: string | undefined;
 
-function query(body: unknown, token: string | null = TOKEN): Request {
+function request(body: string, token: string | null = TOKEN): Request {
   return new Request('http://localhost/api/internal/v1/query', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify(body),
+    body,
   });
 }
 
+function query(body: unknown, token: string | null = TOKEN): Request {
+  return request(JSON.stringify(body), token);
+}
+
 describeDb('内部 query 网关（真实数据库）', () => {
+  beforeAll(() => {
+    savedToken = process.env.TEF_CRM_SERVICE_TOKEN;
+    process.env.TEF_CRM_SERVICE_TOKEN = TOKEN;
+  });
+
+  afterAll(() => {
+    if (savedToken === undefined) {
+      delete process.env.TEF_CRM_SERVICE_TOKEN;
+    } else {
+      process.env.TEF_CRM_SERVICE_TOKEN = savedToken;
+    }
+  });
+
   it('缺少 Authorization 时返回 401', async () => {
     const response = await POST(
       query({ tenantId: TENANT, operation: 'crm.customer.get', params: { customerId: CUSTOMER } }, null),
+    );
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: 'unauthorized' });
+  });
+
+  it('Authorization 令牌错误时返回 401', async () => {
+    const response = await POST(
+      query({ tenantId: TENANT, operation: 'crm.customer.get', params: { customerId: CUSTOMER } }, 'wrong-token'),
     );
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({ error: 'unauthorized' });
@@ -47,12 +72,28 @@ describeDb('内部 query 网关（真实数据库）', () => {
     expect(body.data?.id).toBe(CUSTOMER);
   });
 
+  it('customer.get 缺少 customerId 时返回 400 且不返回客户', async () => {
+    const response = await POST(query({ tenantId: TENANT, operation: 'crm.customer.get', params: {} }));
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string; message: string; data?: unknown };
+    expect(body.error).toBe('VALIDATION_ERROR');
+    expect(body.message).toContain('customerId');
+    expect(body.data).toBeUndefined();
+  });
+
   it('未知 operation 返回 400', async () => {
     const response = await POST(query({ tenantId: TENANT, operation: 'crm.unknown.op', params: {} }));
     expect(response.status).toBe(400);
     const body = (await response.json()) as { error: string; message: string };
-    expect(body.error).toBe('QUERY_FAILED');
-    expect(body.message).toContain('unknown business query');
+    expect(body.error).toBe('VALIDATION_ERROR');
+    expect(body.message).toContain('unknown operation');
+  });
+
+  it('请求体不是合法 JSON 时返回 400', async () => {
+    const response = await POST(request('{"tenantId":'));
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe('VALIDATION_ERROR');
   });
 
   it('跨租户查询不返回其他租户数据', async () => {
@@ -85,6 +126,15 @@ describeDb('内部 query 网关（真实数据库）', () => {
 
   it('缺少 tenantId 返回 400', async () => {
     const response = await POST(query({ operation: 'crm.customer.get', params: { customerId: CUSTOMER } }));
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe('VALIDATION_ERROR');
+  });
+
+  it('tenantId 为空字符串返回 400', async () => {
+    const response = await POST(
+      query({ tenantId: '', operation: 'crm.customer.get', params: { customerId: CUSTOMER } }),
+    );
     expect(response.status).toBe(400);
     const body = (await response.json()) as { error: string };
     expect(body.error).toBe('VALIDATION_ERROR');
