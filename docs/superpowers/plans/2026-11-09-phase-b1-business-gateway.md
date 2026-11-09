@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- 不改变运行时行为；304 个测试（277 单元 + 27 集成）必须全部通过。
+- 不改变运行时行为；304 个既有测试（277 单元 + 27 集成）必须全部通过；Task 4 新增测试后总数同步更新到文档。
 - 旧导入路径与现有工具返回结构保持不变。
 - `tef-core` 仍不依赖 Prisma、Next.js、垂直包或 MCP 实现。
 - `tef-mcp-kit` 仍不依赖垂直包；网关实现由垂直包注入。
@@ -470,9 +470,25 @@ Expected: 304 passed；lint 0 错误 / 28 警告。
 ## Task 4：文档与最终验收
 
 **Files:**
+- Create: `verticals/crm-erp-mcp/src/gateway/prisma-gateway.test.ts`
+- Modify: `verticals/crm-erp-mcp/src/contracts/credit-order/create-order.test.ts`
+- Modify: `verticals/crm-erp-mcp/src/contracts/credit-order/compensate-order.test.ts`
 - Modify: `docs/00-framework.md`
 - Modify: `docs/superpowers/specs/2026-11-09-tef-extraction-design.md`
 - Modify: `docs/superpowers/plans/2026-11-09-phase-b1-business-gateway.md`
+
+- [ ] **Step 0：补网关与契约 fail-closed 测试**
+
+创建 `verticals/crm-erp-mcp/src/gateway/prisma-gateway.test.ts`，至少覆盖：
+
+1. 7 个网关方法在 `input.tenantId !== 绑定的 tenantId` 时抛 `TefError('PERMISSION_DENIED', 'gateway tenant mismatch')`，且不调用 tx 上的任何方法（用 Proxy 或全抛错 fake tx 证明）。
+2. `getCustomer` 与 `getOrder` 的响应映射保留关键字段（客户额度字段、订单 payments/dueAt、previewId）。
+
+在 `create-order.test.ts` / `compensate-order.test.ts` 各增加一个测试：
+
+3. `loadEvidence` 在 `ctx.gateway` 缺失时抛 `TefError('INTERNAL', 'BusinessGateway is not configured')`，并证明错误发生在访问 `ctx.db` 之前。
+
+新增 4 个测试后，基线变为 308（281 单元 + 27 集成）。同步更新所有活跃文档中的 304/277。
 
 - [ ] **Step 1：更新设计文档状态与实现映射**
 
@@ -499,7 +515,7 @@ TEF_DB_TESTS=1 npm test
 npm run build
 ```
 
-Expected: boundary check 通过；secrets 通过；typecheck 0；lint 0 错误 / 28 警告；304 passed；build 成功。
+Expected: boundary check 通过；secrets 通过；typecheck 0；lint 0 错误 / 28 警告；308 passed；build 成功。
 
 ---
 
