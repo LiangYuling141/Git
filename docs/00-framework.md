@@ -1,7 +1,7 @@
 # LyMatrix TEF 项目框架总览
 
-> **文档版本**：v1.0（2026-11-08）
-> **代码基线**：`feature/mvp-implementation` 工作区（2026-11-08）
+> **文档版本**：v1.1（2026-11-09）
+> **代码基线**：`feature/tef-extraction` 工作区（2026-11-09）
 > **当前成熟度**：设计 L0 已完成；Phase 0 闭环与 Phase 1 补偿运行时已落地；崩溃恢复与并发压测未完成
 > **权威关系**：架构裁决以 [technical/14-unified-architecture.md](technical/14-unified-architecture.md) 为准。本篇是全景入口与代码映射，当本篇与 14 号文档冲突时，以 14 号文档为准。
 
@@ -47,7 +47,7 @@
 
 CRM-ERP 是框架的第一个验证垂直，不是项目最终形态。框架核心不得依赖 CRM 字段、订单模型或义乌规则；垂直能力通过契约与实体适配器注入。
 
-- 框架核心：`src/tef/`、`src/mcp-server/`
+- 框架核心：`packages/tef-core/`（纯治理）+ `src/mcp-server/`（工具层）
 - 垂直实现：`src/contracts/credit-order/`
 - 接入与运行时：`src/app/`、`src/agent-runtime/`
 
@@ -57,7 +57,7 @@ CRM-ERP 是框架的第一个验证垂直，不是项目最终形态。框架核
 |------|------|----------|
 | L0 设计 | 架构、契约、威胁模型成文 | 已完成 |
 | L1 参考实现 | 一个垂直端到端跑通 | 进行中：Phase 0 闭环与 Phase 1 补偿运行时已跑通并持续验证；崩溃恢复与并发压测未完成，因此尚未达到完整 L1 |
-| L2 框架 Beta | 核心与垂直解耦，具备 SDK、文档与测试 | 未开始（核心已不依赖 CRM 字段，这是前置条件而非 L2 本身） |
+| L2 框架 Beta | 核心与垂直解耦，具备 SDK、文档与测试 | 进行中：`@lymatrix/tef-core` 已独立成包且禁止基础设施依赖；MCP Kit、Runtime、SDK 与服务化在后续阶段完成 |
 | L3 工业级 | 安全评审、压测、兼容性、SLA | 未开始 |
 
 对外表述必须注明当前级别。不得把 L0/L1 表述为 L3，也不得把“Phase 0 闭环跑通”等同于“L1 已完成”。
@@ -97,7 +97,7 @@ flowchart TB
 | L2 会话层 | 装配 TaskState、对话上下文、恢复未完成任务 | 把聊天记录当作业务事实 | `src/tef/task-state.ts`、`src/app/api/agent/route.ts` |
 | L3 意图层 | 意图识别、槽位抽取、澄清生成 | 直接写库，或直接决定金额/库存/权限 | `src/agent-runtime/` |
 | L4 MCP 工具层 | 工具白名单、Schema 校验、令牌签发与校验、幂等、审计出口 | 暴露裸 SQL/裸 CRUD；接受未经预览的参数 | `src/mcp-server/` |
-| L5 业务执行层 | 契约引擎、规则校验、风险路由、事务、补偿 | 接受未经契约校验的参数 | `src/tef/`、`src/contracts/` |
+| L5 业务执行层 | 契约引擎、规则校验、风险路由、事务、补偿 | 接受未经契约校验的参数 | `packages/tef-core/`、`src/tef/`、`src/contracts/` |
 | L6 数据层 | 业务数据、缓存、事件日志、哈希链 | 被 Agent 直接访问 | `prisma/` |
 
 ### 3.3 信任域
@@ -125,11 +125,11 @@ flowchart TB
 |----|------|------|----------|
 | 事实层 | 工具 grounding | 客户、订单、库存、额度必须查库 | `src/mcp-server/tools/query.ts` |
 | 输出层 | 结构化输出 | Zod Schema 约束意图与参数 | `src/agent-runtime/intent.ts`、契约 `inputSchema` |
-| 规则层 | 确定性校验 | 前置条件、不变量、权限、金额边界、状态机 | `src/tef/contract-engine.ts`、契约 Check |
+| 规则层 | 确定性校验 | 前置条件、不变量、权限、金额边界、状态机 | `packages/tef-core/src/contract-engine.ts`、契约 Check |
 | 预览层 | dry-run + diff | 展示“将要发生什么”，不写库 | `src/tef/preview-store.ts`、契约 `diff` |
 | 确认层 | 人工确认 | L2 由人查看服务端 diff 与证据后授权 | `src/app/api/agent/confirm/route.ts`、确认 UI |
-| 执行层 | 事务 + 幂等 + 回滚 | 重复请求不重复执行；事务内失败整体回滚 | `src/mcp-server/tools/order.ts`、`src/tef/effect-executor.ts` |
-| 审计层 | 事件日志 + 哈希链 | 可追溯、可回放、可验证篡改 | `src/tef/audit-chain.ts`、`src/tef/redaction.ts` |
+| 执行层 | 事务 + 幂等 + 回滚 | 重复请求不重复执行；事务内失败整体回滚 | `src/mcp-server/tools/order.ts`、`packages/tef-core/src/effect-executor.ts` |
+| 审计层 | 事件日志 + 哈希链 | 可追溯、可回放、可验证篡改 | `src/tef/audit-chain.ts`、`packages/tef-core/src/redaction.ts` |
 
 ---
 
@@ -169,8 +169,8 @@ normalize → inputSchema 双向校验 → loadEvidence → permissions → prec
 
 **核心文件**：
 
-- `src/tef/contract-engine.ts` — 预览与执行前重校验
-- `src/tef/types.ts` — `Contract`、`Check`、`Effect`、`DiffEntry` 等类型
+- `packages/tef-core/src/contract-engine.ts` — 预览与执行前重校验
+- `packages/tef-core/src/types.ts` — `Contract`、`Check`、`Effect`、`DiffEntry` 等类型
 - `src/contracts/credit-order/create-order.ts` — 赊账订单契约
 - `src/contracts/credit-order/adapters.ts` — 垂直实体适配器
 
@@ -207,7 +207,7 @@ normalize → inputSchema 双向校验 → loadEvidence → permissions → prec
 
 框架默认金额阈值为 10,000；参考实现 demo 租户配置为 5,000，用于复现“总额 10,000 判定 L2”的场景。阈值倍率属于 Phase 0 默认值，待 Phase 2 评测后校准。
 
-**核心文件**：`src/tef/risk.ts`。
+**核心文件**：`packages/tef-core/src/risk.ts`。
 
 ### 4.3 预览快照与双层哈希
 
@@ -227,7 +227,7 @@ normalize → inputSchema 双向校验 → loadEvidence → permissions → prec
 | `intentHash` | 契约名 + 契约版本 + 归一化参数 | 绑定令牌与人批准的内容；参数被改则执行失败 |
 | `evidenceDigest` | 加载到的证据 | 只进审计，不参与令牌绑定；证据变化不会让确认必然失效 |
 
-**核心文件**：`src/tef/preview-store.ts`、`src/tef/hashing.ts`、`src/tef/canonical.ts`。
+**核心文件**：`src/tef/preview-store.ts`、`packages/tef-core/src/hashing.ts`、`packages/tef-core/src/canonical.ts`。
 
 ### 4.4 一次性确认令牌与人工确认
 
@@ -296,7 +296,7 @@ issued ──approve──> approved ──consume──> used
 - 补偿执行是单事务，失败整体回滚；幂等键防止重复释放库存或重复归还额度；
 - 补偿的补偿返回空列表，避免递归。
 
-**核心文件**：`src/mcp-server/tools/contract.ts`、`src/mcp-server/tools/order.ts`、`src/tef/effect-executor.ts`、`src/contracts/credit-order/create-order.ts`、`src/contracts/credit-order/compensate-order.ts`。
+**核心文件**：`src/mcp-server/tools/contract.ts`、`src/mcp-server/tools/order.ts`、`packages/tef-core/src/effect-executor.ts`、`src/contracts/credit-order/create-order.ts`、`src/contracts/credit-order/compensate-order.ts`。
 
 ### 4.6 审计哈希链与脱敏
 
@@ -317,7 +317,7 @@ issued ──approve──> approved ──consume──> used
 - 审计只存假名引用，如 `cust:<id>`、`order:<id>`；
 - 哈希链不可变与个人信息删除权的兼容方式是 crypto-shredding，但密钥管理（KMS）尚未实现。
 
-**核心文件**：`src/tef/audit-chain.ts`、`src/tef/redaction.ts`、`src/tef/hashing.ts`。
+**核心文件**：`src/tef/audit-chain.ts`、`packages/tef-core/src/redaction.ts`、`packages/tef-core/src/hashing.ts`。
 
 ### 4.7 TaskState 与澄清协议
 
@@ -647,6 +647,21 @@ sequenceDiagram
 ├── scripts/
 │   ├── bootstrap-db.mjs           # 建 tenants 表与默认租户
 │   └── rls.mjs                    # RLS 应用、验证、撤销、应用角色
+├── packages/
+│   └── tef-core/                  # 纯治理核心包（无 IO、无垂直依赖）
+│       ├── package.json
+│       └── src/
+│           ├── canonical.ts       # 规范化 JSON
+│           ├── contract-engine.ts # 预览与执行前重校验
+│           ├── contract-registry.ts # 进程内契约注册表
+│           ├── effect-executor.ts # 声明式副作用执行
+│           ├── errors.ts          # 稳定错误码
+│           ├── hashing.ts         # 双层哈希与 HMAC
+│           ├── money.ts           # 分为单位的金额运算
+│           ├── redaction.ts       # 脱敏与假名化
+│           ├── risk.ts            # 唯一风险定级器
+│           ├── types.ts           # 框架核心类型
+│           └── index.ts           # 包导出
 ├── src/
 │   ├── proxy.ts                   # API 会话校验中间件
 │   ├── app/                       # Next.js 16 接入层与页面
@@ -672,23 +687,23 @@ sequenceDiagram
 │   │   ├── envelope.ts            # 统一信封与错误翻译
 │   │   ├── principal.ts           # 身份与执行上下文装配
 │   │   └── tools/                 # contract / query / order / confirmation / audit
-│   ├── tef/                       # 可信执行核心（L5）
-│   │   ├── contract-engine.ts     # 预览与重校验
-│   │   ├── contract-registry.ts   # 进程内契约注册表
-│   │   ├── risk.ts                # 唯一风险定级器
-│   │   ├── preview-store.ts       # 预览快照
-│   │   ├── token.ts               # 一次性令牌
-│   │   ├── hashing.ts             # 双层哈希与 HMAC
-│   │   ├── canonical.ts           # 规范化 JSON
-│   │   ├── audit-chain.ts         # 审计哈希链
-│   │   ├── redaction.ts           # 脱敏与假名化
-│   │   ├── task-state.ts          # 12 状态任务状态
-│   │   ├── tenant.ts              # 租户解析、角色与工具 scope
-│   │   ├── tenant-scope.ts        # RLS 会话变量与事务作用域
-│   │   ├── effect-executor.ts     # 声明式副作用执行
-│   │   ├── errors.ts              # 稳定错误码
-│   │   ├── money.ts               # 分为单位的金额运算
-│   │   └── types.ts               # 框架核心类型
+│   ├── tef/                       # 可信执行核心（L5；IO 模块与迁移 shim）
+│   │   ├── preview-store.ts       # 预览快照（仍在此实现）
+│   │   ├── token.ts               # 一次性令牌（仍在此实现）
+│   │   ├── audit-chain.ts         # 审计哈希链（仍在此实现）
+│   │   ├── task-state.ts          # 12 状态任务状态（仍在此实现）
+│   │   ├── tenant.ts              # 租户解析、角色与工具 scope（仍在此实现）
+│   │   ├── tenant-scope.ts        # RLS 会话变量与事务作用域（仍在此实现）
+│   │   ├── contract-engine.ts     # 迁移 shim → packages/tef-core/src/contract-engine.ts
+│   │   ├── contract-registry.ts   # 迁移 shim → packages/tef-core/src/contract-registry.ts
+│   │   ├── risk.ts                # 迁移 shim → packages/tef-core/src/risk.ts
+│   │   ├── hashing.ts             # 迁移 shim → packages/tef-core/src/hashing.ts
+│   │   ├── canonical.ts           # 迁移 shim → packages/tef-core/src/canonical.ts
+│   │   ├── redaction.ts           # 迁移 shim → packages/tef-core/src/redaction.ts
+│   │   ├── effect-executor.ts     # 迁移 shim → packages/tef-core/src/effect-executor.ts
+│   │   ├── errors.ts              # 迁移 shim → packages/tef-core/src/errors.ts
+│   │   ├── money.ts               # 迁移 shim → packages/tef-core/src/money.ts
+│   │   └── types.ts               # 迁移 shim → packages/tef-core/src/types.ts
 │   ├── lib/                       # Prisma、Redis 限流、日志、AI 客户端
 │   ├── components/                # 仪表盘、确认卡片、页头
 │   ├── hooks/                     # 遗留 Hook 系统（不在 TEF 路径）
@@ -713,12 +728,12 @@ sequenceDiagram
 | 模块 | 职责 | 关键文件 | 测试 |
 |------|------|----------|------|
 | 框架核心包 | 纯治理原语，无 IO 与垂直依赖 | `packages/tef-core/src/` | `canonical`、`hashing`、`risk`、`contract-engine` 测试随包迁移 |
-| 框架类型 | 契约、风险、信封、TaskState 类型 | `src/tef/types.ts` | 由各模块测试间接覆盖 |
-| 契约引擎 | 预览、阻断、重校验 | `src/tef/contract-engine.ts` | `contract-engine.test.ts`（21） |
-| 风险路由 | L0/L1/L2/Block 定级 | `src/tef/risk.ts` | `risk.test.ts`（19） |
+| 框架类型 | 契约、风险、信封、TaskState 类型 | `packages/tef-core/src/types.ts` | 由各模块测试间接覆盖 |
+| 契约引擎 | 预览、阻断、重校验 | `packages/tef-core/src/contract-engine.ts` | `packages/tef-core/src/contract-engine.test.ts`（21） |
+| 风险路由 | L0/L1/L2/Block 定级 | `packages/tef-core/src/risk.ts` | `packages/tef-core/src/risk.test.ts`（19） |
 | 预览快照 | 保存、读取、一次性消费、撤销 | `src/tef/preview-store.ts` | `preview-store.test.ts`（10） |
 | 令牌 | 签发、验签、批准、拒绝、消费、撤销 | `src/tef/token.ts` | `token.test.ts`（26） |
-| 哈希 | 意图哈希、证据摘要、链哈希、HMAC | `src/tef/hashing.ts`、`canonical.ts` | `hashing.test.ts`（17）、`canonical.test.ts`（15） |
+| 哈希 | 意图哈希、证据摘要、链哈希、HMAC | `packages/tef-core/src/hashing.ts`、`packages/tef-core/src/canonical.ts` | `packages/tef-core/src/hashing.test.ts`（17）、`packages/tef-core/src/canonical.test.ts`（15） |
 | 审计链 | 追加、校验、回放 | `src/tef/audit-chain.ts` | `audit-chain.test.ts`（25） |
 | 赊账订单契约 | 前置条件、不变量、权限、风险、副作用、补偿、diff | `src/contracts/credit-order/create-order.ts` | `create-order.test.ts`（52） |
 | 补偿契约 | 已提交订单的补偿预览与执行 | `src/contracts/credit-order/compensate-order.ts` | `compensate-order.test.ts`（33） |
@@ -822,7 +837,7 @@ npm run rls:verify
 
 ## 10. 实施进度
 
-| 阶段 | 目标 | 状态（2026-11-08） |
+| 阶段 | 目标 | 状态（2026-11-09） |
 |------|------|--------------------|
 | **Phase 0** | 跑通赊账订单闭环：租户、契约引擎、查询工具、预览/执行、令牌、快照、审计 | **已完成**。多租户、契约引擎、13 个 MCP 工具、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、TaskState、最小 Agent Runtime、确认 UI 全部可运行；当前全量 295 个测试（268 单元 + 27 真实数据库）在 CI 中持续验证 |
 | **Phase 1** | 完善写入协议：L1 自动执行、冲突恢复、补偿、澄清 | **已完成主要项**。L1 自动执行、澄清（上限 3 轮）、`CONFLICT` 检测与旧令牌作废、`compensate_order` 契约与完整补偿运行时（preview → L2 → 人工确认 → execute）均已实现并有测试；崩溃恢复与并发压测未完成 |

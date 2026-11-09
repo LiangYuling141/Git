@@ -263,7 +263,7 @@ stateDiagram-v2
 - 失败时执行契约中定义的补偿动作，并记录 `rolled_back` 事件。
 - 补偿动作本身也必须幂等。
 
-> **实现状态（2026-11-08）**：已提交订单的补偿通过 `compensate_order` 契约执行，复用原契约的 `compensation` 声明；补偿本身是 L2，需要人工确认后才能执行。详见 [../00-framework.md](../00-framework.md) §4.5、§7.5。
+> **实现状态（2026-11-09）**：已提交订单的补偿通过 `compensate_order` 契约执行，复用原契约的 `compensation` 声明；补偿本身是 L2，需要人工确认后才能执行。详见 [../00-framework.md](../00-framework.md) §4.5、§7.5。
 
 ### 4.5 并发控制
 

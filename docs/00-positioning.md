@@ -80,7 +80,7 @@ TEF 的判断是：模型输出无法被证明确定，但**执行边界可以�
 | 中文名 | LyMatrix 可信执行框架 |
 | 包名 | `lymatrix-tef` |
 | 仓库 | `lymatrix-tef` |
-| 参考实现 | `examples/crm-erp`（规划） |
+| 参考实现 | `apps/crm-erp`（规划） |
 | 权威技术文档 | [technical/14-unified-architecture.md](technical/14-unified-architecture.md) |
 
 ## 8. 与 CRM-ERP 的关系

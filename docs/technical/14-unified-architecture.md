@@ -230,7 +230,7 @@ L5 execute（事务内：重校验前置条件 → 写入 → 预占库存 → �
 
 补偿动作本身必须幂等、可重试。
 
-> **实现状态（2026-11-08）**：`compensate_order@1.0` 契约与补偿运行时已落地。补偿本身走 preview → 风险 L2 → 一次性令牌 → 人工确认 → execute，并复用 `create_order.compensation()`，不重写补偿规则。实现细节见 [../00-framework.md](../00-framework.md) §4.5、§7.5。
+> **实现状态（2026-11-09）**：`compensate_order@1.0` 契约与补偿运行时已落地。补偿本身走 preview → 风险 L2 → 一次性令牌 → 人工确认 → execute，并复用 `create_order.compensation()`，不重写补偿规则。实现细节见 [../00-framework.md](../00-framework.md) §4.5、§7.5。
 
 ---
 
