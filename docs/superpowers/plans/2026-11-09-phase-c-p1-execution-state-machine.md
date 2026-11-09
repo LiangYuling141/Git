@@ -336,11 +336,21 @@ npm run lint
 ## Task 5：文档与最终验收
 
 **Files:**
+- Modify: `verticals/crm-erp-mcp/src/gateway/effects-executor.ts`
+- Modify: `packages/tef-mcp-kit/src/reconcile-executions.ts`
 - Modify: `README.md`
 - Modify: `docs/00-framework.md`
+- Modify: `docs/technical/13-trusted-execution-architecture.md`
+- Modify: `docs/technical/14-unified-architecture.md`
 - Modify: `docs/superpowers/specs/2026-11-09-tef-extraction-design.md`
 - Modify: `docs/superpowers/plans/2026-11-09-phase-c-p1-execution-state-machine.md`
 - Modify: `docs/competition/挑战杯项目设计说明书.md`
+
+- [ ] **Step 0：对账健壮性 Minor**
+
+1. `replayIfCommitted` 区分“记录不存在”与“读取异常”：读取异常不能返回确定 CONFLICT，应抛出 `EffectsExecutionUnknownError`，让状态机/对账进入 unknown。补一个单测（mock 读取抛错）。
+2. 对账单条处理加 try/catch：`loadAttemptContext` 或 `reconcileAttempt` 抛异常时记录日志、计为 unknown，不中断整批。
+3. 在 Phase C 文档的已知限制中记录：无法重建的尝试可能长期占用扫描批次（需要 `reconcileBlockedAt` 或游标，B3 处理）；失败审计结果类型在契约与工具注册处有重复推导（新增契约时需统一）。
 
 - [ ] **Step 1：文档**
 
