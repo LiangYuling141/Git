@@ -1,6 +1,6 @@
 # TEF 框架剥离与 P1/P2 收尾设计
 
-> 状态：实施中（Phase A1 已完成，A2–D 待实施）
+> 状态：实施中（Phase A1、A2 已完成，B–D 待实施）
 > 日期：2026-11-09
 > 范围：框架与 CRM-ERP 解耦、P1 收尾、P2 准备
 > 权威架构：[14-unified-architecture.md](../../technical/14-unified-architecture.md)

@@ -47,9 +47,9 @@
 
 CRM-ERP 是框架的第一个验证垂直，不是项目最终形态。框架核心不得依赖 CRM 字段、订单模型或义乌规则；垂直能力通过契约与实体适配器注入。
 
-- 框架核心：`packages/tef-core/`（纯治理）、`src/tef/`（IO 模块与迁移 shim）、`src/mcp-server/`（工具层）
-- 垂直实现：`src/contracts/credit-order/`
-- 接入与运行时：`src/app/`、`src/agent-runtime/`
+- 框架核心：`packages/tef-core/`（纯治理）、`packages/tef-mcp-kit/`（通用 MCP 工具层与状态存储）、`packages/tef-runtime/`（意图、LLM、TaskState 与编排）
+- 垂直实现：`verticals/crm-erp-mcp/`（`src/contracts/credit-order/` 与 `src/mcp-server/` 保留迁移 shim）
+- 接入与运行时：`src/app/`；`src/agent-runtime/`、`src/tef/` 保留迁移 shim
 
 ### 2.4 成熟度口径
 
@@ -648,19 +648,50 @@ sequenceDiagram
 │   ├── bootstrap-db.mjs           # 建 tenants 表与默认租户
 │   └── rls.mjs                    # RLS 应用、验证、撤销、应用角色
 ├── packages/
-│   └── tef-core/                  # 纯治理核心包（无 IO、无垂直依赖）
+│   ├── tef-core/                  # 纯治理核心包（无 IO、无垂直依赖）
+│   │   ├── package.json
+│   │   └── src/
+│   │       ├── canonical.ts       # 规范化 JSON
+│   │       ├── contract-engine.ts # 预览与执行前重校验
+│   │       ├── contract-registry.ts # 进程内契约注册表
+│   │       ├── effect-executor.ts # 声明式副作用执行
+│   │       ├── errors.ts          # 稳定错误码
+│   │       ├── hashing.ts         # 双层哈希与 HMAC
+│   │       ├── money.ts           # 分为单位的金额运算
+│   │       ├── redaction.ts       # 脱敏与假名化
+│   │       ├── risk.ts            # 唯一风险定级器
+│   │       ├── types.ts           # 框架核心类型
+│   │       └── index.ts           # 包导出
+│   ├── tef-mcp-kit/               # 通用 MCP 工具层（允许 IO，不依赖垂直）
+│   │   ├── package.json
+│   │   └── src/
+│   │       ├── server.ts          # MCP Server 工厂与工具注册
+│   │       ├── transport.ts       # InMemoryTransport 客户端会话
+│   │       ├── envelope.ts        # 统一信封与错误翻译
+│   │       ├── principal.ts       # 身份与执行上下文装配
+│   │       ├── tenant.ts          # 工具可见性与角色 scope
+│   │       ├── tenant-scope.ts    # RLS 会话变量与事务作用域
+│   │       ├── prisma.ts          # Prisma 事务类型
+│   │       ├── preview-store.ts   # 预览快照
+│   │       ├── token.ts           # 一次性令牌
+│   │       ├── audit-chain.ts     # 审计哈希链
+│   │       ├── tools/             # contract / confirmation / audit 工具
+│   │       └── index.ts           # 包导出
+│   └── tef-runtime/               # Agent Runtime（L3，不持有数据库凭据）
 │       ├── package.json
 │       └── src/
-│           ├── canonical.ts       # 规范化 JSON
-│           ├── contract-engine.ts # 预览与执行前重校验
-│           ├── contract-registry.ts # 进程内契约注册表
-│           ├── effect-executor.ts # 声明式副作用执行
-│           ├── errors.ts          # 稳定错误码
-│           ├── hashing.ts         # 双层哈希与 HMAC
-│           ├── money.ts           # 分为单位的金额运算
-│           ├── redaction.ts       # 脱敏与假名化
-│           ├── risk.ts            # 唯一风险定级器
-│           ├── types.ts           # 框架核心类型
+│           ├── intent.ts          # 意图解析：模型或确定性回退
+│           ├── LLMClient.ts       # OpenAI 兼容模型客户端
+│           ├── task-state.ts      # 12 状态任务状态
+│           ├── runtime.ts         # 工具编排、澄清、L1/L2 分支
+│           └── index.ts           # 包导出
+├── verticals/
+│   └── crm-erp-mcp/               # 首个参考垂直包
+│       ├── package.json
+│       └── src/
+│           ├── server.ts          # CRM MCP Server（注册查询/订单工具与契约）
+│           ├── tools/             # query / order 工具
+│           ├── contracts/credit-order/ # 赊账订单契约与适配器
 │           └── index.ts           # 包导出
 ├── src/
 │   ├── proxy.ts                   # API 会话校验中间件
@@ -672,28 +703,29 @@ sequenceDiagram
 │   │       ├── agent/confirm/     # 人工确认入口（含 execute-plan.ts 执行计划）
 │   │       ├── auth/              # 登录/登出
 │   │       └── ...                # 客户/订单/支付等遗留 REST 路由
-│   ├── agent-runtime/             # 最小 Agent Runtime（L3）
-│   │   ├── intent.ts              # 意图解析：模型或确定性回退
-│   │   └── runtime.ts             # 工具编排、澄清、L1/L2 分支
-│   ├── contracts/credit-order/    # 赊账订单垂直契约
-│   │   ├── create-order.ts        # 创建订单契约
-│   │   ├── compensate-order.ts    # 补偿契约（复用 create_order.compensation）
-│   │   ├── types.ts               # 参数与证据 Schema
-│   │   ├── adapters.ts            # 实体适配器
-│   │   └── index.ts               # 注册入口
-│   ├── mcp-server/                # MCP 工具层（L4）
-│   │   ├── server.ts              # 工具注册与 client 可见性
-│   │   ├── transport.ts           # InMemoryTransport 客户端会话
-│   │   ├── envelope.ts            # 统一信封与错误翻译
-│   │   ├── principal.ts           # 身份与执行上下文装配
-│   │   └── tools/                 # contract / query / order / confirmation / audit
-│   ├── tef/                       # 可信执行核心（L5；IO 模块与迁移 shim）
-│   │   ├── preview-store.ts       # 预览快照（仍在此实现）
-│   │   ├── token.ts               # 一次性令牌（仍在此实现）
-│   │   ├── audit-chain.ts         # 审计哈希链（仍在此实现）
-│   │   ├── task-state.ts          # 12 状态任务状态（仍在此实现）
-│   │   ├── tenant.ts              # 租户解析、角色与工具 scope（仍在此实现）
-│   │   ├── tenant-scope.ts        # RLS 会话变量与事务作用域（仍在此实现）
+│   ├── agent-runtime/             # 迁移 shim → packages/tef-runtime/src/
+│   │   ├── intent.ts              # re-export shim
+│   │   └── runtime.ts             # re-export shim
+│   ├── contracts/credit-order/    # 迁移 shim → verticals/crm-erp-mcp/src/contracts/credit-order/
+│   │   ├── create-order.ts        # re-export shim
+│   │   ├── compensate-order.ts    # re-export shim
+│   │   ├── types.ts               # re-export shim
+│   │   ├── adapters.ts            # re-export shim
+│   │   └── index.ts               # re-export shim
+│   ├── mcp-server/                # MCP 工具层迁移 shim（L4）
+│   │   ├── server.ts              # shim → vertical server 与 kit 治理工具
+│   │   ├── server.test.ts         # 工具可见性测试（保留在原路径）
+│   │   ├── transport.ts           # shim → vertical client 与 kit 会话类型
+│   │   ├── envelope.ts            # shim → packages/tef-mcp-kit/src/envelope.ts
+│   │   ├── principal.ts           # shim → packages/tef-mcp-kit/src/principal.ts
+│   │   └── tools/                 # shim → kit（contract/confirmation/audit）与 vertical（query/order）
+│   ├── tef/                       # 可信执行核心迁移 shim（L5）
+│   │   ├── preview-store.ts       # shim → packages/tef-mcp-kit/src/preview-store.ts
+│   │   ├── token.ts               # shim → packages/tef-mcp-kit/src/token.ts
+│   │   ├── audit-chain.ts         # shim → packages/tef-mcp-kit/src/audit-chain.ts
+│   │   ├── task-state.ts          # shim → packages/tef-runtime/src/task-state.ts
+│   │   ├── tenant.ts              # shim → packages/tef-mcp-kit/src/tenant.ts
+│   │   ├── tenant-scope.ts        # shim → packages/tef-mcp-kit/src/tenant-scope.ts
 │   │   ├── contract-engine.ts     # 迁移 shim → packages/tef-core/src/contract-engine.ts
 │   │   ├── contract-registry.ts   # 迁移 shim → packages/tef-core/src/contract-registry.ts
 │   │   ├── risk.ts                # 迁移 shim → packages/tef-core/src/risk.ts
@@ -704,7 +736,7 @@ sequenceDiagram
 │   │   ├── errors.ts              # 迁移 shim → packages/tef-core/src/errors.ts
 │   │   ├── money.ts               # 迁移 shim → packages/tef-core/src/money.ts
 │   │   └── types.ts               # 迁移 shim → packages/tef-core/src/types.ts
-│   ├── lib/                       # Prisma、Redis 限流、日志、AI 客户端
+│   ├── lib/                       # Prisma、Redis 限流、日志；LLMClient 为迁移 shim → packages/tef-runtime
 │   ├── components/                # 仪表盘、确认卡片、页头
 │   ├── hooks/                     # 遗留 Hook 系统（不在 TEF 路径）
 │   ├── agents/                    # 遗留多 Agent（不在 TEF 路径）
@@ -729,18 +761,21 @@ sequenceDiagram
 |------|------|----------|------|
 | 框架核心包 | 纯治理原语，无 IO 与垂直依赖 | `packages/tef-core/src/` | `canonical`、`hashing`、`risk`、`contract-engine` 测试随包迁移 |
 | 框架类型 | 契约、风险、信封、TaskState 类型 | `packages/tef-core/src/types.ts` | 由各模块测试间接覆盖 |
+| MCP Kit | 通用 MCP Server 工厂、治理工具、契约运行时与状态存储 | `packages/tef-mcp-kit/src/` | `audit-chain.test.ts`（25）、`preview-store.test.ts`（10）、`token.test.ts`（26）随包迁移 |
+| Agent Runtime | 意图解析、模型客户端、TaskState 与编排 | `packages/tef-runtime/src/` | `intent.test.ts`（17）、`intent.model.test.ts`（3）、`LLMClient.test.ts`（11）随包迁移 |
+| CRM 垂直包 | CRM 查询/订单工具与赊账订单契约 | `verticals/crm-erp-mcp/src/` | `create-order.test.ts`（52）、`compensate-order.test.ts`（33）随包迁移 |
 | 契约引擎 | 预览、阻断、重校验 | `packages/tef-core/src/contract-engine.ts` | `packages/tef-core/src/contract-engine.test.ts`（21） |
 | 风险路由 | L0/L1/L2/Block 定级 | `packages/tef-core/src/risk.ts` | `packages/tef-core/src/risk.test.ts`（19） |
-| 预览快照 | 保存、读取、一次性消费、撤销 | `src/tef/preview-store.ts` | `preview-store.test.ts`（10） |
-| 令牌 | 签发、验签、批准、拒绝、消费、撤销 | `src/tef/token.ts` | `token.test.ts`（26） |
+| 预览快照 | 保存、读取、一次性消费、撤销 | `packages/tef-mcp-kit/src/preview-store.ts`（`src/tef/preview-store.ts` 为 shim） | `preview-store.test.ts`（10） |
+| 令牌 | 签发、验签、批准、拒绝、消费、撤销 | `packages/tef-mcp-kit/src/token.ts`（`src/tef/token.ts` 为 shim） | `token.test.ts`（26） |
 | 哈希 | 意图哈希、证据摘要、链哈希、HMAC | `packages/tef-core/src/hashing.ts`、`packages/tef-core/src/canonical.ts` | `packages/tef-core/src/hashing.test.ts`（17）、`packages/tef-core/src/canonical.test.ts`（15） |
-| 审计链 | 追加、校验、回放 | `src/tef/audit-chain.ts` | `audit-chain.test.ts`（25） |
-| 赊账订单契约 | 前置条件、不变量、权限、风险、副作用、补偿、diff | `src/contracts/credit-order/create-order.ts` | `create-order.test.ts`（52） |
-| 补偿契约 | 已提交订单的补偿预览与执行 | `src/contracts/credit-order/compensate-order.ts` | `compensate-order.test.ts`（33） |
-| 通用契约运行时 | preview/execute 共用逻辑与垂直适配器注入 | `src/mcp-server/tools/contract.ts` | 由 MCP、契约与集成测试覆盖 |
-| 意图解析 | 模型解析与确定性回退、补偿意图 | `src/agent-runtime/intent.ts` | `intent.test.ts`（17）、`intent.model.test.ts`（3） |
-| 模型客户端 | OpenAI 兼容调用、瞬时错误重试、配置检查 | `src/lib/ai/LLMClient.ts` | `LLMClient.test.ts`（11） |
-| MCP Server | 工具注册、可见性、角色 scope | `src/mcp-server/server.ts` | `server.test.ts`（14） |
+| 审计链 | 追加、校验、回放 | `packages/tef-mcp-kit/src/audit-chain.ts`（`src/tef/audit-chain.ts` 为 shim） | `audit-chain.test.ts`（25） |
+| 赊账订单契约 | 前置条件、不变量、权限、风险、副作用、补偿、diff | `verticals/crm-erp-mcp/src/contracts/credit-order/create-order.ts`（`src/contracts/credit-order/create-order.ts` 为 shim） | `create-order.test.ts`（52） |
+| 补偿契约 | 已提交订单的补偿预览与执行 | `verticals/crm-erp-mcp/src/contracts/credit-order/compensate-order.ts`（`src/contracts/credit-order/compensate-order.ts` 为 shim） | `compensate-order.test.ts`（33） |
+| 通用契约运行时 | preview/execute 共用逻辑与垂直适配器注入 | `packages/tef-mcp-kit/src/tools/contract.ts`（`src/mcp-server/tools/contract.ts` 为 shim） | 由 MCP、契约与集成测试覆盖 |
+| 意图解析 | 模型解析与确定性回退、补偿意图 | `packages/tef-runtime/src/intent.ts`（`src/agent-runtime/intent.ts` 为 shim） | `intent.test.ts`（17）、`intent.model.test.ts`（3） |
+| 模型客户端 | OpenAI 兼容调用、瞬时错误重试、配置检查 | `packages/tef-runtime/src/LLMClient.ts`（`src/lib/ai/LLMClient.ts` 为 shim） | `LLMClient.test.ts`（11） |
+| MCP Server | 工具注册、可见性、角色 scope | `packages/tef-mcp-kit/src/server.ts`、`verticals/crm-erp-mcp/src/server.ts`（`src/mcp-server/server.ts` 为 shim） | `src/mcp-server/server.test.ts`（14） |
 | 确认执行计划 | 根据契约选择执行工具与成功状态 | `src/app/api/agent/confirm/execute-plan.ts` | `execute-plan.test.ts`（3） |
 | 闭环集成 | 真实数据库端到端、攻击场景与补偿 | `tests/integration/` | 27（需 `TEF_DB_TESTS=1`） |
 

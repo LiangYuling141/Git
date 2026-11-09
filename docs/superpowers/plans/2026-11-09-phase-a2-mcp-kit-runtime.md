@@ -1,5 +1,7 @@
 # Phase A2：tef-mcp-kit、CRM 垂直 MCP 与 tef-runtime 提取实施计划
 
+> **执行状态**：Phase A2 已完成（2026-11-09，commits 21a9433..最终提交）。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把 MCP 工具层、CRM 垂直实现与 Agent Runtime 从单一 `src/` 应用拆成三个 workspace 包，保持运行时行为与 295 个测试不变。

@@ -42,11 +42,14 @@ LyMatrix TEF 是一个面向 AI Agent 的可信执行框架。它不试图让模
 | 目录 | 现状 | 目标 |
 |------|------|------|
 | `docs/` | 框架设计、参考实现与合规文档 | 拆分为 `docs/core/` 与 `docs/reference/crm-erp/` |
-| `packages/tef-core/` | 框架治理核心（契约、风险、哈希、effects），不依赖 IO 与业务字段 | 保持零 IO、零垂直依赖，作为 MCP Kit、Runtime 与垂直包的公共底座 |
-| `src/` | Next.js 参考实现与尚未迁出的模块 | 后续阶段继续下沉到 `packages/` 与 `apps/` |
+| `packages/tef-core/` | 纯治理核心（契约、风险、哈希、effects），不依赖 IO 与业务字段 | 保持零 IO、零垂直依赖，作为 MCP Kit、Runtime 与垂直包的公共底座 |
+| `packages/tef-mcp-kit/` | 通用 MCP 工厂、治理工具、契约运行时与状态存储 | 保持不依赖垂直包、Agent Runtime 与 Next.js |
+| `packages/tef-runtime/` | 意图、LLM、TaskState 与编排 | 通过注入的 MCP 连接器访问工具，不持有数据库凭据 |
+| `verticals/crm-erp-mcp/` | CRM 查询工具与赊账订单契约 | 作为首个参考垂直插件独立演进 |
+| `src/` | Next.js 参考实现与迁移 shim | 后续阶段继续下沉到 `packages/` 与 `apps/` |
 | `prisma/` | 参考实现数据模型 | 后续阶段拆分为 business / tef / runtime schema |
 
-代码目录拆分已启动：纯治理模块已迁入 `packages/tef-core/`，Next.js 参考实现仍留在 `src/`；仓库改名与其余拆分随后续阶段推进。框架核心不得依赖 CRM 字段、订单模型或义乌规则。
+代码目录拆分已推进到 Phase A2：纯治理模块位于 `packages/tef-core/`，通用 MCP 工具层位于 `packages/tef-mcp-kit/`，Agent Runtime 位于 `packages/tef-runtime/`，CRM 垂直位于 `verticals/crm-erp-mcp/`；`src/` 下对应路径保留 re-export shim，Next.js 应用迁移到 `apps/crm-erp`、SDK 与服务化随后续阶段推进。框架核心不得依赖 CRM 字段、订单模型或义乌规则。
 
 ---
 
