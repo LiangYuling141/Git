@@ -339,6 +339,10 @@ export function createPrismaCrmGateway(tx: PrismaTx, tenantId: string): Business
 }
 ```
 
+**租户一致性要求**：每个方法必须校验 `input.tenantId === tenantId`（闭包绑定值），不一致时抛出 `TefError('PERMISSION_DENIED', 'gateway tenant mismatch')`；禁止静默使用闭包租户。这样进程内实现与后续 HTTP 实现的租户语义一致。
+
+**查询守卫**：`getOrder` 必须继续要求 `orderId` 或 `orderNo` 至少一个；两者都缺省时返回 `null` 或抛 `TefError('VALIDATION_ERROR')`，不得用 tenantId 单独查询首条订单。
+
 - [ ] **Step 2：查询工具改用网关**
 
 在 `tools/query.ts`：
@@ -356,7 +360,8 @@ const gateway = options.gateway ?? createPrismaCrmGateway(tx, principal.tenantId
 - `inventoryCheck` 用 `gateway.searchProducts({ tenantId, term })`。
 - `orderGet` 用 `gateway.getOrder({ tenantId, orderId, orderNo })`。
 - 保持返回结构、字段名、审计事件与错误码不变。
-- 注意：`customerSearch` 的候选列表需要 `creditAvailable`、`status` 与打码手机号；从 `CustomerRecord` 计算/映射，逻辑与旧实现一致。
+- `customerSearch` 的候选列表需要 `creditAvailable`、`status` 与打码手机号；从 `CustomerRecord` 计算/映射，逻辑与旧实现一致。
+- **必须继续调用 `maskPhone`**：网关返回原始手机号，工具响应进入模型上下文前必须打码，不得把 `CustomerRecord.phone` 直接返回。
 
 - [ ] **Step 3：导出网关**
 
