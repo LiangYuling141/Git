@@ -1,4 +1,4 @@
-import { redactArgs, type Envelope } from '@lymatrix/tef-core';
+import { redactArgs, type BusinessGateway, type Envelope } from '@lymatrix/tef-core';
 import {
   auditChain,
   buildExecContext,
@@ -8,6 +8,7 @@ import {
   type Principal,
   type PrismaTx,
 } from '@lymatrix/tef-mcp-kit';
+import { createPrismaCrmGateway } from '../gateway/prisma-gateway';
 
 /**
  * 查询工具（L0，只读）。
@@ -20,6 +21,8 @@ import {
 export interface QueryOptions {
   traceId: string;
   now?: Date;
+  /** 可选注入的业务网关；缺省时在租户事务内构造 Prisma 实现。 */
+  gateway?: BusinessGateway;
 }
 
 /** 电话属于直接标识。工具响应会进模型上下文，所以默认打码。 */
@@ -73,22 +76,14 @@ export async function customerSearch(
   const now = options.now ?? new Date();
 
   return withTenantScope(principal.tenantId, async (tx) => {
-    const rows = await tx.customer.findMany({
-      where: {
-        tenantId: principal.tenantId,
-        OR: [
-          ...(name ? [{ name: { contains: name } }] : []),
-          ...(phone ? [{ phone: { contains: phone } }] : []),
-        ],
-      },
-      take: limit,
-      orderBy: [{ name: 'asc' }, { createdAt: 'asc' }],
-    });
+    const gateway = options.gateway ?? createPrismaCrmGateway(tx, principal.tenantId);
+    const rows = await gateway.searchCustomers({ tenantId: principal.tenantId, name, phone, limit });
 
     // matchReason 让澄清界面能解释"为什么这几个是候选"（§7.3）
     const candidates = rows.map((row) => ({
       id: row.id,
       label: row.name,
+      // 网关返回原始手机号；进入模型上下文前必须打码。
       phone: maskPhone(row.phone),
       matchReason: phone && row.phone === phone ? 'phone_exact' : name && row.name === name ? 'name_exact' : 'name_contains',
       creditAvailable: row.creditLimit - row.creditUsed,
@@ -119,7 +114,8 @@ export async function customerGet(
   const now = options.now ?? new Date();
 
   return withTenantScope(principal.tenantId, async (tx) => {
-    const row = await tx.customer.findFirst({ where: { id: args.customerId, tenantId: principal.tenantId } });
+    const gateway = options.gateway ?? createPrismaCrmGateway(tx, principal.tenantId);
+    const row = await gateway.getCustomer({ tenantId: principal.tenantId, customerId: args.customerId });
     if (!row) {
       // 不区分"不存在"与"属于别的租户"：否则会变成一个跨租户 ID 探测器。
       return fail('NOT_FOUND', `customer ${args.customerId} not found`);
@@ -167,22 +163,12 @@ export async function creditGet(
   const now = options.now ?? new Date();
 
   return withTenantScope(principal.tenantId, async (tx) => {
-    const [customer, openOrders] = await Promise.all([
-      tx.customer.findFirst({ where: { id: args.customerId, tenantId: principal.tenantId } }),
-      tx.order.findMany({
-        where: {
-          tenantId: principal.tenantId,
-          customerId: args.customerId,
-          status: { in: ['pending', 'confirmed', 'shipped'] },
-        },
-        select: { id: true, orderNo: true, balance: true, termsDays: true, status: true, createdAt: true },
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-      }),
-    ]);
+    const gateway = options.gateway ?? createPrismaCrmGateway(tx, principal.tenantId);
+    const credit = await gateway.getCredit({ tenantId: principal.tenantId, customerId: args.customerId });
 
-    if (!customer) return fail('NOT_FOUND', `customer ${args.customerId} not found`);
+    if (!credit) return fail('NOT_FOUND', `customer ${args.customerId} not found`);
 
+    const { customer, openOrders } = credit;
     const creditAvailable = customer.creditLimit - customer.creditUsed;
     const data = {
       customerId: customer.id,
@@ -227,17 +213,11 @@ export async function inventoryCheck(
   const now = options.now ?? new Date();
 
   return withTenantScope(principal.tenantId, async (tx) => {
+    const gateway = options.gateway ?? createPrismaCrmGateway(tx, principal.tenantId);
     // 口语里说的是商品名（"圣诞球"），档案里的主键是 SKU（XMAS-BALL-01），
     // 所以两者都要能匹配——否则模型只能靠猜 SKU。
     const term = typeof args.sku === 'string' && args.sku.trim() ? args.sku.trim() : undefined;
-    const rows = await tx.product.findMany({
-      where: {
-        tenantId: principal.tenantId,
-        ...(term ? { OR: [{ sku: { contains: term } }, { name: { contains: term } }] } : {}),
-      },
-      orderBy: { sku: 'asc' },
-      take: 50,
-    });
+    const rows = await gateway.searchProducts({ tenantId: principal.tenantId, term });
 
     const requested = typeof args.quantity === 'number' ? args.quantity : undefined;
     const items = rows.map((row) => ({
@@ -272,12 +252,11 @@ export async function orderGet(
   const now = options.now ?? new Date();
 
   return withTenantScope(principal.tenantId, async (tx) => {
-    const row = await tx.order.findFirst({
-      where: {
-        tenantId: principal.tenantId,
-        ...(args.orderId ? { id: args.orderId } : { orderNo: args.orderNo as string }),
-      },
-      include: { payments: true, customer: { select: { id: true, name: true } } },
+    const gateway = options.gateway ?? createPrismaCrmGateway(tx, principal.tenantId);
+    const row = await gateway.getOrder({
+      tenantId: principal.tenantId,
+      orderId: args.orderId,
+      orderNo: args.orderNo,
     });
     if (!row) return fail('NOT_FOUND', 'order not found');
 
@@ -285,7 +264,7 @@ export async function orderGet(
       id: row.id,
       orderNo: row.orderNo,
       customerId: row.customerId,
-      customerName: row.customer?.name ?? null,
+      customerName: row.customerName ?? null,
       items: row.items,
       totalAmount: row.totalAmount,
       discount: row.discount,
@@ -301,7 +280,7 @@ export async function orderGet(
         amount: payment.amount,
         method: payment.method,
         status: payment.status,
-        dueAt: payment.dueAt?.toISOString() ?? null,
+        dueAt: payment.dueAt ?? null,
       })),
       asOf: now.toISOString(),
     };

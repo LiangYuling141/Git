@@ -1,4 +1,5 @@
 export { createCrmErpServer, connectCrmErpClient } from './server';
+export { createPrismaCrmGateway } from './gateway/prisma-gateway';
 export {
   creditGet,
   customerGet,
