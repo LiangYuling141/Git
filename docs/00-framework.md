@@ -2,7 +2,7 @@
 
 > **文档版本**：v1.1（2026-11-09）
 > **代码基线**：`feature/tef-extraction` 工作区（2026-11-09）
-> **当前成熟度**：设计 L0 已完成；Phase 0 闭环与 Phase 1 补偿运行时已落地；崩溃恢复与并发压测未完成
+> **当前成熟度**：设计 L0 已完成；Phase 0 闭环、Phase 1 补偿运行时与 Phase C 执行状态机/对账已落地；TaskState 会话级恢复、跨服务 effects 与生产级压测未完成
 > **权威关系**：架构裁决以 [technical/14-unified-architecture.md](technical/14-unified-architecture.md) 为准。本篇是全景入口与代码映射，当本篇与 14 号文档冲突时，以 14 号文档为准。
 
 ---
@@ -56,7 +56,7 @@ CRM-ERP 是框架的第一个验证垂直，不是项目最终形态。框架核
 | 级别 | 定义 | 当前状态 |
 |------|------|----------|
 | L0 设计 | 架构、契约、威胁模型成文 | 已完成 |
-| L1 参考实现 | 一个垂直端到端跑通 | 进行中：Phase 0 闭环与 Phase 1 补偿运行时已跑通并持续验证；崩溃恢复与并发压测未完成，因此尚未达到完整 L1 |
+| L1 参考实现 | 一个垂直端到端跑通 | 进行中：Phase 0 闭环、Phase 1 补偿运行时与 Phase C 执行状态机/对账已跑通并持续验证；TaskState 会话级恢复、跨服务 effects 与生产级压测未完成，因此尚未达到完整 L1 |
 | L2 框架 Beta | 核心与垂直解耦，具备 SDK、文档与测试 | 进行中：@lymtrix/tef-core、@lymtrix/tef-mcp-kit 与 @lymtrix/tef-runtime 已独立成包且由 ESLint/边界检查约束；SDK 与服务化仍待完成 |
 | L3 工业级 | 安全评审、压测、兼容性、SLA | 未开始 |
 
@@ -268,7 +268,9 @@ issued ──approve──> approved ──consume──> used
 
 - 唯一约束 `(tenantId, toolName, idempotencyKey)`；
 - 重复请求返回第一次的结果，并标记 `replayed: true`；
-- 幂等记录与执行结果、审计事件 ID 一起写入。
+- 幂等记录与执行结果、审计事件 ID 一起写入；
+- 执行器幂等键按工具名作用域派生（`scopedExecutorIdempotencyKey(toolName, idempotencyKey)`），创建与补偿等不同操作不互相重放；
+- `execution_attempts` 以 `(tenantId, toolName, idempotencyKey)` 唯一约束登记执行，`executing/unknown` 期间重复请求返回 in-progress 或等待对账。
 
 **执行前重校验**：
 
@@ -281,11 +283,13 @@ issued ──approve──> approved ──consume──> used
 | 令牌与快照 `intentHash` 不一致 | `CONFLICT` |
 | 快照来自不同契约版本 | `CONFLICT` |
 
-**事务边界**：
+**事务边界（Phase C 起为两阶段）**：
 
-令牌消费、快照消费、重校验、副作用写入、审计追加、幂等记录在同一个事务内，要么全部生效，要么全部回滚。
+- Phase 1（事务一）：令牌消费、快照消费、重校验、创建 `execution_attempts(executing)`、追加 `pending` 预审计（`${attemptId}:pre`），提交。提交后副作用才可能发生。
+- Phase 2：`EffectsExecutor` 执行声明式 effects，幂等键按工具名作用域派生。
+- Phase 3（事务二）：条件结算尝试为 `succeeded/failed`，追加确定性结果审计（`${attemptId}:result`）并写幂等记录。
 
-事务内失败不需要补偿契约；已提交后撤销才需要补偿。
+事务内失败不需要补偿契约；已提交后撤销才需要补偿。响应丢失、超时或崩溃会留下 `executing/unknown` 尝试，由 `reconcileExecutions` 用同一幂等键收敛；系统保证副作用 at-most-once，不宣称 exactly-once。
 
 **补偿运行时（已实现）**：
 
@@ -296,7 +300,7 @@ issued ──approve──> approved ──consume──> used
 - 补偿执行是单事务，失败整体回滚；幂等键防止重复释放库存或重复归还额度；
 - 补偿的补偿返回空列表，避免递归。
 
-**核心文件**：`packages/tef-mcp-kit/src/tools/contract.ts`（`src/mcp-server/tools/contract.ts` 为 shim）、`verticals/crm-erp-mcp/src/tools/order.ts`（`src/mcp-server/tools/order.ts` 为 shim）、`packages/tef-core/src/effect-executor.ts`、`verticals/crm-erp-mcp/src/contracts/credit-order/create-order.ts`（`src/contracts/credit-order/create-order.ts` 为 shim）、`verticals/crm-erp-mcp/src/contracts/credit-order/compensate-order.ts`（`src/contracts/credit-order/compensate-order.ts` 为 shim）。
+**核心文件**：`packages/tef-mcp-kit/src/tools/contract.ts`（`src/mcp-server/tools/contract.ts` 为 shim）、`packages/tef-mcp-kit/src/reconcile-executions.ts`、`packages/tef-core/src/execution.ts`、`verticals/crm-erp-mcp/src/gateway/effects-executor.ts`、`verticals/crm-erp-mcp/src/tools/order.ts`（`src/mcp-server/tools/order.ts` 为 shim）、`packages/tef-core/src/effect-executor.ts`、`verticals/crm-erp-mcp/src/contracts/credit-order/create-order.ts`（`src/contracts/credit-order/create-order.ts` 为 shim）、`verticals/crm-erp-mcp/src/contracts/credit-order/compensate-order.ts`（`src/contracts/credit-order/compensate-order.ts` 为 shim）。
 
 ### 4.6 审计哈希链与脱敏
 
@@ -307,6 +311,8 @@ issued ──approve──> approved ──consume──> used
 - 链头行作为乐观锁锚点，并发追加时只有一个能推进 `seq`；
 - `verify()` 逐条重算 `seq`、`prevHash`、`payloadDigest`、`hash`，定位第一个断点；
 - 审计写入与业务写入同生共死；失败记录在另一个事务中补写，避免“失败过”也查不到。
+
+**审计结果类型**：`success`、`failure`、`compensated`、`compensation_failed`、`pending`。`pending` 是 Phase C 的预审计：执行意图已登记、结果未定，对账补写 `${attemptId}:result` 后语义闭合。
 
 **审计事件字段**：`traceId`、`actorId`、`actorType`、`tool`、`contract`、`contractVersion`、`intentHash`、`argsRedacted`、`evidenceDigest`、`risk`、`reasons`、`decision`、`result`、`subjectRef`、`modelVersion`、`promptVersion`、`ts`、`prevHash`、`hash`、`payloadDigest`。
 
@@ -352,10 +358,13 @@ issued ──approve──> approved ──consume──> used
    - L1：直接进入执行
    - L2：等待独立 client 人工 approve
    - Block：记录审计，终止，不签发令牌
-10. 执行前重校验：事务内重新加载证据，检测并发漂移与风险升级
-11. 执行副作用：订单、收款计划、库存预占、信用额度占用
-12. 审计与幂等：追加哈希链事件，写入幂等记录，提交事务
-13. 已提交后撤销：通过 compensate_order 重新走 preview → L2 → 人工确认 → execute，
+10. Phase 1 事务：重新加载证据、检测并发漂移与风险升级，创建 executing 尝试，
+    追加 pending 预审计，提交；此后副作用才可能发生
+11. Phase 2 副作用：通过幂等 EffectsExecutor 写入订单、收款计划、库存预占、信用额度占用
+12. Phase 3 事务：条件结算尝试，追加结果审计（成功/失败），写入幂等记录
+13. 结果未知（响应丢失/超时/崩溃）：尝试保持 executing 或进入 unknown；
+    对账用同一幂等键重放，补写结果审计与幂等记录
+14. 已提交后撤销：通过 compensate_order 重新走 preview → L2 → 人工确认 → execute，
     按原契约声明的 compensation 反向执行，并写 compensated 审计事件
 ```
 
@@ -442,7 +451,7 @@ Agent Runtime 与 MCP Server 之间使用真实的 MCP 协议栈和进程内 `In
 
 ### 6.1 模型分组
 
-`prisma/schema.prisma` 当前定义 19 个模型：
+`prisma/schema.prisma` 当前定义 20 个模型：
 
 | 分组 | 模型 | 状态 |
 |------|------|------|
@@ -450,7 +459,7 @@ Agent Runtime 与 MCP Server 之间使用真实的 MCP 协议栈和进程内 `In
 | 身份与会话 | `User`、`Session` | 接入层使用 |
 | 业务实体 | `Customer`、`Order`、`Payment`、`Product` | 参考实现 |
 | 遗留治理 | `WhitelistEntry`、`ConfirmationRequest`、`AuditLog` | 遗留；TEF 确认走快照 + 令牌，审计走哈希链 |
-| TEF 核心 | `PreviewSnapshot`、`ConfirmationToken`、`IdempotencyRecord`、`AuditChainHead`、`AuditEvent`、`TaskState` | TEF 路径 |
+| TEF 核心 | `PreviewSnapshot`、`ConfirmationToken`、`IdempotencyRecord`、`AuditChainHead`、`AuditEvent`、`TaskState`、`ExecutionAttempt` | TEF 路径 |
 | 可观测性 | `SystemLog`、`HookExecutionLog` | 遗留/运维 |
 
 ### 6.2 TEF 核心表
@@ -463,14 +472,15 @@ Agent Runtime 与 MCP Server 之间使用真实的 MCP 协议栈和进程内 `In
 | `audit_chain_heads` | 每租户链头 | 主键 `tenantId`；`lastSeq`、`lastHash` |
 | `audit_events` | 只追加审计事件 | 唯一约束 `(tenantId, seq)`；`hash` 唯一 |
 | `task_states` | 任务状态 | 唯一约束 `(tenantId, conversationId)`；乐观锁 `version` |
+| `execution_attempts` | 执行尝试与状态机 | 唯一约束 `(tenantId, toolName, idempotencyKey)`；`status`、`preAuditEventId`、`resultAuditEventId` |
 
 ### 6.3 行级安全（RLS）
 
-15 张租户表启用 RLS：
+16 张租户表启用 RLS：
 
 | 档位 | 表 |
 |------|----|
-| 启用并 FORCE（7 张） | `audit_events`、`audit_chain_heads`、`preview_snapshots`、`confirmation_tokens`、`idempotency_records`、`task_states`、`products` |
+| 启用并 FORCE（8 张） | `audit_events`、`audit_chain_heads`、`preview_snapshots`、`confirmation_tokens`、`idempotency_records`、`task_states`、`execution_attempts`、`products` |
 | 仅启用（8 张） | `customers`、`orders`、`payments`、`users`、`sessions`、`whitelist_entries`、`confirmation_requests`、`audit_logs` |
 
 **为什么不是全量 FORCE**：开发库连接角色是表 owner，而 owner 默认不受 RLS 约束，只有 `FORCE` 才生效。一旦对 `customers`/`orders`/`payments` 强制启用，尚未迁移到租户作用域的遗留 REST 路由会静默返回空结果集，这比没有隔离更危险。
@@ -640,8 +650,8 @@ sequenceDiagram
 ```text
 .
 ├── prisma/
-│   ├── schema.prisma              # 19 个模型、16 个枚举
-│   ├── rls.sql                    # 15 张租户表的 RLS 策略
+│   ├── schema.prisma              # 20 个模型、17 个枚举
+│   ├── rls.sql                    # 16 张租户表的 RLS 策略
 │   ├── seed.mjs                   # 义乌赊账订单参考场景种子数据
 │   └── migrations/                # 数据库迁移
 ├── scripts/
@@ -752,7 +762,10 @@ sequenceDiagram
 │   └── audit/                     # 遗留审计日志（不在 TEF 路径）
 ├── tests/integration/
 │   ├── phase0-loop.test.ts        # 19 个真实数据库闭环与攻击场景测试
-│   └── phase1-compensation.test.ts # 8 个真实数据库补偿集成测试
+│   ├── phase1-compensation.test.ts # 9 个真实数据库补偿集成测试
+│   ├── internal-gateway.test.ts   # 29 个内部 HTTP 网关集成测试
+│   ├── execution-settlement.test.ts # 2 个执行结算测试
+│   └── execution-recovery.test.ts # 11 个执行状态机、对账与故障注入测试
 ├── .github/workflows/ci.yml       # PostgreSQL 16 + 完整验证流水线
 ├── vitest.config.ts
 └── package.json
@@ -770,7 +783,7 @@ sequenceDiagram
 | CRM 业务网关 | `CrmBusinessGateway` 的进程内 Prisma 实现：在核心泛型端口上扩展 CRM 类型化读方法，显式租户绑定、响应字段映射 | `verticals/crm-erp-mcp/src/gateway/prisma-gateway.ts` | `prisma-gateway.test.ts`（5） |
 | HTTP 业务网关 | `HttpCrmGateway`：把查询与 `executeEffects` 翻译为 CRM 内部 HTTP 调用，租户绑定校验先于 fetch，非 2xx 映射为 `TefError` 或 `{ ok:false, error }` | `verticals/crm-erp-mcp/src/gateway/http-gateway.ts`、`factory.ts` | `http-gateway.test.ts`（28） |
 | CRM 内部 HTTP 网关 | `POST /api/internal/v1/query` 与 `/api/internal/v1/effects/execute`：服务令牌鉴权、`withTenantScope`、effect 白名单、幂等记录与业务写入同事务 | `src/app/api/internal/v1/query/route.ts`、`src/app/api/internal/v1/effects/execute/route.ts` | `tests/integration/internal-gateway.test.ts`（29，需 `TEF_DB_TESTS=1`） |
-| MCP Kit | 通用 MCP Server 工厂、治理工具、契约运行时与状态存储 | `packages/tef-mcp-kit/src/` | `audit-chain.test.ts`（25）、`preview-store.test.ts`（10）、`token.test.ts`（26）随包迁移 |
+| MCP Kit | 通用 MCP Server 工厂、治理工具、契约运行时与状态存储 | `packages/tef-mcp-kit/src/` | `audit-chain.test.ts`（26）、`preview-store.test.ts`（10）、`token.test.ts`（26）随包迁移 |
 | Agent Runtime | 意图解析、模型客户端、TaskState 与编排 | `packages/tef-runtime/src/` | `intent.test.ts`（17）、`intent.model.test.ts`（3）、`LLMClient.test.ts`（11）随包迁移 |
 | CRM 垂直包 | CRM 查询/订单工具与赊账订单契约 | `verticals/crm-erp-mcp/src/` | `create-order.test.ts`（53）、`compensate-order.test.ts`（34）随包迁移 |
 | 契约引擎 | 预览、阻断、重校验 | `packages/tef-core/src/contract-engine.ts` | `packages/tef-core/src/contract-engine.test.ts`（21） |
@@ -778,7 +791,10 @@ sequenceDiagram
 | 预览快照 | 保存、读取、一次性消费、撤销 | `packages/tef-mcp-kit/src/preview-store.ts`（`src/tef/preview-store.ts` 为 shim） | `preview-store.test.ts`（10） |
 | 令牌 | 签发、验签、批准、拒绝、消费、撤销 | `packages/tef-mcp-kit/src/token.ts`（`src/tef/token.ts` 为 shim） | `token.test.ts`（26） |
 | 哈希 | 意图哈希、证据摘要、链哈希、HMAC | `packages/tef-core/src/hashing.ts`、`packages/tef-core/src/canonical.ts` | `packages/tef-core/src/hashing.test.ts`（17）、`packages/tef-core/src/canonical.test.ts`（15） |
-| 审计链 | 追加、校验、回放 | `packages/tef-mcp-kit/src/audit-chain.ts`（`src/tef/audit-chain.ts` 为 shim） | `audit-chain.test.ts`（25） |
+| 审计链 | 追加、校验、回放 | `packages/tef-mcp-kit/src/audit-chain.ts`（`src/tef/audit-chain.ts` 为 shim） | `audit-chain.test.ts`（26） |
+| 执行状态机 | 预审计 → effects → 结果审计；`executing/succeeded/failed/unknown` 条件结算 | `packages/tef-mcp-kit/src/tools/contract.ts`、`packages/tef-core/src/execution.ts` | 由 MCP、契约、结算与恢复集成测试覆盖 |
+| 进程内 effects 执行器 | 幂等执行声明式 effects；冲突后重读幂等记录；读取异常收敛为 UNKNOWN | `verticals/crm-erp-mcp/src/gateway/effects-executor.ts` | `effects-executor.test.ts`（4，需 `TEF_DB_TESTS=1`）、`effects-executor-replay.test.ts`（3） |
+| 执行对账 | 扫描 `unknown` 与超时 `executing`，用同一幂等键收敛并补写结果审计 | `packages/tef-mcp-kit/src/reconcile-executions.ts` | `tests/integration/execution-recovery.test.ts`（11，需 `TEF_DB_TESTS=1`） |
 | 赊账订单契约 | 前置条件、不变量、权限、风险、副作用、补偿、diff | `verticals/crm-erp-mcp/src/contracts/credit-order/create-order.ts`（`src/contracts/credit-order/create-order.ts` 为 shim） | `create-order.test.ts`（53） |
 | 补偿契约 | 已提交订单的补偿预览与执行 | `verticals/crm-erp-mcp/src/contracts/credit-order/compensate-order.ts`（`src/contracts/credit-order/compensate-order.ts` 为 shim） | `compensate-order.test.ts`（34） |
 | 通用契约运行时 | preview/execute 共用逻辑与垂直适配器注入 | `packages/tef-mcp-kit/src/tools/contract.ts`（`src/mcp-server/tools/contract.ts` 为 shim） | 由 MCP、契约与集成测试覆盖 |
@@ -786,9 +802,10 @@ sequenceDiagram
 | 模型客户端 | OpenAI 兼容调用、瞬时错误重试、配置检查 | `packages/tef-runtime/src/LLMClient.ts`（`src/lib/ai/LLMClient.ts` 为 shim） | `LLMClient.test.ts`（11） |
 | MCP Server | 工具注册、可见性、角色 scope | `packages/tef-mcp-kit/src/server.ts`、`verticals/crm-erp-mcp/src/server.ts`（`src/mcp-server/server.ts` 为 shim） | `src/mcp-server/server.test.ts`（14） |
 | 确认执行计划 | 根据契约选择执行工具与成功状态 | `src/app/api/agent/confirm/execute-plan.ts` | `execute-plan.test.ts`（3） |
-| 闭环集成 | 真实数据库端到端、攻击场景、补偿与内部网关 | `tests/integration/` | 56（需 `TEF_DB_TESTS=1`） |
+| 闭环集成 | 真实数据库端到端、攻击场景、补偿、内部网关、执行结算与对账 | `tests/integration/` | 70（需 `TEF_DB_TESTS=1`） |
+| 执行器集成 | 进程内 effects 执行器幂等、并发与重放 | `verticals/crm-erp-mcp/src/gateway/effects-executor.test.ts` | 4（需 `TEF_DB_TESTS=1`） |
 
-> 另有遗留测试 `src/agents/SubAgent.validation.test.ts`（2 个）计入 317 个单元测试总数；它属于旧投票路径，不在 TEF 模块映射内。
+> 另有遗留测试 `src/agents/SubAgent.validation.test.ts`（2 个）计入 321 个单元测试总数；它属于旧投票路径，不在 TEF 模块映射内。
 >
 > `BusinessGateway` 是 Phase B2 CRM HTTP 网关的端口：核心只定义泛型 `query` + `executeEffects`，不含 CRM 字段；CRM DTO 与类型化读方法通过垂直包的 `CrmBusinessGateway extends BusinessGateway` 扩展。Phase B2 默认仍使用进程内 Prisma 实现（`PrismaCrmGateway`），仅显式设置 `TEF_CRM_GATEWAY=http` 时切换为 `HttpCrmGateway`；垂直查询工具与契约 `loadEvidence` 均经该端口读取业务数据。
 
@@ -816,10 +833,10 @@ sequenceDiagram
 
 | 层级 | 范围 | 数量 | 运行条件 |
 |------|------|------|----------|
-| 单元测试 | 契约引擎、风险、哈希、快照、令牌、审计链、意图、MCP、创建与补偿契约、Prisma/HTTP 业务网关、确认执行计划、包边界检查 | 317 | `npm test` 默认运行 |
-| 数据库集成测试 | Phase 0 闭环/攻击场景（19）+ Phase 1 补偿闭环（8）+ 内部 HTTP 网关（29） | 56 | `TEF_DB_TESTS=1` 且 `DATABASE_URL` 可用 |
+| 单元测试 | 契约引擎、风险、哈希、快照、令牌、审计链、意图、MCP、创建与补偿契约、Prisma/HTTP 业务网关、执行器重读语义、确认执行计划、包边界检查 | 321 | `npm test` 默认运行 |
+| 数据库集成测试 | Phase 0 闭环/攻击场景（19）+ Phase 1 补偿闭环（9）+ 内部 HTTP 网关（29）+ 执行结算（2）+ 执行状态机/对账/故障注入（11）+ 进程内执行器（4） | 74 | `TEF_DB_TESTS=1` 且 `DATABASE_URL` 可用 |
 
-本地实测（2026-11-09）：317 个单元测试通过；设置 `TEF_DB_TESTS=1` 后 373 个测试全部通过；typecheck 通过；build 通过；lint 为 0 错误、28 警告（集中在遗留代码）。
+本地实测（2026-11-10）：321 个单元测试通过；设置 `TEF_DB_TESTS=1` 后 395 个测试全部通过（321 单元 + 74 数据库）；typecheck、lint、boundaries:check、secrets:check 与 build 通过。
 
 ### 9.3 CI 流水线
 
@@ -829,7 +846,7 @@ sequenceDiagram
 checkout → setup Node 22 → npm ci → prisma generate
 → bootstrap default tenant → prisma db push → seed
 → rls:apply → prepare non-superuser app role
-→ typecheck → lint → boundaries:check → test（含 56 个数据库集成测试：Phase 0 闭环 19 + Phase 1 补偿 8 + 内部 HTTP 网关 29）
+→ typecheck → lint → boundaries:check → test（含 74 个数据库集成测试：Phase 0 闭环 19 + Phase 1 补偿 9 + 内部 HTTP 网关 29 + 执行结算 2 + 执行状态机/对账 11 + 进程内执行器 4）
 → rls:verify（以非 owner 角色）→ build
 ```
 
@@ -873,10 +890,10 @@ npm run rls:verify
 | `TEF_DB_TESTS` | 否 | 设为 `1` 时 `npm test` 额外执行真实数据库集成测试 |
 | `TEF_MODEL_TESTS` | 否 | 设为 `1` 时测试保留真实 `DEEPSEEK_API_KEY` 并调用模型；默认清空 Key，走确定性解析器 |
 | `PORT` | 否 | Next.js 监听端口，默认 3000 |
-| `TEF_CRM_GATEWAY` | 否 | `prisma`（默认）或 `http`；`http` 时业务 MCP 经 `HttpCrmGateway` 调用 CRM 内部网关。HTTP 通道包含 query 与 effects:execute，但 TEF 契约执行路径仍走本地适配器；Phase C 接入跨服务执行前禁止在生产启用。未知非空值直接报错，不回落 Prisma。详见 [README 内部 HTTP 网关](../README.md#内部-http-网关phase-b2) |
+| `TEF_CRM_GATEWAY` | 否 | `prisma`（默认）或 `http`；`http` 时业务 MCP 经 `HttpCrmGateway` 调用 CRM 内部网关。HTTP 通道包含 query 与 effects:execute，但 TEF 契约执行路径仍走本地适配器；B3 接入跨服务执行前禁止在生产启用。未知非空值直接报错，不回落 Prisma。详见 [README 内部 HTTP 网关](../README.md#内部-http-网关phase-b2) |
 | `TEF_CRM_SERVICE_TOKEN` | 条件 | CRM 内部网关的服务令牌；设为 `http` 模式时必填。缺失时内部端点 fail-closed 返回 503，`HttpCrmGateway` 构造失败 |
 | `TEF_CRM_API_BASE` | 条件 | `HttpCrmGateway` 访问 CRM 内部网关的基址（如 `http://localhost:3000`）；仅 `TEF_CRM_GATEWAY=http` 时使用 |
-| `TEF_CRM_EFFECTS_ENABLED` | 否 | 设为 `1` 才启用 `/api/internal/v1/effects/execute`；默认关闭，关闭时经服务令牌鉴权后仍返回 404。Phase C 接入预览、令牌与审计前仅限受控环境 |
+| `TEF_CRM_EFFECTS_ENABLED` | 否 | 设为 `1` 才启用 `/api/internal/v1/effects/execute`；默认关闭，关闭时经服务令牌鉴权后仍返回 404。B3 完成跨服务预览、令牌与审计接线前仅限受控环境 |
 
 ### 9.6 密钥管理
 
@@ -890,12 +907,13 @@ npm run rls:verify
 
 ## 10. 实施进度
 
-| 阶段 | 目标 | 状态（2026-11-09） |
+| 阶段 | 目标 | 状态（2026-11-10） |
 |------|------|--------------------|
-| **Phase 0** | 跑通赊账订单闭环：租户、契约引擎、查询工具、预览/执行、令牌、快照、审计 | **已完成**。多租户、契约引擎、13 个 MCP 工具、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、TaskState、最小 Agent Runtime、确认 UI 全部可运行；当前全量 373 个测试（317 单元 + 56 真实数据库）在 CI 中持续验证 |
-| **Phase 1** | 完善写入协议：L1 自动执行、冲突恢复、补偿、澄清 | **已完成主要项**。L1 自动执行、澄清（上限 3 轮）、`CONFLICT` 检测与旧令牌作废、`compensate_order` 契约与完整补偿运行时（preview → L2 → 人工确认 → execute）均已实现并有测试；崩溃恢复与并发压测未完成 |
-| **Phase B2** | CRM 内部 HTTP 网关：`query`、`effects:execute`、`HttpCrmGateway` 与切换工厂 | **已完成**。内部端点使用服务令牌鉴权、租户绑定、effect 白名单与同事务幂等；默认仍为进程内 Prisma，HTTP 通道含 query 与默认关闭的 effects:execute，但契约执行仍走本地适配器并受已知限制约束（见 §11），跨服务 effects 执行留待 Phase C |
-| **Phase 2** | 评测体系：300–500 条样本、拦截率、误拒率、P95、成本、可选验证器 | **未开始** |
+| **Phase 0** | 跑通赊账订单闭环：租户、契约引擎、查询工具、预览/执行、令牌、快照、审计 | **已完成**。多租户、契约引擎、13 个 MCP 工具、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、TaskState、最小 Agent Runtime、确认 UI 全部可运行；当前全量 395 个测试（321 单元 + 74 真实数据库）在 CI 中持续验证 |
+| **Phase 1** | 完善写入协议：L1 自动执行、冲突恢复、补偿、澄清 | **已完成主要项**。L1 自动执行、澄清（上限 3 轮）、`CONFLICT` 检测与旧令牌作废、`compensate_order` 契约与完整补偿运行时（preview → L2 → 人工确认 → execute）均已实现并有测试 |
+| **Phase B2** | CRM 内部 HTTP 网关：`query`、`effects:execute`、`HttpCrmGateway` 与切换工厂 | **已完成**。内部端点使用服务令牌鉴权、租户绑定、effect 白名单与同事务幂等；默认仍为进程内 Prisma，HTTP 通道含 query 与默认关闭的 effects:execute，但契约执行仍走本地适配器并受已知限制约束（见 §11），跨服务 effects 接线留待 B3 |
+| **Phase C** | P1 收尾：执行状态机、`execution_attempts`、预审计 `pending`、UNKNOWN 对账、故障注入与并发 | **已完成**。两阶段执行 + 三阶段语义、进程内幂等执行器、对账补写结果审计、故障注入与并发测试全部落地；保证副作用 at-most-once。已知限制见 §10.3 |
+| **Phase 2** | 评测体系：300–500 条样本、拦截率、误拒率、P95、成本、可选验证器 | **未开始**（Phase D 准备指标埋点、fixture 与 eval harness） |
 | **Phase 3** | 框架化与行业扩展：行业插件、计量计费、角色细化、SDK、生产部署 | **未开始** |
 | 后续 | 工业级：安全评审、压测、兼容性、SLA、私有化 | **未开始** |
 
@@ -933,10 +951,34 @@ npm run rls:verify
 
 | 缺口 | 现状 |
 |------|------|
-| 崩溃恢复 | TaskState 已持久化；崩溃后恢复未做完整验证 |
-| 并发压测 | 有事务内重校验与 `CONFLICT` 检测；没有并发压力测试与容量数据 |
+| 崩溃恢复 | 执行尝试级恢复已由 Phase C 对账覆盖（见 §10.3）；TaskState 会话级恢复未做完整验证 |
+| 并发压测 | 已有同幂等键、库存不超卖、并发对账等确定性并发测试；没有持续性负载与容量数据 |
 | 跨会话批准 | 发起与批准目前在同一会话；跨用户/跨会话批准未实现 |
 | 已收款订单 | 不直接补偿，需要退款流程（未实现） |
+
+### 10.3 Phase C 的已完成项与已知限制
+
+已完成：
+
+| 能力 | 实现 |
+|------|------|
+| 执行状态模型 | `execution_attempts`（`executing/succeeded/failed/unknown`）+ RLS |
+| 两阶段执行 | Phase 1 预审计 `pending` 提交 → Phase 2 幂等 effects → Phase 3 条件结算 |
+| 进程内执行器 | `EffectsExecutor` 默认实现，幂等记录与 effects 同事务；冲突后重读幂等记录区分“无记录”与“读取失败” |
+| 对账 | 扫描 `unknown` 与超时 `executing`，同一执行器幂等键重放，确定性 `${attemptId}:result` 补写结果审计 |
+| 故障注入 | 预审计失败、调用前崩溃、提交后超时、结果审计前崩溃、并发幂等、令牌重放、库存不超卖、并发对账 |
+| 健壮性 | 单条尝试异常不中断整批；读取失败进入 UNKNOWN 而非误报 CONFLICT |
+
+已知限制：
+
+| 限制 | 说明 |
+|------|------|
+| 扫描批次饥饿 | 无法重建的尝试每轮都会重新扫描并占用 `limit` 名额，需要 `reconcileBlockedAt` 或游标分页（B3） |
+| 失败审计结果重复推导 | 契约侧 `contract.auditResult` 与工具注册侧字面量各推导一次，新增契约时需统一 |
+| 证据版本冲突未启用 | `expectedEvidenceVersion` 仅透传；版本不一致判定需第二证据来源（B3/跨服务） |
+| 跨服务 effects 未接线 | `HttpCrmGateway.executeEffects` 尚未接入 `executeContract`；B3 接线时需把超时/5xx 映射为 `EffectsExecutionUnknownError`（当前固定映射 `INTERNAL`）。完成前禁止生产启用 HTTP 写入 |
+| TaskState 会话恢复 | 执行尝试可对账恢复；对话会话从 TaskState 恢复的多轮验证未完成 |
+| 评测与压测 | 模型成本指标、完整评测属 Phase D；生产级负载与 P95 尚无数据 |
 
 ---
 
@@ -951,8 +993,8 @@ npm run rls:verify
 | 评测 harness | 未实现；拦截率、误拒率、P95、成本均无实测数据 |
 | 遗留代码 | `src/voting`、`src/agents`、`src/hooks`、`src/confirm`、`src/engine`、`src/rules`、`src/risk`、`src/audit` 与部分 REST 路由仍在仓库，但不在 TEF 路径 |
 | KMS 与 crypto-shredding | 假名化与脱敏已实现；密钥管理与可销毁映射未实现 |
-| 崩溃恢复 | TaskState 持久化已实现；完整恢复流程未验证 |
-| 并发与压测 | 有事务内重校验与 `CONFLICT` 检测；没有并发压力测试与容量数据 |
+| 崩溃恢复 | 执行尝试由对账恢复；TaskState 会话级恢复未完整验证 |
+| 并发与压测 | 已有确定性并发与故障注入测试；没有持续性负载、容量数据与 P95 |
 | 登录认证 | 当前为演示实现：接受 `demo123` 或邮箱包含 `demo` 的账号；不是生产级认证 |
 | 限流 | 未配置 Redis 时 fail-open，只适合本地开发 |
 | RLS 本地验证口径 | 开发库以表 owner 连接时，仅 FORCE 档受约束；非 owner 角色验证由 CI 完成 |
@@ -960,7 +1002,9 @@ npm run rls:verify
 | ops 白名单工具 | `whitelist.list`、`whitelist.set`、`tenant.config.get` 已声明但未注册 |
 | 模型可替换演示 | 需要真实 `DEEPSEEK_API_KEY`；否则回落到确定性解析器，无法演示“更换模型” |
 | B2 HTTP 读的事务边界 | HTTP 读取仍在本地 `withTenantScope` 事务内发起网络 IO，网络往返期间持续占用数据库连接；B3 必须把远程读取移出事务 |
-| B2 HTTP 写入 | HTTP 通道已暴露 `effects:execute`（`TEF_CRM_EFFECTS_ENABLED=1` 才启用，默认返回 404），但契约执行仍使用本地 Prisma 适配器，`HttpCrmGateway.executeEffects` 尚未接入 TEF 的 `executeContract`；effects 跨服务与补偿语义（Phase C）完成前禁止在生产启用 `TEF_CRM_GATEWAY=http` 或 `TEF_CRM_EFFECTS_ENABLED=1` |
+| B2 HTTP 写入 | HTTP 通道已暴露 `effects:execute`（`TEF_CRM_EFFECTS_ENABLED=1` 才启用，默认返回 404），但契约执行仍使用本地 Prisma 适配器，`HttpCrmGateway.executeEffects` 尚未接入 TEF 的 `executeContract`；Phase C 已提供本地执行状态机与对账，跨服务接线在 B3 完成前禁止生产启用 `TEF_CRM_GATEWAY=http` 或 `TEF_CRM_EFFECTS_ENABLED=1` |
+| 对账扫描上限 | 无法重建的尝试会长期占用扫描批次，需要 `reconcileBlockedAt` 或游标分页（B3） |
+| 失败审计结果推导 | 契约与工具注册两处各自推导失败审计结果类型，新增契约时需统一 |
 | 生产可用性 | 未做安全评审、压测、兼容性验证与 SLA，不得对外宣称工业级 |
 
 ---

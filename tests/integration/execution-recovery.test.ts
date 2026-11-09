@@ -9,6 +9,7 @@ import {
 } from '@lymtrix/tef-core';
 import {
   auditChain,
+  previewStore,
   reconcileExecutions,
   scopedExecutorIdempotencyKey,
   type ReconciliationReport,
@@ -471,6 +472,55 @@ describeDb('对账与故障注入（真实数据库）', () => {
     expectReport(secondReport, { scanned: 1, succeeded: 1, failed: 0, unknown: 0 });
     expect((await readAttempt(captured.attemptId)).status).toBe('succeeded');
     expect(await countOrdersByTrace([traceId])).toBe(1);
+  });
+
+  it('单条尝试重建异常：计入 unknown，不中断整批对账', async () => {
+    await resetFixture();
+    const brokenTrace = nextTrace();
+    const healthyTrace = nextTrace();
+    const brokenKey = `idem_recovery_broken_${brokenTrace}`;
+    const healthyKey = `idem_recovery_healthy_${healthyTrace}`;
+
+    // 两条待对账尝试：一条的上下文读取会抛异常，另一条正常。
+    const brokenPreview = await previewAndApprove(brokenTrace);
+    const broken = await captureUnknownAttempt(brokenTrace, brokenPreview.token, brokenKey);
+    await markExecuting(broken.attemptId);
+
+    const healthyPreview = await previewAndApprove(healthyTrace);
+    const healthy = await captureUnknownAttempt(healthyTrace, healthyPreview.token, healthyKey);
+    await markExecuting(healthy.attemptId);
+
+    const realLoad = previewStore.load.bind(previewStore);
+    const loadSpy = vi
+      .spyOn(previewStore, 'load')
+      .mockImplementation(async (tenantId, previewId, db) => {
+        if (previewId === broken.input.previewId) {
+          throw new Error('simulated preview store read failure');
+        }
+        return realLoad(tenantId, previewId, db);
+      });
+
+    try {
+      const report = await reconcileExecutions({
+        tenantId: TENANT,
+        effectsExecutor: createInProcessCrmEffectsExecutor(),
+        staleAfterMs: 0,
+        now: reconciliationClock(),
+      });
+
+      // 坏记录计为 unknown，好记录照常收敛：整批不会被单条异常中断。
+      expectReport(report, { scanned: 2, succeeded: 1, failed: 0, unknown: 1 });
+    } finally {
+      loadSpy.mockRestore();
+    }
+
+    // 坏记录保持 executing，等待下一轮/人工；好记录完成结算且副作用恰好一次。
+    expect((await readAttempt(broken.attemptId)).status).toBe('executing');
+    const settled = await readAttempt(healthy.attemptId);
+    expect(settled.status).toBe('succeeded');
+    expect(settled.resultAuditEventId).toBe(`${healthy.attemptId}:result`);
+    expect(await countOrdersByTrace([healthyTrace])).toBe(1);
+    expect(await countOrdersByTrace([brokenTrace])).toBe(0);
   });
 
   it('副作用成功但 Phase 3 未执行：对账补写结果审计，审计链校验通过', async () => {

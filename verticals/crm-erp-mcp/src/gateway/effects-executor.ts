@@ -1,5 +1,6 @@
 import {
   EffectExecutionError,
+  EffectsExecutionUnknownError,
   executeEffects,
   type EffectsExecuteRequest,
   type EffectsExecuteResult,
@@ -22,6 +23,9 @@ import { createCreditOrderAdapters } from '../contracts/credit-order';
  *
  * 端口约定：不向调用方抛业务错误。EffectExecutionError 的 CONFLICT / INTERNAL
  * 与未知异常都收敛为结构化结果，未知异常只返回通用文案，避免泄露 SQL 或堆栈。
+ * 唯一例外是 EffectsExecutionUnknownError：当冲突后重读幂等记录本身失败时，
+ * 无法判断副作用是否已提交，必须让状态机/对账把尝试收敛为 unknown，而不是
+ * 返回一个确定的 CONFLICT/INTERNAL 诱导调用方换 key 重试。
  */
 
 const TOOL_NAME = 'internal.effects.execute';
@@ -65,6 +69,10 @@ async function findReplayRecord(
  * 事务，但同一 key 的并发调用可能已经成功提交。若只返回 CONFLICT，对账会把
  * “副作用已发生”的尝试误结算为 failed。新开事务读取先提交者的记录并按重放
  * 返回；确实没有记录才是确定冲突。
+ *
+ * “记录不存在”与“读取失败”必须区分：读取失败时无法确认副作用是否已提交，
+ * 返回 null 会被上层当成确定冲突。这里抛出 EffectsExecutionUnknownError，
+ * 由状态机/对账收敛为 unknown，绝不能让调用方换 key 重试。
  */
 async function replayIfCommitted(
   input: EffectsExecuteRequest,
@@ -77,7 +85,9 @@ async function replayIfCommitted(
       '[internal.effects.execute] replay lookup failed:',
       replayError instanceof Error ? replayError.message : replayError,
     );
-    return null;
+    throw new EffectsExecutionUnknownError(
+      'could not confirm whether effects were committed; reconciliation required',
+    );
   }
 }
 

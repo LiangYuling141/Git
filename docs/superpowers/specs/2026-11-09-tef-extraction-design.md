@@ -40,7 +40,7 @@
 
 > **基线说明**：上表记录的是 **Phase A 前基线**的耦合证据。A1/A2 完成后，表中列出的 `src/` 路径均已变为迁移 shim，真实实现已迁移到 `packages/`（`tef-core`、`tef-mcp-kit`、`tef-runtime`）与 `verticals/crm-erp-mcp/`。
 
-当前验证基线：typecheck 通过，`TEF_DB_TESTS=1 npm test` 共 373 个测试通过（317 单元 + 56 真实数据库集成）。
+当前验证基线（2026-11-10）：typecheck、lint、boundaries:check、secrets:check、build 通过；`TEF_DB_TESTS=1 npm test` 共 395 个测试通过（321 单元 + 74 真实数据库集成）。
 
 ## 3. 设计原则与硬边界
 
@@ -330,8 +330,8 @@ EXECUTING → SUCCEEDED
 |------|------|------|
 | B1（已完成） | `BusinessGateway` 端口、`PrismaCrmGateway` 进程内实现、查询工具与契约 `loadEvidence` 改造、租户与 fail-closed 测试 | 既有 308 项测试通过；端口无垂直依赖；租户不匹配显式拒绝 |
 | B1.5（已完成） | `BusinessGateway` 泛型化（`query` + `executeEffects`）与 CRM DTO 下沉；垂直包以 `CrmBusinessGateway` 扩展类型化读方法 | 既有 309 项测试通过；`tef-core` 不含 CRM 字段；`requireCrmGateway` 对不完整实现 fail-closed |
-| B2（已完成） | CRM 内部 HTTP 网关（`query`、`effects:execute`）+ `HttpCrmGateway` + 切换工厂；evidence 由垂直从 query 结果组合，不单独开端点 | 新增 29 项内部网关集成测试（鉴权、租户隔离、effect 白名单、幂等重放、越权 payload 与 malformed effects、并发幂等与功能开关）与 28 项 `HttpCrmGateway` 单元测试；默认 `TEF_CRM_GATEWAY=prisma`，全量 373 项测试通过。已知限制：HTTP 读仍在本地租户事务内发起网络 IO；HTTP 通道已暴露 effects:execute（默认关闭），但契约执行仍走本地 Prisma 适配器，尚未接入 `executeContract`；effect 跨服务执行、预审计与补偿留待 Phase C，完成前禁止在生产启用 HTTP 模式 |
-| B3 | `TefStateStore`/`Clock` 端口、TEF 与 Runtime 独立 schema、TEF Server 进程、JWT/对话/确认 API、Docker Compose | 治理状态可在独立库运行；会话恢复测试通过；三进程一条命令启动 |
+| B2（已完成） | CRM 内部 HTTP 网关（`query`、`effects:execute`）+ `HttpCrmGateway` + 切换工厂；evidence 由垂直从 query 结果组合，不单独开端点 | 新增 29 项内部网关集成测试（鉴权、租户隔离、effect 白名单、幂等重放、越权 payload 与 malformed effects、并发幂等与功能开关）与 28 项 `HttpCrmGateway` 单元测试；默认 `TEF_CRM_GATEWAY=prisma`，全量 373 项测试通过。已知限制：HTTP 读仍在本地租户事务内发起网络 IO；HTTP 通道已暴露 effects:execute（默认关闭），但契约执行仍走本地 Prisma 适配器，尚未接入 `executeContract`；预审计、执行状态机与补偿已在 Phase C 完成；effect 跨服务执行接线留待 B3，接线完成前禁止在生产启用 HTTP 模式 |
+| B3（C 完成后启动） | `TefStateStore`/`Clock` 端口、TEF 与 Runtime 独立 schema、TEF Server 进程、JWT/对话/确认 API、Docker Compose、跨服务 HTTP effects 接线、对账游标 | 治理状态可在独立库运行；会话恢复测试通过；三进程一条命令启动；无法重建的尝试不阻塞扫描批次 |
 | B4 | 三进程 e2e 闭环与文档 | e2e 对话闭环通过；架构、API、运维文档与实现一致 |
 
 迁移期保留进程内适配器供给现有集成测试；HTTP 模式由新增 e2e 测试覆盖。稳定后切换默认。
@@ -340,16 +340,20 @@ EXECUTING → SUCCEEDED
 
 B1 补充（来自最终评审）：core 边界目前靠 ESLint 的 alias 规则，无法拦截相对路径（如 `../../src/lib/prisma`）与 `node:fs`、`pg`、`ioredis` 等直接 IO 导入。A2 必须引入目录级约束（`no-restricted-paths`、`dependency-cruiser` 或等价方案），并加入一个 CI 探针测试：在 core 内临时写入违规导入时必须报错。
 
-### 8.3 Phase C：P1 收尾
+### 8.3 Phase C：P1 收尾（已完成，2026-11-10）
 
-1. 实现执行状态机与 `execution_attempts`。
-2. 实现对账任务：处理 `EXECUTING`、`UNKNOWN`，补写结果审计。
-3. 故障注入测试：预审计失败、调用前崩溃、提交后超时、提交前超时、结果审计前崩溃、并发幂等、令牌重放、证据版本冲突。
-4. 并发测试：同幂等键、库存预占不超卖、跨租户拒绝。
-5. 崩溃恢复：重启后 TaskState 与执行任务可恢复。
-6. 审计链完整性校验覆盖补写事件。
+1. 执行状态机与 `execution_attempts`：已实现（`executing/succeeded/failed/unknown` + FORCE RLS）。
+2. 对账任务：已实现，扫描 `unknown` 与超时 `executing`，用同一执行器幂等键重放并补写确定性结果审计。
+3. 故障注入测试：已覆盖预审计失败、调用前崩溃、提交后超时、提交前超时（仍未知）、结果审计前崩溃、并发幂等、令牌重放；证据版本冲突判定因缺少第二证据版本来源，推迟到 B3/跨服务。
+4. 并发测试：已覆盖同幂等键、库存预占不超卖、并发对账；跨租户拒绝由既有攻击场景测试覆盖。
+5. 崩溃恢复：执行任务（副作用）可通过对账恢复；TaskState 会话级恢复仍未完整验证。
+6. 审计链完整性：`pending` 预审计 + `${attemptId}:result` 补写事件纳入链校验，恢复测试验证链通过。
 
-验收：上述测试全部自动化通过；压测脚本可重复执行并输出并发数、耗时、失败率。
+验收结论：上述自动化测试通过（395 项：321 单元 + 74 数据库）；生产级压测脚本与 P95/成本数据未完成，归入 Phase D/工业级阶段。
+
+已知限制：无法重建的尝试可能长期占用扫描批次（需要 `reconcileBlockedAt` 或游标，B3）；失败审计结果类型在契约与工具注册处有重复推导（新增契约时统一）；跨服务 HTTP effects 尚未接入 `executeContract`（B3）。
+
+B3 存储拆分、Tef Server 与 Docker Compose 在 Phase C 完成后启动。
 
 ### 8.4 Phase D：P2 准备
 

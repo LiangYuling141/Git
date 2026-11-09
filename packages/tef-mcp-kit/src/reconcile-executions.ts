@@ -328,7 +328,18 @@ export async function reconcileExecutions(options: ReconcileOptions): Promise<Re
   };
 
   for (const row of rows) {
-    const outcome = await reconcileAttempt(row as AttemptRow, options.effectsExecutor, now);
+    // 单条尝试的上下文加载/结算异常不能中断整批：记录日志并计为 unknown，
+    // 留给下一轮或人工处理。否则一条坏记录会永久卡住后面的所有尝试。
+    let outcome: ReconcileOutcome;
+    try {
+      outcome = await reconcileAttempt(row as AttemptRow, options.effectsExecutor, now);
+    } catch (error) {
+      console.error(
+        `[tef.reconcile] attempt ${row.attemptId} reconciliation failed unexpectedly:`,
+        error instanceof Error ? error.message : error,
+      );
+      outcome = 'unknown';
+    }
     report[outcome] += 1;
   }
 

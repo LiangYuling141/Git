@@ -5,7 +5,7 @@
 
 LyMtrix-TEF 是一个面向 AI Agent 的可信执行框架。它不试图让模型输出变得确定，而是让模型产生的**副作用**变得确定：任何写操作都必须经过契约校验、证据加载、风险定级、预览快照、一次性令牌确认和幂等执行，否则被阻断、拒绝或转人工。
 
-**当前状态（2026-11-09）**：Phase 0 闭环、Phase 1 补偿运行时与 Phase B2 CRM 内部 HTTP 网关已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime、确认 UI 与补偿闭环全部可运行；B2 新增 `/api/internal/v1/query` 与 `/api/internal/v1/effects/execute` 内部端点及 `HttpCrmGateway`，默认仍走进程内 Prisma 网关。373 个测试通过（317 单元 + 56 个对真实 PostgreSQL 的闭环、攻击场景、补偿与内部网关集成测试）。尚未达到生产可用：评测体系（Phase 2）、遗留代码清理、崩溃恢复、并发压测与跨服务 effects 执行（Phase C）仍未完成。成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
+**当前状态（2026-11-10）**：Phase 0 闭环、Phase 1 补偿运行时、Phase B2 CRM 内部 HTTP 网关与 Phase C 执行状态机已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime、确认 UI 与补偿闭环全部可运行；B2 新增 `/api/internal/v1/query` 与 `/api/internal/v1/effects/execute` 内部端点及 `HttpCrmGateway`，默认仍走进程内 Prisma 网关；Phase C 新增 `execution_attempts` 两阶段执行状态机、`pending` 预审计、结果审计、UNKNOWN 对账与故障注入测试，保证副作用 at-most-once。395 个测试通过（321 单元 + 74 个对真实 PostgreSQL 的闭环、攻击场景、补偿、状态机与对账集成测试）。尚未达到生产可用：评测体系（Phase 2/D）、遗留代码清理、跨服务 HTTP effects 接线（Phase B3）与生产级压测仍未完成。成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
 
 ---
 
@@ -168,6 +168,16 @@ Agent Runtime 不持有数据库凭据，不直接执行写操作；TaskState �
 | **L2** | 高风险写入 | preview → 可选验证器 → 人工确认 → execute | 必须 |
 | **Block** | 非法/越权/违反不变量 | 直接阻断 | 不进入确认 |
 
+### 执行语义（Phase C）
+
+一次写入不再假设“副作用与数据库写入同事务”，而是拆成两个事务、三个阶段：
+
+1. **预审计（事务一）**：消费令牌与预览快照、重校验、登记 `execution_attempts(executing)`，写 `result = pending` 的预审计事件后提交。提交后副作用才可能发生。
+2. **effects（Phase 2）**：通过可替换的 `EffectsExecutor` 执行声明式 effects；幂等键按 `scopedExecutorIdempotencyKey(toolName, idempotencyKey)` 派生，同一操作至多产生一次副作用。
+3. **结果审计（事务二）**：条件结算尝试为 `succeeded / failed`，写确定性结果审计（`${attemptId}:result`）与幂等记录。
+
+响应丢失、超时或进程崩溃时，尝试保持 `executing` 或迁移为 `unknown`；对账任务 `reconcileExecutions` 用同一幂等键重放并补写结果审计。系统保证 **at-most-once 副作用**，不宣称 exactly-once。仍未知的尝试会保留给下一轮或人工处理；无法重建的尝试可能占用扫描批次，需要后续加入 `reconcileBlockedAt` 或游标（B3）。
+
 ### 多 Agent 的定位
 
 多 Agent 不再是默认风控层。只在以下场景使用：
@@ -252,14 +262,15 @@ Agent Runtime 不持有数据库凭据，不直接执行写操作；TaskState �
 
 ## 成熟度与落地计划
 
-| 阶段 | 核心交付物 | 状态（2026-11-09） |
+| 阶段 | 核心交付物 | 状态（2026-11-10） |
 |------|------------|--------------------|
 | Phase 0 | 多租户底座 + 契约引擎 + 跑通"赊账订单"闭环：查询客户、查额度、查库存、预览订单、执行订单 | **已完成**，CI 每次推送对真实 PostgreSQL 复跑闭环与攻击场景 |
-| Phase 1 | L1 自动执行路径、dry-run/diff、确认令牌、幂等、冲突恢复、补偿、审计事件 | **已完成主要项**：L1 路径、diff、令牌、幂等、审计事件、`CONFLICT` 检测与旧令牌作废、`compensate_order` 契约与完整补偿运行时（preview → L2 → 人工确认 → execute）均已实现并有测试；崩溃恢复与并发压测仍待补 |
-| Phase 2 | 300-500 条评测集、危险写入拦截率、误拒率、P95、成本 | 评测未开始；核心与垂直解耦进行中（`@lymtrix/tef-core` 已提取） |
+| Phase 1 | L1 自动执行路径、dry-run/diff、确认令牌、幂等、冲突恢复、补偿、审计事件 | **已完成**：L1 路径、diff、令牌、幂等、审计事件、`CONFLICT` 检测与旧令牌作废、`compensate_order` 契约与完整补偿运行时（preview → L2 → 人工确认 → execute）均已实现并有测试 |
+| Phase C（P1 收尾） | 执行状态机、`execution_attempts`、预审计 `pending`、UNKNOWN 对账、故障注入与并发 | **已完成**：两阶段执行 + 三阶段语义、进程内幂等执行器、对账补写结果审计、11 项故障注入/恢复测试；保证 at-most-once 副作用 |
+| Phase 2 / D | 300-500 条评测集、危险写入拦截率、误拒率、P95、成本 | 评测未开始；指标埋点、fixture 与 eval harness 属 Phase D |
 | Phase 3 | 参考垂直插件、计量计费与配额、角色细化、生产部署、软著/专利/论文材料 | 未开始 |
 
-当前对外表述应使用"参考架构 / framework，目标工业级"，不得宣称已达到工业级生产可用。Phase 0 闭环与补偿回滚均已验证，但崩溃恢复、并发压测与生产级认证尚未完成，因此仍不宣称 L1 完整达成。
+当前对外表述应使用"参考架构 / framework，目标工业级"，不得宣称已达到工业级生产可用。执行尝试级崩溃恢复与并发幂等已验证，但 TaskState 会话级恢复、生产级压测与跨服务 effects 接线尚未完成，因此仍不宣称 L1 完整达成。
 
 ---
 
@@ -315,13 +326,13 @@ CRM 应用暴露两个仅内网可达的 Route Handler，业务 MCP 可以通过
 - 租户：请求体必须显式携带 `tenantId`，服务端在 `withTenantScope` 事务内设置 RLS 变量；`payload.tenantId` / `payload.id` 以及 bind 的目标字段（`bind.tenantId` / `bind.id`）均在 zod 层直接拒绝；来源 ref 的字段名不受限制，因此 `bind: { orderId: { fromRef: 'order', field: 'id' } }` 合法。
 - 幂等：`effects:execute` 的幂等记录与业务写入同事务提交；同一 `idempotencyKey` 重放返回首次响应并标记 `replayed: true`。并发同 key 时后提交者收到 Prisma P2002，整个事务回滚后读取先提交者的记录按重放返回。
 - 默认模式：`TEF_CRM_GATEWAY` 未设置、为空或为 `prisma` 时使用进程内 `PrismaCrmGateway`；设置为 `http` 时使用 `HttpCrmGateway`，通过 `TEF_CRM_API_BASE` 调用上述端点。未知非空值直接报错，不静默回落。默认值保证现有部署行为不变。
-- 写入开关：`/api/internal/v1/effects/execute` 默认关闭。`TEF_CRM_EFFECTS_ENABLED` 未设置或不为 `1` 时，即使服务令牌正确也返回 404；Phase C 接入预览、一次性令牌与审计前，仅允许在受控环境显式启用。
+- 写入开关：`/api/internal/v1/effects/execute` 默认关闭。`TEF_CRM_EFFECTS_ENABLED` 未设置或不为 `1` 时，即使服务令牌正确也返回 404；在 B3 完成跨服务预览、令牌与审计接线前，仅允许在受控环境显式启用。
 
 已知限制：
 
 - HTTP 读仍在本地 `withTenantScope` 事务内发起网络 IO，网络往返期间占用数据库连接。因此业务 MCP 进程目前仍需要业务库访问权限；只有在 B3 把远程读取移出事务后，“业务 MCP 不持有业务库凭据”才是完整成立的部署形态。
-- B2 的 HTTP 通道确实暴露了 `effects:execute` 写入端点（默认关闭），但 TEF 的契约执行路径仍使用本地 Prisma 适配器（`adapterFactory`），`HttpCrmGateway.executeEffects` 尚未接入 `executeContract`；Phase C 完成前，契约写入不会改道跨服务。
-- 在 effects 跨服务执行、预审计与补偿语义（Phase C）完成前，禁止在生产启用 `TEF_CRM_GATEWAY=http` 或 `TEF_CRM_EFFECTS_ENABLED=1`。
+- B2 的 HTTP 通道确实暴露了 `effects:execute` 写入端点（默认关闭），但 TEF 的契约执行路径仍使用本地 Prisma 适配器（`adapterFactory`），`HttpCrmGateway.executeEffects` 尚未接入 `executeContract`；Phase C 已提供本地执行状态机与对账，跨服务接线推迟到 B3，在此之前契约写入不会改道跨服务。
+- 在 B3 完成跨服务 effects 接线与对账游标前，禁止在生产启用 `TEF_CRM_GATEWAY=http` 或 `TEF_CRM_EFFECTS_ENABLED=1`。
 
 ---
 

@@ -29,8 +29,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: authError }, { status: internalAuthStatus(authError) });
   }
 
-  // 默认关闭：Phase C 接入预览、确认令牌与审计前，不允许这条写入通道在
-  // 生产被误启用。通过服务令牌鉴权后仍返回 404，避免向调用方暴露端点存在；
+  // 默认关闭：B3 完成跨服务预览、确认令牌与审计接线前，不允许这条写入通道
+  // 在生产被误启用。通过服务令牌鉴权后仍返回 404，避免向调用方暴露端点存在；
   // 启用需要显式设置 TEF_CRM_EFFECTS_ENABLED=1。
   if (process.env.TEF_CRM_EFFECTS_ENABLED !== '1') {
     return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 });

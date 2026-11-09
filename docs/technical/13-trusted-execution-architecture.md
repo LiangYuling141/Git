@@ -226,14 +226,20 @@ stateDiagram-v2
   AwaitingConfirmation --> Executing: confirmation.approve
   AwaitingConfirmation --> Rejected: 用户拒绝
   AwaitingConfirmation --> Expired: 超过 TTL
-  Executing --> Completed: 事务提交
-  Executing --> Failed: 校验失败/并发冲突
+  Executing --> Succeeded: Phase 3 结算提交
+  Executing --> Failed: 确定性失败/并发冲突
+  Executing --> Unknown: 响应丢失/超时/进程崩溃
+  Unknown --> Succeeded: 对账按同一幂等键重放成功
+  Unknown --> Failed: 对账确认确定性失败
+  Unknown --> Unknown: 仍无法确认（等待下一轮）
   Failed --> RolledBack: 补偿完成
-  Completed --> [*]
+  Succeeded --> [*]
   Rejected --> [*]
   Expired --> [*]
   RolledBack --> [*]
 ```
+
+> 状态机自 Phase C 起以 `execution_attempts` 持久化：`executing / succeeded / failed / unknown`。`executing` 与 `unknown` 都表示副作用可能已经发生，只允许对账用同一幂等键收敛，不允许调用方换 key 重试。
 
 ### 4.2 确认令牌
 
@@ -255,21 +261,52 @@ stateDiagram-v2
 - 服务端以 `(tenantId, toolName, idempotency_key)` 建唯一约束。
 - 重复请求返回第一次的结果，不重复执行。
 - 幂等键由 Agent Runtime 生成，并在 TaskState 中持久化。
+- 执行器幂等域必须按工具名作用域派生：`scopedExecutorIdempotencyKey(toolName, idempotencyKey)`。直接复用裸业务 key 会让创建与补偿等不同操作互相重放。
 
 ### 4.4 事务与补偿
 
-- 单次执行使用数据库事务，保证订单、库存、支付计划一致。
-- 跨服务操作使用 outbox / 事件驱动，保证最终一致。
-- 失败时执行契约中定义的补偿动作，并记录 `rolled_back` 事件。
-- 补偿动作本身也必须幂等。
+Phase C 起，一次写入拆成“两阶段执行 + 三个阶段”，不再假设副作用与数据库写入共享一个事务：
 
-> **实现状态（2026-11-09）**：已提交订单的补偿通过 `compensate_order` 契约执行，复用原契约的 `compensation` 声明；补偿本身是 L2，需要人工确认后才能执行。详见 [../00-framework.md](../00-framework.md) §4.5、§7.5。
+1. **Phase 1（数据库事务一）**：消费令牌与预览快照、重校验前置条件、创建 `execution_attempts`（`executing`）、写预审计事件（`result = pending`，`eventId = ${attemptId}:pre`），提交。提交是语义分水岭：此前失败可以写确定失败审计；此后副作用可能发生。
+2. **Phase 2（副作用）**：通过 `EffectsExecutor` 执行声明式 effects。执行器必须幂等，键为 `scopedExecutorIdempotencyKey(toolName, idempotencyKey)`。执行器成功、确定性失败、结果未知三种结果分别进入 Phase 3 或 `unknown`。
+3. **Phase 3（数据库事务二）**：条件更新尝试状态（只允许从 `executing/unknown` 迁移），写确定性结果审计（`eventId = ${attemptId}:result`）与幂等记录。成功为 `succeeded`；`CONFLICT`/`INTERNAL` 为 `failed`；结果未知则保持/迁移为 `unknown`。
+
+| 场景 | 处理方式 |
+|------|----------|
+| Phase 1 内失败（校验、令牌、审计写入） | 事务回滚，不调用执行器，写事务外失败审计 |
+| Phase 2 确定性失败 | 条件结算为 `failed`，写失败审计；`CONFLICT` 额外写幂等记录 |
+| Phase 2 响应丢失/超时/崩溃 | 尝试保持 `executing` 或迁移到 `unknown`，由对账收敛；不写幂等记录 |
+| 已提交后撤销 | 执行契约声明的补偿动作，记录 `compensated` 事件 |
+| 补偿失败 | 记录 `compensation_failed`，告警并要求人工介入 |
+
+> **审计链的 `pending` 语义**：预审计事件在副作用之前提交，表示“执行意图已登记、结果未定”。若进程崩溃，审计链中会留下一条没有对应结果事件的 `pending` 记录；对账补写 `${attemptId}:result` 后语义闭合。因此审计链校验必须允许 `pending` 作为合法结果类型。
+
+> **实现状态（2026-11-10）**：两阶段执行状态机、`execution_attempts`、`pending` 预审计、进程内幂等执行器与对账（`reconcileExecutions`）均已落地。已提交订单的补偿通过 `compensate_order` 契约执行，复用原契约的 `compensation` 声明；补偿本身是 L2，需要人工确认后才能执行。详见 [../00-framework.md](../00-framework.md) §4.5、§7.5。
 
 ### 4.5 并发控制
 
 - 客户信用额度、库存使用乐观锁或行级锁。
 - 版本号不匹配时返回 `CONFLICT`，要求重新预览。
 - 禁止“先读后写”跨越预览与执行；执行前重新校验关键前置条件。
+
+### 4.6 执行尝试与对账
+
+对账任务 `reconcileExecutions` 是崩溃恢复的唯一入口，规则如下：
+
+| 项 | 规则 |
+|----|------|
+| 扫描范围 | 全部 `unknown`；`executing` 且 `updatedAt` 早于静默期（默认 5 分钟） |
+| 幂等键 | 必须用 `scopedExecutorIdempotencyKey(attempt.toolName, attempt.idempotencyKey)`，与前台 Phase 2 完全一致 |
+| 上下文重建 | 按 `attempt.previewId` 读取预览快照，按 `contract@version` 取回旧契约；快照绑定不一致或依赖缺失时保持原状态，交人工处理 |
+| 结算 | 复用 Phase 3 的条件更新与审计助手；结果审计使用确定性 `${attemptId}:result`，重复对账不重复写 |
+| 并发 | 两个对账/前台同时结算时只有一个条件更新胜者，失败方按数据库实际终态归类 |
+| 异常隔离 | 单条尝试的上下文读取或结算异常只记日志并计为 `unknown`，不中断整批 |
+
+已知限制：
+
+- 无法重建的尝试（快照/契约缺失、绑定不一致）每轮都会重新扫描并占用 `limit` 名额，长期可能挤压后续可收敛记录；需要 `reconcileBlockedAt` 或游标分页，留待 B3。
+- 证据版本冲突尚未参与执行判定，需第二证据版本来源后启用。
+- 对账保证副作用 at-most-once，不宣称 exactly-once。
 
 ---
 
