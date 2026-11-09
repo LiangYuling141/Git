@@ -36,4 +36,31 @@ export default defineConfig([
       ],
     },
   },
+  {
+    // 框架核心必须保持零 IO、零垂直依赖。
+    // 任何数据库、Next.js、MCP 实现或 CRM 契约的导入都应被拒绝。
+    files: ['packages/tef-core/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '@/generated/prisma',
+                '@/lib/prisma',
+                '@/contracts/*',
+                '@/mcp-server/*',
+                '@/agent-runtime/*',
+                '@prisma/*',
+                'next',
+                'next/*',
+              ],
+              message: 'tef-core must stay infrastructure-free; put IO in tef-mcp-kit or the vertical package.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ]);
