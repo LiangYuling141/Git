@@ -192,12 +192,20 @@ Expected: 309 passed；boundary/typecheck/lint 通过。
 ## Task 2：文档同步与最终验收
 
 **Files:**
+- Modify: `verticals/crm-erp-mcp/src/gateway/context.ts`
+- Modify: `verticals/crm-erp-mcp/src/gateway/prisma-gateway.test.ts`
 - Modify: `docs/00-framework.md`
 - Modify: `docs/superpowers/specs/2026-11-09-tef-extraction-design.md`
 - Modify: `docs/superpowers/plans/2026-11-09-phase-b1-5-port-neutrality.md`
 - Modify: `README.md`
 - Modify: `docs/00-positioning.md`
 - Modify: `docs/competition/挑战杯项目设计说明书.md`
+
+- [ ] **Step 0：收口 Task 1 的 Minor**
+
+1. `requireCrmGateway` 增加鸭子类型守卫：若 `typeof gateway.getCustomer !== 'function'`，抛 `TefError('INTERNAL', 'CRM BusinessGateway implementation is incomplete')`，避免只实现泛型 `query` 的网关在契约里触发原生 TypeError。
+2. `prisma-gateway.test.ts` 的租户矩阵加入 `query` 路径：用 `CRM_QUERY.customerGet` 与不匹配 tenantId 调用 `gateway.query`，断言 `PERMISSION_DENIED` 且未触库；测试标题改为“全部公开方法”。不新增 `it`，总数保持 309。
+3. 在 B1.5 计划的后续索引中注明：B2 必须为 `query` 的 params 增加 zod 白名单校验。
 
 - [ ] **Step 1：同步测试基线**
 
