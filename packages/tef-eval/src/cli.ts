@@ -57,6 +57,9 @@ function errorOutcome(sample: EvalSample, error: unknown, started: number): Samp
     },
     intentSource: 'none',
     latencyMs: performance.now() - started,
+    // 执行异常时没有真实决策链，仍给出确定性 traceId，保证报告
+    // “每条样本都有 traceId”的陈述对 error outcome 同样成立。
+    traceId: `tr_eval_${sample.id}_error`,
   };
 }
 

@@ -8,13 +8,13 @@
 > 价目快照：2026-11-10 抓取，来源 `https://api-docs.deepseek.com/quick_start/pricing`
 > 样本：24 条种子样本（normal / ambiguous / adversarial / boundary / conflict / clarify 六类各 4 条）
 
-本报告的标题指标均复制自 `eval-results/eval_20261110064949674_8dlcta/{offline,e2e}/report.md`，未手工调整任何数值。live 运行是标题指标的来源；由于 live 产生的治理数据会被后续全量测试清理，持久、可审计的证据使用录制回放结果：[docs/eval/evidence/phase-d-recorded-replay/](evidence/phase-d-recorded-replay/)。录制回放逐条复现 live 的 24/24 决策，且在 `results.json` 中持久化每条样本的 `traceId`，无需依赖治理表即可复核。
+本报告的标题指标均复制自 `eval-results/eval_20261110064949674_8dlcta/{offline,e2e}/report.md`，未手工调整任何数值。live 运行的 canonical 产物已复制到 [evidence/phase-d-live/](evidence/phase-d-live/)（原样复制，未修改），使 P50/P95 与成本可从全新克隆复核。当前开发库中的 eval 治理数据已被清空（仓库内未记录该清理动作，属 out-of-band 运维操作），因此 trace 证据以提交的录制回放结果 [evidence/phase-d-recorded-replay/](evidence/phase-d-recorded-replay/) 为准：回放逐条复现 live 的 24/24 决策，并在 `results.json` 中持久化每条样本的 `traceId`。
 
 ## 1. 指标
 
 ### 1.1 离线层（offline）
 
-来源：`eval-results/eval_20261110064949674_8dlcta/offline/report.md`
+来源：`eval-results/eval_20261110064949674_8dlcta/offline/report.md`（canonical 副本：[evidence/phase-d-live/offline/report.md](evidence/phase-d-live/offline/report.md)）
 
 | 指标 | 值 |
 |------|----|
@@ -35,7 +35,7 @@
 
 ### 1.2 端到端层（e2e）
 
-来源：`eval-results/eval_20261110064949674_8dlcta/e2e/report.md`
+来源：`eval-results/eval_20261110064949674_8dlcta/e2e/report.md`（canonical 副本：[evidence/phase-d-live/e2e/report.md](evidence/phase-d-live/e2e/report.md)）
 
 | 指标 | 值 |
 |------|----|
@@ -97,7 +97,7 @@
 
 ### 3.2 端到端层不一致样本（11 条）
 
-下表 traceId 来自持久化证据 [e2e/results.json](evidence/phase-d-recorded-replay/e2e/results.json)，对应录制回放运行 `eval_20261110071035072_9t26ek`。`results.json` 现在为每条样本持久化 `traceId`（多轮样本另有 `traceIds`），不再需要从治理表反查。回放逐条复现 live 的 24/24 决策；live 运行产生的治理数据会在后续全量测试中被清理，因此回放结果文件是持久、可审计的 trace 证据，而 live 运行仍是标题指标的来源。
+下表 traceId 来自持久化证据 [e2e/results.json](evidence/phase-d-recorded-replay/e2e/results.json)，对应录制回放运行 `eval_20261110071035072_9t26ek`。`results.json` 现在为每条样本持久化 `traceId`（多轮样本另有 `traceIds`；执行异常样本为 `tr_eval_<sampleId>_error`），不再需要从治理表反查。回放逐条复现 live 的 24/24 决策。当前开发库中的 eval 治理数据已被清空（仓库内未记录该清理动作，属 out-of-band 运维操作），因此回放结果文件是持久、可审计的 trace 证据；live 运行仍是标题指标（含延迟与成本）的来源，其 canonical 产物见 [evidence/phase-d-live/](evidence/phase-d-live/)。
 
 | 样本 | 期望 | 实际 | 模型给出的原因 | traceId |
 |------|------|------|----------------|---------|
@@ -139,7 +139,7 @@ TEF_DB_TESTS=1 npm run eval -- --mode e2e --recorded packages/tef-eval/recording
 - 混淆矩阵与 live 运行完全一致。
 - 总 token 同为 9182（复用录制响应中的 usage，不是重新计费）；总成本为 `null`，因为 `recorded` 模式不发起真实计费请求，成本核算对非 live 模式返回 `null`，不代表零成本。
 - 延迟不同（回放 P50 19.8 ms、P95 72.8 ms），这是无网络调用的预期差异，不用于跨模式比较。
-- 回放结果持久化每条样本的 `traceId`，并已随本报告入库；live 治理数据被全量测试清理后，仍可用该文件复核每条决策链。
+- 回放结果持久化每条样本的 `traceId`，并已随本报告入库；当前开发库中的 eval 治理数据已被清空（仓库内未记录该清理动作），仍可用该文件复核每条决策链。
 
 ## 5. 价目与成本口径
 
@@ -147,7 +147,7 @@ TEF_DB_TESTS=1 npm run eval -- --mode e2e --recorded packages/tef-eval/recording
 - 请求的 `deepseek-chat` 别名由服务端映射为 `deepseek-flash`；录制响应中的 `model` 字段均为 `deepseek-flash`，因此按 Flash 价目计价。
 - 页面同时给出高峰 / 低谷与缓存命中 / 未命中价格。本轮运行时间为 06:49 UTC（周二），落在高峰时段 06:00–10:00 UTC。
 - `TokenUsage` 只保留 `promptTokens` / `completionTokens` 总量，没有缓存命中数拆分，因此 `PRICING_SNAPSHOT` 采用**高峰 + 缓存未命中输入价**，即输入 0.30 美元 / 百万 token、输出 1.20 美元 / 百万 token。
-- 该口径是**保守上界**：实际输入中若有缓存命中，价格低于此值。报告中 `0.003457` 为按此上界折算的总成本；`results.json` 原始值为 `0.0034574999999999996`。
+- 该口径是**保守上界**：实际输入中若有缓存命中，价格低于此值。报告中 `0.003457` 为按此上界折算的总成本；`results.json` 原始值为 `0.0034574999999999996`（[canonical 副本](evidence/phase-d-live/e2e/results.json)）。
 - 未使用任何猜测价格；价目字段与抓取日期已写入 `packages/tef-eval/src/pricing.ts`。
 
 ## 6. 已知限制
@@ -161,7 +161,7 @@ TEF_DB_TESTS=1 npm run eval -- --mode e2e --recorded packages/tef-eval/recording
 7. **决策启发式**：`decisionForTurn`、`inferContract` 与 `parseInvisibleTool` 基于文本/工具名启发式映射，不是对任意 Agent 输出的通用判定。
 8. **身份口径**：端到端层使用派生的 `u_eval_<sampleId>` 作为登录用户，不使用样本 `principal.userId`；样本作者不应依赖该字段做身份断言。
 9. **模型输出漂移**：live 模型输出不可完全复现；`recorded` 模式可复现同一批响应，但录制缺失或顺序不符时会报错，不会退化为 deterministic。
-10. **traceId 持久化**：`results.json` 为每条样本保存 `traceId`（多轮样本另有 `traceIds`）。持久证据以录制回放结果为准；live 治理数据可能被全量测试清理，不应作为唯一证据来源。
+10. **traceId 持久化**：`results.json` 为每条样本保存 `traceId`（多轮样本另有 `traceIds`；执行异常样本为 `tr_eval_<sampleId>_error`）。当前开发库中的 eval 治理数据已被清空（仓库内未记录该清理动作，属 out-of-band 运维操作），持久证据以提交的 live 与 recorded replay 结果为准，不应依赖开发库治理表。
 11. **端到端期望与提示词缺口**：11 条不一致样本反映“样本期望依赖缺省槽位”与“模型被要求缺字段必须澄清”的冲突。本报告不修改样本期望，也不修改提示词；修复方案（例如在样本中显式给出 `depositRate` / `termsDays`，或调整端到端期望为 `clarify`）需要单独评测设计任务。
 
 ## 7. 复现命令
@@ -186,6 +186,7 @@ npm run eval -- --mode offline
 
 - [Phase D 评测 Harness 设计](../superpowers/specs/2026-11-10-phase-d-eval-harness-design.md) — 双层 harness、样本 schema、指标口径与已知限制
 - [Phase D 评测 Harness 实施计划](../superpowers/plans/2026-11-10-phase-d-eval-harness.md) — 任务拆分、验收标准与验证记录
+- [持久证据：live 运行](evidence/phase-d-live/) — live e2e/offline 的 canonical `results.json`/`report.md`（P50/P95 与成本来源，原样复制）
 - [持久证据：录制回放](evidence/phase-d-recorded-replay/) — 回放 e2e 与确定性重跑 offline 的 `results.json`/`report.md`，含每条样本 traceId
 - [项目框架总览](../00-framework.md) — 实施进度与已知边界
 - [挑战杯项目设计说明书 §8](../competition/挑战杯项目设计说明书.md) — 评测方案与当前进度

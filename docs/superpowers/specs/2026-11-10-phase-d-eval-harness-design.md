@@ -4,7 +4,7 @@
 > 日期：2026-11-10
 > 实施验证：2026-11-10；live 运行 `TEF_MODEL_TESTS=1 TEF_DB_TESTS=1 npm run eval -- --mode all --live`（runId `eval_20261110064949674_8dlcta`），录制回放 `TEF_DB_TESTS=1 npm run eval -- --mode e2e --recorded packages/tef-eval/recordings`（runId `eval_20261110071035072_9t26ek`，24/24 决策与 live 一致）
 > 首版报告：[phase-d-baseline.md](../../eval/phase-d-baseline.md)
-> 持久证据：[phase-d-recorded-replay](../../eval/evidence/phase-d-recorded-replay/)（录制回放 e2e 与确定性重跑 offline 的 `results.json`/`report.md`）
+> 持久证据：[phase-d-recorded-replay](../../eval/evidence/phase-d-recorded-replay/)（录制回放 e2e 与确定性重跑 offline 的 `results.json`/`report.md`）、[phase-d-live](../../eval/evidence/phase-d-live/)（live 标题指标、P50/P95 与成本的 canonical 副本）
 > 范围：P2 准备的第一步——可复现评测 harness、24 条种子样本与首版报告
 > 权威架构：[14-unified-architecture.md](../../technical/14-unified-architecture.md)
 > 前置：[Phase C 执行状态机计划](../plans/2026-11-09-phase-c-p1-execution-state-machine.md)（已完成）
