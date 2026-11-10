@@ -1,20 +1,24 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import type { EffectsExecutor } from '@lymtrix/tef-core';
 import {
   connectTefClient,
   createTefServer,
   envelopeToToolResult,
+  type ContractToolOptions,
+  type PrismaTx,
   type TefClientSession,
   type TefServerOptions,
   type VerticalToolContext,
 } from '@lymtrix/tef-mcp-kit';
+import type { CrmBusinessGateway } from './gateway/types';
 import {
   orderExecuteCompensate,
   orderExecuteCreate,
   orderPreviewCompensate,
   orderPreviewCreate,
 } from './tools/order';
-import { creditGet, customerGet, customerSearch, inventoryCheck, orderGet } from './tools/query';
+import { creditGet, customerGet, customerSearch, inventoryCheck, orderGet, type QueryOptions } from './tools/query';
 
 /**
  * CRM-ERP 垂直 MCP Server（L4 工具层）。
@@ -31,7 +35,21 @@ const ORDER_ITEM_SHAPE = {
   unitPrice: z.number().nonnegative(),
 };
 
-function registerCrmErpTools({ server, principal, register, writeOptions, queryOptions }: VerticalToolContext): void {
+export type CrmErpServerOptions = TefServerOptions & {
+  /** 查询工具使用的业务网关；缺省时工具在租户事务内构造 Prisma 实现。 */
+  gateway?: CrmBusinessGateway;
+  /** 写入工具使用的网关工厂；缺省时使用 createCrmGateway。 */
+  gatewayFactory?: (tx: PrismaTx, tenantId: string) => CrmBusinessGateway;
+  /** 写入工具使用的副作用执行器；缺省时使用进程内 CRM 执行器。 */
+  effectsExecutor?: EffectsExecutor;
+};
+
+type CrmToolContext = Omit<VerticalToolContext, 'queryOptions' | 'writeOptions'> & {
+  queryOptions: QueryOptions;
+  writeOptions: ContractToolOptions;
+};
+
+function registerCrmErpTools({ server, principal, register, writeOptions, queryOptions }: CrmToolContext): void {
   if (register('customer.search')) {
     server.registerTool(
       'customer.search',
@@ -201,10 +219,22 @@ function registerCrmErpTools({ server, principal, register, writeOptions, queryO
   }
 }
 
-export function createCrmErpServer(options: TefServerOptions): McpServer {
-  return createTefServer(options, registerCrmErpTools);
+export function createCrmErpServer(options: CrmErpServerOptions): McpServer {
+  return createTefServer(options, (context) => {
+    registerCrmErpTools({
+      ...context,
+      writeOptions: {
+        ...context.writeOptions,
+        ...(options.gatewayFactory ? { gatewayFactory: options.gatewayFactory } : {}),
+        ...(options.effectsExecutor ? { effectsExecutor: options.effectsExecutor } : {}),
+      },
+      queryOptions: options.gateway
+        ? { ...context.queryOptions, gateway: options.gateway }
+        : context.queryOptions,
+    });
+  });
 }
 
-export function connectCrmErpClient(options: TefServerOptions): Promise<TefClientSession> {
+export function connectCrmErpClient(options: CrmErpServerOptions): Promise<TefClientSession> {
   return connectTefClient(options, createCrmErpServer);
 }
