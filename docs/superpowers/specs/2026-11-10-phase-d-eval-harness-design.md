@@ -192,7 +192,7 @@ cost = prompt_tokens / 1e6 * inputPerMillion + completion_tokens / 1e6 * outputP
 |------|------|
 | `searchCustomers` | 按 name/phone 在冻结 customers 中过滤，支持 limit |
 | `getCustomer` | 按 id 返回冻结客户或 `null` |
-| `getCredit` | 由客户额度与未结订单组合 `CreditRecord` |
+| `getCredit` | 由客户快照与开放订单组合 `CreditRecord`；开放订单口径与生产 Prisma 网关一致：仅取 `pending`/`confirmed`/`shipped`，按 `createdAt` 倒序取前 20 条，不按 `balance` 过滤 |
 | `getProducts` | 按 skus 返回冻结商品 |
 | `searchProducts` | 按 term 模糊匹配冻结商品 |
 | `getOrder` | 按 id 或 orderNo 返回冻结订单 |
@@ -201,7 +201,7 @@ cost = prompt_tokens / 1e6 * inputPerMillion + completion_tokens / 1e6 * outputP
 
 fixture 数据只读且深冻结（`Object.freeze` 或加载后不再修改）。端到端层通过 `gatewayFactory` 注入到契约工具，通过 `queryOptions.gateway` 注入到查询工具；CRM server 需要把这两个注入点透传给垂直工具（现有工具已支持，server 尚未接线）。
 
-fixture 与真实 Prisma 网关的行为差异（如手机号匹配、模糊搜索语义）必须记录在报告的“已知限制”中，不能声称两者等价。
+`getCredit` 的开放订单状态集合与排序已与生产 `prisma-gateway.ts` 对齐；除该口径外，fixture 与真实 Prisma 网关仍可能存在行为差异（如手机号匹配、模糊搜索语义、租户绑定校验），这些差异必须记录在报告的“已知限制”中，不能声称两者等价。
 
 ## 7. 指标与统计口径
 

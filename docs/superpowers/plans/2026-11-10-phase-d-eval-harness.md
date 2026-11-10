@@ -12,7 +12,7 @@
 
 - 不改变 preview / confirm / execute 的对外契约；所有新增字段必须可选，默认行为不变。
 - 默认 `npm test` 与默认 `npm run eval` 不调用外部模型；live 必须显式 `--live` 且要求 `TEF_MODEL_TESTS=1` 与有效 Key。
-- 现有 414 项测试不得下降；每个任务结束时相关测试与 `npm run typecheck` 必须通过。
+- 现有测试基线不得下降（以执行前 `npm test` 的实际结果为准）；每个任务结束时相关测试与 `npm run typecheck` 必须通过。
 - 评测不执行真实业务 effects；`FixtureCrmGateway.executeEffects` 只记录调用，端到端层必须注入 no-op `EffectsExecutor`，禁止写业务表。
 - 离线层只评测契约操作；查询工具样本标记 `skipped_non_contract`，不计入离线指标。
 - 两层指标分别统计、分别生成报告；不得合并计算拦截率、误拒率或延迟。
@@ -781,7 +781,7 @@ const fixtures = {
       totalAmount: 200,
       balance: 200,
       termsDays: 30,
-      status: 'committed',
+      status: 'confirmed',
       payments: [],
       createdAt: '2026-01-01T00:00:00.000Z',
     },
@@ -2599,7 +2599,7 @@ it('rejects Next.js app imports from the eval package', () => {
   "totalAmount": 200,
   "balance": 200,
   "termsDays": 30,
-  "status": "committed",
+  "status": "confirmed",
   "payments": [],
   "createdAt": "2026-01-01T00:00:00.000Z"
 }
@@ -2615,7 +2615,7 @@ it('rejects Next.js app imports from the eval package', () => {
   "totalAmount": 400,
   "balance": 400,
   "termsDays": 30,
-  "status": "committed",
+  "status": "confirmed",
   "payments": [],
   "createdAt": "2026-01-02T00:00:00.000Z"
 }
