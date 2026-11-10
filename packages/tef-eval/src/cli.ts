@@ -17,6 +17,27 @@ function fail(message: string): never {
   process.exit(1);
 }
 
+/**
+ * 退出码约定：0 正常完成；1 配置/执行错误（参数非法、--live 前置条件缺失、
+ * 未捕获异常）；2 样本集加载/校验失败（JSON 解析、zod 校验、空样本集）。
+ * 样本级错误由 errorOutcome 记录并继续，批次正常完成仍为 0。
+ */
+function loadSamplesOrExit(dir: string): EvalSample[] {
+  let samples: EvalSample[] = [];
+  try {
+    samples = loadSamples(dir);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`failed to load samples from ${dir}: ${message}`);
+    process.exit(2);
+  }
+  if (samples.length === 0) {
+    console.error(`no samples found in ${dir}`);
+    process.exit(2);
+  }
+  return samples;
+}
+
 function runId(): string {
   return `eval_${new Date().toISOString().replace(/[-:.TZ]/g, '')}_${Math.random()
     .toString(36)
@@ -74,8 +95,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const samples = loadSamples(values.samples);
-  if (samples.length === 0) fail(`no samples found in ${values.samples}`);
+  const samples = loadSamplesOrExit(values.samples);
 
   const id = runId();
   const outDir = values.out ?? join('eval-results', id);
@@ -83,7 +103,6 @@ async function main(): Promise<void> {
 
   const requested: Array<'offline' | 'e2e'> =
     layerMode === 'all' ? ['offline', 'e2e'] : [layerMode as 'offline' | 'e2e'];
-  let hadSampleError = false;
 
   for (const layer of requested) {
     const outcomes: SampleOutcome[] = [];
@@ -125,9 +144,6 @@ async function main(): Promise<void> {
     }
 
     notes.push('种子样本规模不足以支持统计显著性，比例指标与 P95 仅作工程趋势参考。');
-    if (outcomes.some((outcome) => outcome.actual.decision === 'error' && !outcome.skipped)) {
-      hadSampleError = true;
-    }
     const run = buildRun(id, evalMode, layer, samples, outcomes, notes);
     const layerDir = join(outDir, layer);
     mkdirSync(layerDir, { recursive: true });
@@ -136,9 +152,6 @@ async function main(): Promise<void> {
   }
 
   console.log(`eval results written to ${outDir}`);
-  // 退出码约定：0 全部完成；1 批次级失败（参数/配置/未捕获异常）；
-  // 2 批次完成但存在样本级错误（errorOutcome），报告仍已落盘。
-  if (hadSampleError) process.exitCode = 2;
 }
 
 function buildRun(
