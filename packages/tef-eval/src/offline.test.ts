@@ -114,7 +114,7 @@ describe('offline eval layer', () => {
     expect(outcome.skipped).toBe('non_contract');
   });
 
-  it('falls back to the deterministic parser when no intent is annotated', async () => {
+  it('skips deterministic chat/compound instead of scoring it as a contract decision', async () => {
     const outcome = await runOfflineSample(
       sample({
         input: { messages: ['你好，今天天气怎么样'] },
@@ -123,7 +123,34 @@ describe('offline eval layer', () => {
       }),
     );
     expect(outcome.intentSource).toBe('deterministic');
+    expect(outcome.skipped).toBe('non_contract');
     expect(outcome.actual.decision).toBe('clarify');
+    expect(outcome.actual.clarifySlots).toEqual([]);
+  });
+
+  it('persists normalized clarify slots from the deterministic parser', async () => {
+    const outcome = await runOfflineSample(
+      sample({
+        input: { messages: ['给伟业公司下一单 100 个圣诞球'] },
+        intent: undefined,
+        expect: { decision: 'clarify', clarifySlots: ['unitPrice'] },
+      }),
+    );
+    expect(outcome.skipped).toBeUndefined();
+    expect(outcome.actual.decision).toBe('clarify');
+    expect(outcome.actual.clarifySlots).toEqual(['unitPrice']);
+  });
+
+  it('marks unknown operations as errors instead of silently skipping them', async () => {
+    const outcome = await runOfflineSample(
+      sample({
+        intent: { contract: 'foo.bar', slots: {} },
+        expect: { decision: 'allow', contract: 'foo.bar' },
+      }),
+    );
+    expect(outcome.skipped).toBeUndefined();
+    expect(outcome.actual.decision).toBe('error');
+    expect(outcome.actual.code).toBe('UNKNOWN_CONTRACT');
   });
 
   it('maps contract validation failures to clarify instead of allow', async () => {
@@ -137,5 +164,6 @@ describe('offline eval layer', () => {
     );
     expect(outcome.actual.decision).toBe('clarify');
     expect(outcome.actual.code).toBe('INVALID_ARGS');
+    expect(outcome.actual.clarifySlots).toEqual([]);
   });
 });

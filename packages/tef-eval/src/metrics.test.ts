@@ -17,6 +17,7 @@ function outcome(
       contract: 'create_order',
       slots: {},
       risk: null,
+      clarifySlots: [],
       reasons: [],
     },
     intentSource: 'annotated',
@@ -47,12 +48,21 @@ describe('computeMetrics', () => {
     expect(metrics.safetyInterceptionRate).toBeNull();
     expect(metrics.falseRejectionRate).toBe(0);
     expect(metrics.riskAccuracy).toBeNull();
-    expect(metrics.riskEvaluatedCount).toBe(0);
+    expect(metrics.riskExpectedCount).toBe(0);
+    expect(metrics.riskObservedCount).toBe(0);
+    expect(metrics.riskCoverage).toBeNull();
+    expect(metrics.clarifySlotExpectedCount).toBe(0);
+    expect(metrics.clarifySlotMatchedCount).toBe(0);
+    expect(metrics.clarifySlotRecall).toBeNull();
     expect(metrics.codeAccuracy).toBeNull();
     expect(metrics.codeEvaluatedCount).toBe(0);
+    expect(metrics.usageCoveredCount).toBe(0);
+    expect(metrics.usageCoverage).toBe(0);
+    expect(metrics.costCoveredCount).toBe(0);
+    expect(metrics.costCoverage).toBe(0);
   });
 
-  it('scores risk accuracy only where expected and observed risk exist', () => {
+  it('scores risk accuracy over every sample with expected risk, counting null as a miss', () => {
     const base = outcome('a', 'allow', 'allow');
     const metrics = computeMetrics([
       {
@@ -66,7 +76,7 @@ describe('computeMetrics', () => {
         expected: { ...base.expected, risk: 'L2' },
         actual: { ...base.actual, risk: 'L1' },
       },
-      // 实际未产生风险判定：不计入分母。
+      // 实际未产生风险判定：仍在分母内，按未命中计算。
       {
         ...base,
         sampleId: 'c',
@@ -77,9 +87,33 @@ describe('computeMetrics', () => {
       { ...base, sampleId: 'd', actual: { ...base.actual, risk: 'L0' } },
     ]);
 
-    expect(metrics.riskAccuracy).toBeCloseTo(0.5);
-    // 两条样本有期望风险且 actual risk 非 null；actual 为 null 与未标注样本不计入。
-    expect(metrics.riskEvaluatedCount).toBe(2);
+    // 3 条标注了期望风险，1 条命中；actual 为 null 的样本不再被排除。
+    expect(metrics.riskAccuracy).toBeCloseTo(1 / 3);
+    expect(metrics.riskExpectedCount).toBe(3);
+    expect(metrics.riskObservedCount).toBe(2);
+    expect(metrics.riskCoverage).toBeCloseTo(2 / 3);
+  });
+
+  it('scores clarification slot recall against canonical slot names', () => {
+    const base = outcome('a', 'clarify', 'clarify');
+    const metrics = computeMetrics([
+      {
+        ...base,
+        expected: { decision: 'clarify', clarifySlots: ['customer'] },
+        actual: { ...base.actual, clarifySlots: ['customerId'] },
+      },
+      {
+        ...base,
+        sampleId: 'b',
+        expected: { decision: 'clarify', clarifySlots: ['product', 'order'] },
+        actual: { ...base.actual, clarifySlots: ['sku', 'depositRate'] },
+      },
+    ]);
+
+    expect(metrics.clarificationRecall).toBe(1);
+    expect(metrics.clarifySlotExpectedCount).toBe(3);
+    expect(metrics.clarifySlotMatchedCount).toBe(2);
+    expect(metrics.clarifySlotRecall).toBeCloseTo(2 / 3);
   });
 
   it('scores code accuracy only where a code is expected', () => {
@@ -116,6 +150,26 @@ describe('computeMetrics', () => {
     expect(percentile([], 95)).toBeNull();
   });
 
+  it('compares slot values with trimmed strings and key-order-insensitive objects', () => {
+    const base = outcome('a', 'allow', 'allow');
+    const metrics = computeMetrics([
+      {
+        ...base,
+        expected: {
+          ...base.expected,
+          slots: { customer: { name: ' 伟业公司 ', tags: ['a'] }, quantity: 100 },
+        },
+        actual: {
+          ...base.actual,
+          slots: { customer: { tags: ['a'], name: '伟业公司' }, quantity: ' 100 ' },
+        },
+      },
+    ]);
+
+    // quantity 的 " 100 " 是字符串，不能与数字 100 混同；customer 应命中。
+    expect(metrics.slotF1).toBeCloseTo(1 / 2);
+  });
+
   it('computes slot F1 from annotated fields and aggregates usage cost', () => {
     const base = outcome('a', 'allow', 'allow');
     const metrics = computeMetrics([
@@ -131,6 +185,36 @@ describe('computeMetrics', () => {
     expect(metrics.slotF1).toBeCloseTo(0.5);
     expect(metrics.totalTokens).toBe(15);
     expect(metrics.totalCost).toBeCloseTo(0.0001);
+    expect(metrics.usageCoveredCount).toBe(1);
+    expect(metrics.usageCoverage).toBe(1);
+    expect(metrics.costCoveredCount).toBe(1);
+    expect(metrics.costCoverage).toBe(1);
+  });
+
+  it('reports usage and cost coverage separately from partial totals', () => {
+    const base = outcome('a', 'allow', 'allow');
+    const metrics = computeMetrics([
+      {
+        ...base,
+        usage: [{ model: 'mock-model', promptTokens: 10, completionTokens: 5, totalTokens: 15 }],
+        cost: 0.0001,
+      },
+      {
+        ...base,
+        sampleId: 'b',
+        usage: [{ model: 'mock-model', promptTokens: 2, completionTokens: 1, totalTokens: 3 }],
+        cost: null,
+      },
+      // 无 usage、无 cost。
+      { ...base, sampleId: 'c' },
+    ]);
+
+    expect(metrics.totalTokens).toBe(18);
+    expect(metrics.usageCoveredCount).toBe(2);
+    expect(metrics.usageCoverage).toBeCloseTo(2 / 3);
+    expect(metrics.totalCost).toBeCloseTo(0.0001);
+    expect(metrics.costCoveredCount).toBe(1);
+    expect(metrics.costCoverage).toBeCloseTo(1 / 3);
   });
 
   it('can disable slot scoring for the e2e layer', () => {

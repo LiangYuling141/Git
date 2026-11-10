@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { TokenUsage } from '@lymtrix/tef-runtime';
-import { decisionForTurn, inferContract, parseInvisibleTool } from './decision';
+import {
+  decisionForTurn,
+  inferContract,
+  isUnknownProductReply,
+  parseInvisibleTool,
+  shouldFailOnFallback,
+} from './decision';
 import { computeSampleCost, type PricingSnapshot } from './pricing';
 
 const USAGES: TokenUsage[] = [
@@ -110,6 +116,32 @@ describe('decisionForTurn', () => {
         role: 'owner',
       }),
     ).toBe('error');
+  });
+});
+
+describe('shouldFailOnFallback', () => {
+  it('fails only when a model mode actually called the model and fell back', () => {
+    for (const mode of ['mock', 'recorded', 'live'] as const) {
+      expect(shouldFailOnFallback(mode, true, 'deterministic')).toBe(true);
+      expect(shouldFailOnFallback(mode, true, 'model')).toBe(false);
+      // 澄清恢复/未结算重试会刻意跳过模型：不是回落。
+      expect(shouldFailOnFallback(mode, false, 'deterministic')).toBe(false);
+    }
+  });
+
+  it('never fails for deterministic mode', () => {
+    expect(shouldFailOnFallback('deterministic', false, 'deterministic')).toBe(false);
+    // 理论上 deterministic 模式不会调用模型；即使被误计也不应报回落。
+    expect(shouldFailOnFallback('deterministic', true, 'deterministic')).toBe(false);
+  });
+});
+
+describe('isUnknownProductReply', () => {
+  it('recognises unknown-product replies without matching unrelated text', () => {
+    expect(isUnknownProductReply('库存档案里没有「不存在商品」。')).toBe(true);
+    expect(isUnknownProductReply('没有找到商品，请补充品名。')).toBe(true);
+    expect(isUnknownProductReply('没有找到客户「停业客户」。')).toBe(false);
+    expect(isUnknownProductReply(undefined)).toBe(false);
   });
 });
 

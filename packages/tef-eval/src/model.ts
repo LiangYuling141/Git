@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, relative, resolve } from 'node:path';
 import { LLMClient, type LLMChatRequest, type LLMChatResponse } from '@lymtrix/tef-runtime';
 import type { ModelAdapter } from '@lymtrix/tef-runtime';
 import type { EvalSample } from './sample';
@@ -13,6 +13,22 @@ function response(model: string, content: string): LLMChatResponse {
     choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   };
+}
+
+/**
+ * 录制文件路径必须落在录制目录内。
+ *
+ * 样本 schema 已限制 id 字符集，但 `createModelAdapter` 也可能被直接调用
+ * （测试、脚本）；这里再做一次路径解析校验，拒绝 `..` 与绝对路径逃逸。
+ */
+function recordingPath(recordedDir: string, sampleId: string): string {
+  const base = resolve(recordedDir);
+  const candidate = resolve(base, `${sampleId}.json`);
+  const rel = relative(base, candidate);
+  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) {
+    throw new Error(`recorded response path for ${sampleId} escapes ${base}`);
+  }
+  return candidate;
 }
 
 function assertMockResponse(sample: EvalSample, index: number, count: number): string {
@@ -46,7 +62,7 @@ export function createModelAdapter(
 
   if (mode === 'recorded') {
     if (!recordedDir) throw new Error('recorded mode requires a recording directory');
-    const recorded = JSON.parse(readFileSync(join(recordedDir, `${sample.id}.json`), 'utf8')) as {
+    const recorded = JSON.parse(readFileSync(recordingPath(recordedDir, sample.id), 'utf8')) as {
       responses: LLMChatResponse[];
     };
     let index = 0;
@@ -69,7 +85,7 @@ export function createModelAdapter(
       if (recordedDir) {
         mkdirSync(recordedDir, { recursive: true });
         writeFileSync(
-          join(recordedDir, `${sample.id}.json`),
+          recordingPath(recordedDir, sample.id),
           `${JSON.stringify({ responses }, null, 2)}\n`,
         );
       }

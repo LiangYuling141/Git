@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { CANONICAL_CLARIFY_SLOTS } from './slots';
 
 export const EVAL_CATEGORIES = [
   'normal',
@@ -64,7 +65,9 @@ const orderRecordSchema = z.object({
 });
 
 export const evalSampleSchema = z.object({
-  id: z.string().min(1),
+  // 样本 id 会用于租户名、traceId 与录制文件名；限制字符集与长度，
+  // 防止路径穿越与报告/文件名注入。
+  id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, 'sample id must match ^[A-Za-z0-9_-]{1,64}$'),
   category: z.enum(EVAL_CATEGORIES),
   tenant: z.object({ thresholds: z.record(z.string(), z.number()) }),
   // 离线层把 userId 用作 ExecContext.userId；端到端层改用派生的
@@ -93,6 +96,8 @@ export const evalSampleSchema = z.object({
     contract: z.string().optional(),
     slots: z.record(z.string(), z.unknown()).optional(),
     code: z.string().optional(),
+    /** 期望澄清的 canonical 槽位；用于槽位召回率，不要求与决策一一对应。 */
+    clarifySlots: z.array(z.enum(CANONICAL_CLARIFY_SLOTS)).optional(),
   }),
   modelResponses: z.array(z.string()).optional(),
   tags: z.array(z.string()),

@@ -136,3 +136,59 @@ it('注入 chat 抛错时回落确定性解析器且不回调 usage', async () =
   expect(result.intent.kind).toBe('operation');
   expect(onUsage).not.toHaveBeenCalled();
 });
+
+it('解析回落时仍透出已发生模型调用的 usage', async () => {
+  const onUsage = vi.fn();
+  const chat = vi.fn().mockResolvedValue({
+    id: 'chatcmpl_mock',
+    model: 'mock-model',
+    choices: [
+      { index: 0, message: { role: 'assistant', content: 'not json' }, finish_reason: 'stop' },
+    ],
+    usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+  });
+
+  const result = await parseIntent('给伟业公司下 100 个圣诞球，单价 2 块', { chat, onUsage });
+
+  expect(result.source).toBe('deterministic');
+  expect(result.usage).toEqual({
+    model: 'mock-model',
+    promptTokens: 12,
+    completionTokens: 8,
+    totalTokens: 20,
+  });
+  expect(onUsage).toHaveBeenCalledWith(result.usage);
+});
+
+it('onUsage 回调抛错不会触发确定性回落', async () => {
+  const onUsage = vi.fn(() => {
+    throw new Error('metrics sink down');
+  });
+  const chat = vi.fn().mockResolvedValue({
+    id: 'chatcmpl_mock',
+    model: 'mock-model',
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: 'assistant',
+          content: JSON.stringify({ kind: 'chat', reply: '好的' }),
+        },
+        finish_reason: 'stop',
+      },
+    ],
+    usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+  });
+
+  const result = await parseIntent('你好', { chat, onUsage });
+
+  expect(result.source).toBe('model');
+  expect(result.intent).toEqual({ kind: 'chat', reply: '好的' });
+  expect(result.usage).toEqual({
+    model: 'mock-model',
+    promptTokens: 3,
+    completionTokens: 2,
+    totalTokens: 5,
+  });
+  expect(onUsage).toHaveBeenCalledTimes(1);
+});

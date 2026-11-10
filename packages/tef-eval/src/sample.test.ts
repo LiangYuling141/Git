@@ -58,6 +58,27 @@ describe('eval sample schema', () => {
     ).toThrow();
   });
 
+  it('rejects ids that could escape recording paths or inject reports', () => {
+    for (const id of ['../outside', 'a/b', 'evil|id', 'with space', 'x'.repeat(65)]) {
+      expect(() => evalSampleSchema.parse(sample({ id }))).toThrow();
+    }
+    expect(evalSampleSchema.parse(sample({ id: 'normal_l1_order-2' })).id).toBe(
+      'normal_l1_order-2',
+    );
+  });
+
+  it('accepts canonical clarify slots and rejects non-canonical ones', () => {
+    expect(
+      evalSampleSchema.parse(sample({ expect: { decision: 'clarify', clarifySlots: ['customer'] } }))
+        .expect.clarifySlots,
+    ).toEqual(['customer']);
+    expect(() =>
+      evalSampleSchema.parse(
+        sample({ expect: { decision: 'clarify', clarifySlots: ['customerId'] } }),
+      ),
+    ).toThrow();
+  });
+
   it('loads samples sorted by id and rejects duplicate ids', () => {
     const dir = mkdtempSync(join(tmpdir(), 'tef-eval-'));
     writeFileSync(join(dir, 'b.json'), JSON.stringify([sample({ id: 'b' })]));

@@ -1,6 +1,7 @@
 export * from './sample';
 export * from './fixtures';
 export * from './outcome';
+export * from './slots';
 export * from './offline';
 export * from './metrics';
 export * from './pricing';

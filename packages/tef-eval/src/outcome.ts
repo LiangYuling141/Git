@@ -9,6 +9,8 @@ export interface ActualOutcome {
   contract: string | null;
   slots: Record<string, unknown>;
   risk: RiskOutcome | null;
+  /** 本轮实际追问的 canonical 槽位；非澄清决策为空数组。 */
+  clarifySlots: string[];
   code?: string;
   reasons: string[];
 }

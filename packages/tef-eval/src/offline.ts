@@ -11,10 +11,28 @@ import { registerCreditOrderContracts } from '@lymtrix/vertical-crm-erp';
 import { FixtureCrmGateway } from './fixtures';
 import type { EvalSample } from './sample';
 import type { ActualOutcome, Decision, SampleOutcome } from './outcome';
+import { normalizeClarifySlots } from './slots';
 
 registerCreditOrderContracts();
 
 const DEFAULT_NOW = '2026-01-01T00:00:00.000Z';
+
+/**
+ * 已知的查询工具白名单。
+ *
+ * 离线层只评测已注册契约；这些工具没有契约，属于设计内的非契约操作，
+ * 标记跳过而不是错误。未知 operation 则说明样本或契约注册出了问题，
+ * 必须作为 `UNKNOWN_CONTRACT` 错误暴露，不能静默跳过。
+ */
+const KNOWN_QUERY_TOOLS = new Set([
+  'credit.get',
+  'inventory.check',
+  'customer.search',
+  'customer.get',
+  'order.get',
+  'whitelist.list',
+  'tenant.config.get',
+]);
 
 function decisionFor(blocked: boolean, risk: RiskOutcome): Decision {
   if (blocked) return 'block';
@@ -45,6 +63,7 @@ export async function runOfflineSample(sample: EvalSample): Promise<SampleOutcom
         contract: null,
         slots: {},
         risk: null,
+        clarifySlots: [],
         reasons: ['multi-turn sample is not evaluated offline'],
       },
       intentSource: 'none',
@@ -55,10 +74,9 @@ export async function runOfflineSample(sample: EvalSample): Promise<SampleOutcom
   }
 
   let intent = sample.intent;
-  let intentSource: SampleOutcome['intentSource'] = 'annotated';
+  const intentSource: SampleOutcome['intentSource'] = intent ? 'annotated' : 'deterministic';
   if (!intent) {
     const parsed = parseIntentDeterministic(sample.input.messages[0]);
-    intentSource = 'deterministic';
     if (parsed.kind === 'operation') {
       intent = { contract: parsed.contract, slots: parsed.slots };
     } else if (parsed.kind === 'clarify') {
@@ -71,31 +89,16 @@ export async function runOfflineSample(sample: EvalSample): Promise<SampleOutcom
           contract: parsed.contract ?? null,
           slots: parsed.slots ?? {},
           risk: null,
+          clarifySlots: normalizeClarifySlots(parsed.questions.map((question) => question.slot)),
           reasons: parsed.questions.map((question) => `${question.slot}:${question.reason}`),
         },
         intentSource,
         latencyMs: performance.now() - started,
         traceId,
       };
-    } else if (parsed.kind === 'chat') {
-      // 聊天回复不是写入放行：解析器没有形成可执行操作，需要用户补充信息。
-      return {
-        sampleId: sample.id,
-        category: sample.category,
-        expected: sample.expect,
-        actual: {
-          decision: 'clarify',
-          contract: null,
-          slots: {},
-          risk: null,
-          reasons: ['deterministic parser returned chat; input needs clarification'],
-        },
-        intentSource,
-        latencyMs: performance.now() - started,
-        traceId,
-      };
     } else {
-      // compound 是多步意图，离线层不拆分执行；也不能冒充 chat。
+      // chat / compound 没有形成已注册契约操作。离线层只评测契约操作，
+      // 不能把“解析器没产出操作”计为澄清成功或放行；标记跳过并保留原因。
       return {
         sampleId: sample.id,
         category: sample.category,
@@ -105,9 +108,15 @@ export async function runOfflineSample(sample: EvalSample): Promise<SampleOutcom
           contract: null,
           slots: {},
           risk: null,
-          reasons: ['deterministic parser returned compound; multi-step input requires decomposition'],
+          clarifySlots: [],
+          reasons: [
+            parsed.kind === 'chat'
+              ? 'deterministic parser returned chat; offline layer only scores contract operations'
+              : 'deterministic parser returned compound; offline layer only scores single contract operations',
+          ],
         },
         intentSource,
+        skipped: 'non_contract',
         latencyMs: performance.now() - started,
         traceId,
       };
@@ -116,7 +125,28 @@ export async function runOfflineSample(sample: EvalSample): Promise<SampleOutcom
 
   const contract = contractRegistry.get(intent.contract);
   if (!contract) {
-    // 查询工具没有契约，只在端到端层评测。
+    if (KNOWN_QUERY_TOOLS.has(intent.contract)) {
+      // 查询工具没有契约，只在端到端层评测。
+      return {
+        sampleId: sample.id,
+        category: sample.category,
+        expected: sample.expect,
+        actual: {
+          decision: 'error',
+          contract: intent.contract,
+          slots: intent.slots,
+          risk: null,
+          clarifySlots: [],
+          code: 'NON_CONTRACT_OPERATION',
+          reasons: [`${intent.contract} is a query tool, not a contract`],
+        },
+        intentSource,
+        skipped: 'non_contract',
+        latencyMs: performance.now() - started,
+        traceId,
+      };
+    }
+    // 未知 operation 不是“查询工具”，而是样本或契约注册错误；必须计分暴露。
     return {
       sampleId: sample.id,
       category: sample.category,
@@ -126,11 +156,11 @@ export async function runOfflineSample(sample: EvalSample): Promise<SampleOutcom
         contract: intent.contract,
         slots: intent.slots,
         risk: null,
-        code: 'NON_CONTRACT_OPERATION',
-        reasons: [`${intent.contract} is a query tool, not a contract`],
+        clarifySlots: [],
+        code: 'UNKNOWN_CONTRACT',
+        reasons: [`${intent.contract} is neither a registered contract nor a known query tool`],
       },
       intentSource,
-      skipped: 'non_contract',
       latencyMs: performance.now() - started,
       traceId,
     };
@@ -157,6 +187,7 @@ export async function runOfflineSample(sample: EvalSample): Promise<SampleOutcom
       contract: contract.operation,
       slots: outcome.params as Record<string, unknown>,
       risk: outcome.risk,
+      clarifySlots: [],
       code: outcome.failedChecks[0]?.code,
       reasons: outcome.reasons,
     };
@@ -183,6 +214,7 @@ export async function runOfflineSample(sample: EvalSample): Promise<SampleOutcom
           contract: contract.operation,
           slots: intent.slots,
           risk: null,
+          clarifySlots: [],
           code: 'INVALID_ARGS',
           reasons: invalidArgReasons(error),
         },

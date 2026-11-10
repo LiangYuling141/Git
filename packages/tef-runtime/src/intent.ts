@@ -243,6 +243,9 @@ export async function parseIntent(
     return { intent: parseIntentDeterministic(message), source: 'deterministic' };
   }
 
+  // usage 在拿到响应后立即采集。即使后续 JSON/schema 解析失败回落确定性
+  // 解析器，已发生的模型调用仍应计入评测用量，不能静默丢失。
+  let usage: TokenUsage | undefined;
   try {
     const request: LLMChatRequest = {
       messages: [
@@ -260,18 +263,42 @@ export async function parseIntent(
           timeoutMs: 15000,
         });
 
+    usage = toTokenUsage(response);
+    if (usage) {
+      // onUsage 属于评测埋点，回调异常不能改变解析结果或触发确定性回落。
+      try {
+        options.onUsage?.(usage);
+      } catch {
+        // 忽略回调错误；usage 仍随返回值透出。
+      }
+    }
+
     const raw = response.choices?.[0]?.message?.content ?? '';
     const jsonText = raw.match(/\{[\s\S]*\}/)?.[0];
-    if (!jsonText) return { intent: parseIntentDeterministic(message), source: 'deterministic' };
+    if (!jsonText) {
+      return {
+        intent: parseIntentDeterministic(message),
+        source: 'deterministic',
+        ...(usage ? { usage } : {}),
+      };
+    }
 
     const parsed = intentSchema.safeParse(JSON.parse(jsonText));
-    if (!parsed.success) return { intent: parseIntentDeterministic(message), source: 'deterministic' };
+    if (!parsed.success) {
+      return {
+        intent: parseIntentDeterministic(message),
+        source: 'deterministic',
+        ...(usage ? { usage } : {}),
+      };
+    }
 
-    const usage = toTokenUsage(response);
-    if (usage) options.onUsage?.(usage);
     return { intent: parsed.data, source: 'model', ...(usage ? { usage } : {}) };
   } catch {
     // 模型不可用不是错误：确定性解析器是设计内的回落路径，不是降级兜底。
-    return { intent: parseIntentDeterministic(message), source: 'deterministic' };
+    return {
+      intent: parseIntentDeterministic(message),
+      source: 'deterministic',
+      ...(usage ? { usage } : {}),
+    };
   }
 }

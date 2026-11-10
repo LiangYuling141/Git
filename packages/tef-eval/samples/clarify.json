@@ -61,7 +61,7 @@
         }
       ]
     },
-    "expect": { "decision": "clarify" },
+    "expect": { "decision": "clarify", "clarifySlots": ["order"] },
     "tags": ["clarify", "compensation", "multiple_orders"]
   },
   {
@@ -99,7 +99,7 @@
       ],
       "orders": []
     },
-    "expect": { "decision": "clarify" },
+    "expect": { "decision": "clarify", "clarifySlots": ["customer"] },
     "tags": ["clarify", "customer", "missing"]
   },
   {
@@ -137,7 +137,7 @@
       ],
       "orders": []
     },
-    "expect": { "decision": "clarify" },
+    "expect": { "decision": "clarify", "clarifySlots": ["product"] },
     "tags": ["clarify", "product", "missing"]
   },
   {
@@ -175,7 +175,7 @@
       ],
       "orders": []
     },
-    "expect": { "decision": "clarify" },
+    "expect": { "decision": "clarify", "clarifySlots": ["product"] },
     "tags": ["clarify", "product", "unknown"]
   }
 ]

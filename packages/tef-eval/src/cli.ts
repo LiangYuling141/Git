@@ -1,8 +1,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseArgs } from 'node:util';
 import dotenv from 'dotenv';
 import { prisma } from '@/lib/prisma';
+import { parseEvalOptions } from './cli-options';
 import { loadSamplesForCli } from './load';
 import { resolveExitCode } from './exit-code';
 import type { EvalSample } from './sample';
@@ -52,6 +52,7 @@ function errorOutcome(sample: EvalSample, error: unknown, started: number): Samp
       contract: null,
       slots: {},
       risk: null,
+      clarifySlots: [],
       code: 'EVAL_RUN_ERROR',
       reasons: [message],
     },
@@ -64,30 +65,14 @@ function errorOutcome(sample: EvalSample, error: unknown, started: number): Samp
 }
 
 async function main(): Promise<void> {
-  const { values } = parseArgs({
-    options: {
-      mode: { type: 'string', default: 'all' },
-      samples: { type: 'string', default: 'packages/tef-eval/samples' },
-      out: { type: 'string' },
-      live: { type: 'boolean', default: false },
-      recorded: { type: 'string' },
-      verbose: { type: 'boolean', default: false },
-    },
-  });
-
-  const layerMode = values.mode;
-  if (!['offline', 'e2e', 'all'].includes(layerMode)) {
-    fail(`invalid --mode: ${layerMode} (expected offline|e2e|all)`);
+  let options;
+  try {
+    options = parseEvalOptions(process.argv.slice(2));
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
   }
-  if (values.live && values.recorded) {
-    fail('--live and --recorded are mutually exclusive');
-  }
+  const { layerMode, evalMode } = options;
 
-  const evalMode: EvalMode = values.live
-    ? 'live'
-    : values.recorded
-      ? 'recorded'
-      : 'deterministic';
   if (evalMode === 'live') {
     if (process.env.TEF_MODEL_TESTS !== '1') {
       fail('--live requires TEF_MODEL_TESTS=1');
@@ -97,19 +82,22 @@ async function main(): Promise<void> {
     }
   }
 
-  const samples = loadSamplesOrExit(values.samples);
+  const samples = loadSamplesOrExit(options.samples);
   if (!samples) return;
 
   const id = runId();
   // 运行开始时间只采集一次，不随各层结束时间漂移。
   const startedAt = new Date().toISOString();
-  const outDir = values.out ?? join('eval-results', id);
+  const outDir = options.out ?? join('eval-results', id);
   mkdirSync(outDir, { recursive: true });
 
   const requested: Array<'offline' | 'e2e'> =
     layerMode === 'all' ? ['offline', 'e2e'] : [layerMode as 'offline' | 'e2e'];
   // 样本级异常被隔离记录后批次继续跑完；但发生执行抛错时整批以退出码 1 结束。
   let thrownSampleError = false;
+  // e2e 被显式请求却因数据库缺失跳过时，必须非零退出（除非 --allow-missing-db）。
+  let e2eSkipped = false;
+  const allOutcomes: SampleOutcome[] = [];
 
   for (const layer of requested) {
     const outcomes: SampleOutcome[] = [];
@@ -117,7 +105,7 @@ async function main(): Promise<void> {
 
     if (layer === 'offline') {
       for (const sample of samples) {
-        if (values.verbose) console.log(`[offline] ${sample.id}`);
+        if (options.verbose) console.log(`[offline] ${sample.id}`);
         const started = performance.now();
         try {
           outcomes.push(await runOfflineSample(sample));
@@ -129,6 +117,7 @@ async function main(): Promise<void> {
     } else {
       const hasDb = process.env.TEF_DB_TESTS === '1' && Boolean(process.env.DATABASE_URL);
       if (!hasDb) {
+        e2eSkipped = true;
         const skippedNotes = [
           `skipped: DATABASE_URL/TEF_DB_TESTS not configured; e2e layer did not run (requested ${samples.length} samples)`,
         ];
@@ -139,8 +128,8 @@ async function main(): Promise<void> {
         continue;
       }
       for (const sample of samples) {
-        if (values.verbose) console.log(`[e2e] ${sample.id}`);
-        const modelDir = evalMode === 'live' ? join(outDir, 'recordings') : values.recorded;
+        if (options.verbose) console.log(`[e2e] ${sample.id}`);
+        const modelDir = evalMode === 'live' ? join(outDir, 'recordings') : options.recorded;
         const started = performance.now();
         try {
           outcomes.push(await runE2eSample(sample, evalMode, modelDir));
@@ -158,10 +147,40 @@ async function main(): Promise<void> {
     mkdirSync(layerDir, { recursive: true });
     writeFileSync(join(layerDir, 'results.json'), renderJson(run));
     writeFileSync(join(layerDir, 'report.md'), renderMarkdown(run));
+    allOutcomes.push(...outcomes);
   }
 
   console.log(`eval results written to ${outDir}`);
-  process.exitCode = resolveExitCode({ loadFailed: false, thrownSampleError });
+  // 治理数据按租户前缀隔离；traceId 让报告读者能从审计表定位每条决策链。
+  console.log('eval tenant prefix: t_eval_');
+  const traceIds = allOutcomes.flatMap((outcome) =>
+    outcome.traceIds ?? (outcome.traceId ? [outcome.traceId] : []),
+  );
+  console.log(`eval traceIds (${traceIds.length}):`);
+  for (const traceId of traceIds) console.log(`  ${traceId}`);
+  process.exitCode = resolveExitCode({
+    loadFailed: false,
+    thrownSampleError,
+    e2eSkipped,
+    allowMissingDb: options.allowMissingDb,
+  });
+}
+
+/**
+ * 报告中的模型名来自实际观测到的 usage，而不是 CLI 的请求假设。
+ * 修改 DEEPSEEK_MODEL 后仍能如实标注；没有 usage 记为 unknown，
+ * 多个模型（或别名漂移）记为 mixed。
+ */
+function reportModel(
+  evalMode: EvalMode,
+  outcomes: SampleOutcome[],
+): { name: string; provider: string } {
+  if (evalMode !== 'live') return { name: evalMode, provider: 'none' };
+  const models = new Set(
+    outcomes.flatMap((outcome) => (outcome.usage ?? []).map((usage) => usage.model)),
+  );
+  const name = models.size === 0 ? 'unknown' : models.size === 1 ? [...models][0] : 'mixed';
+  return { name, provider: 'deepseek' };
 }
 
 function buildRun(
@@ -179,10 +198,7 @@ function buildRun(
     startedAt,
     mode: evalMode,
     layer,
-    model: {
-      name: evalMode === 'live' ? 'deepseek-chat' : evalMode,
-      provider: evalMode === 'live' ? 'deepseek' : 'none',
-    },
+    model: reportModel(evalMode, outcomes),
     // sampleCount 表示实际产出的 outcome 数；被跳过的层为 0，
     // 请求规模由 requestedSampleCount 单独记录，避免“24 条样本 0 条指标”的误读。
     sampleCount: outcomes.length,

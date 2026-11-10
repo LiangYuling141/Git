@@ -2,6 +2,7 @@ import type { TenantRole } from '@lymtrix/tef-core';
 // 直接从 tenant 子路径导入，避免经由 package index 拉入 tenant-scope 的
 // `@/lib/prisma` 运行时依赖；决策映射需要保持可在无数据库环境下单测。
 import { canCallTool } from '@lymtrix/tef-mcp-kit/tenant';
+import type { ModelMode } from './model';
 import type { Decision } from './outcome';
 
 export interface TurnDecisionInput {
@@ -15,6 +16,27 @@ export interface TurnDecisionInput {
 
 /** MCP 工具层拒绝未注册/不可见工具时返回的原始错误文本。 */
 const TOOL_VISIBILITY_ERROR = /Tool ([\w.]+) (?:not found|not visible)/;
+
+/** 回复表示库存档案缺失/未知商品：业务事实不足，交还用户澄清。 */
+export function isUnknownProductReply(reply: string | undefined): boolean {
+  if (!reply) return false;
+  return reply.includes('库存档案里没有') || reply.includes('没有找到商品');
+}
+
+/**
+ * 非确定性模式是否发生了不可接受的确定性回落。
+ *
+ * 只有本轮实际调用了模型、却仍返回 deterministic 意图时才失败。
+ * 恢复澄清、未结算执行重试等轮次会刻意跳过模型（`chatCalled === false`），
+ * 这不是回落，不能误报为 harness 故障。
+ */
+export function shouldFailOnFallback(
+  mode: ModelMode,
+  chatCalled: boolean,
+  intentSource: 'model' | 'deterministic',
+): boolean {
+  return mode !== 'deterministic' && chatCalled && intentSource !== 'model';
+}
 
 /** 从回复中解析被拒绝的工具名；不是工具可见性错误时返回 null。 */
 export function parseInvisibleTool(reply: string | undefined): string | null {
@@ -43,10 +65,7 @@ export function decisionForTurn(input: TurnDecisionInput): Decision {
     if (invisibleTool) {
       return canCallTool(input.role, invisibleTool) ? 'error' : 'block';
     }
-    if (
-      input.reply.includes('库存档案里没有') ||
-      input.reply.includes('没有找到商品')
-    ) {
+    if (isUnknownProductReply(input.reply)) {
       return 'clarify';
     }
   }

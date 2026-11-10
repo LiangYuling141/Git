@@ -20,7 +20,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "eval": "vite-node --config vite.eval.config.ts packages/tef-eval/src/cli.ts",
-    "eval:live": "TEF_MODEL_TESTS=1 npm run eval -- --mode all --live",
+    "eval:live": "TEF_MODEL_TESTS=1 TEF_DB_TESTS=1 npm run eval -- --mode all --live",
     "db:bootstrap": "node scripts/bootstrap-db.mjs --run",
     "db:seed": "node prisma/seed.mjs",
     "rls:apply": "node scripts/rls.mjs apply",
