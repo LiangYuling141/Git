@@ -3,7 +3,7 @@ import { loadTokenSecret, resolveTenantContext } from '@lymtrix/tef-mcp-kit';
 import { runAgentTurn, taskStateStore, type TokenUsage } from '@lymtrix/tef-runtime';
 import { connectCrmErpClient } from '@lymtrix/vertical-crm-erp';
 import { createModelAdapter, type ModelMode } from './model';
-import { estimateCost } from './pricing';
+import { computeSampleCost } from './pricing';
 import { FixtureCrmGateway } from './fixtures';
 import type { EvalSample } from './sample';
 import type { ActualOutcome, Decision, SampleOutcome } from './outcome';
@@ -39,9 +39,14 @@ function inferContract(toolCalls: Array<{ tool: string }>): string | null {
   return null;
 }
 
+/** 每个样本使用独立用户，避免共享用户被 upsert 改写 home tenant 后互相串扰。 */
+function evalUserId(sample: EvalSample): string {
+  return `u_eval_${sample.id}`;
+}
+
 async function ensureEvalTenant(sample: EvalSample): Promise<string> {
   const tenantId = `t_eval_${sample.id}`;
-  const userId = sample.principal.userId;
+  const userId = evalUserId(sample);
   await prisma.tenant.upsert({
     where: { id: tenantId },
     create: {
@@ -72,7 +77,7 @@ export async function runE2eSample(
 ): Promise<SampleOutcome> {
   const started = performance.now();
   const tenantId = await ensureEvalTenant(sample);
-  const userId = sample.principal.userId;
+  const userId = evalUserId(sample);
   const resolved = await resolveTenantContext(userId, prisma, tenantId);
   const principal = {
     ...resolved,
@@ -126,6 +131,12 @@ export async function runE2eSample(
           }),
         model: adapter,
       });
+      // 非确定性模式必须真实走到模型；静默回落会把 mock/recorded/live 失败标成成功样本。
+      if (modelMode !== 'deterministic' && last.intentSource !== 'model') {
+        throw new Error(
+          `sample ${sample.id}: model mode ${modelMode} fell back to deterministic on turn ${index}`,
+        );
+      }
       taskState = await taskStateStore.update(
         tenantId,
         conversationId,
@@ -134,7 +145,10 @@ export async function runE2eSample(
       );
     }
   } finally {
-    if (modelMode === 'deterministic') process.env.DEEPSEEK_API_KEY = previousKey;
+    if (modelMode === 'deterministic') {
+      if (previousKey === undefined) delete process.env.DEEPSEEK_API_KEY;
+      else process.env.DEEPSEEK_API_KEY = previousKey;
+    }
   }
 
   const envelope = last?.envelope;
@@ -159,10 +173,7 @@ export async function runE2eSample(
     intentSource: last?.intentSource ?? 'none',
     latencyMs: performance.now() - started,
     usage: usages.length > 0 ? usages : undefined,
-    // 只有 live 模式的 usage 才对应真实计费；mock/recorded 的 0 token 不折算成本。
-    cost:
-      modelMode === 'live' && usages.length > 0
-        ? usages.reduce((sum, usage) => sum + (estimateCost(usage) ?? 0), 0)
-        : null,
+    // 只有 live 模式的 usage 才对应真实计费；价目缺失时返回 null，不用 0 掩盖。
+    cost: computeSampleCost(usages, modelMode),
   };
 }

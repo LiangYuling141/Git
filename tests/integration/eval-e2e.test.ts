@@ -88,6 +88,12 @@ describeDb('Phase D 端到端评测（真实数据库）', () => {
     }
 
     expect(outcomes.map((item) => item.actual.decision)).toEqual(['allow', 'confirm', 'block']);
+    expect(outcomes.map((item) => item.actual.risk)).toEqual(['L1', 'L2', 'Block']);
+    expect(outcomes.map((item) => item.actual.contract)).toEqual([
+      'create_order',
+      'create_order',
+      'create_order',
+    ]);
     expect(outcomes.every((item) => Array.isArray(item.actual.reasons))).toBe(true);
   }, 60000);
 });

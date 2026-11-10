@@ -1984,7 +1984,7 @@ import { loadTokenSecret, resolveTenantContext } from '@lymtrix/tef-mcp-kit';
 import { runAgentTurn, taskStateStore, type TokenUsage } from '@lymtrix/tef-runtime';
 import { connectCrmErpClient } from '@lymtrix/vertical-crm-erp';
 import { createModelAdapter, type ModelMode } from './model';
-import { estimateCost } from './pricing';
+import { computeSampleCost } from './pricing';
 import { FixtureCrmGateway } from './fixtures';
 import type { EvalSample } from './sample';
 import type { ActualOutcome, Decision, SampleOutcome } from './outcome';
@@ -2022,7 +2022,8 @@ function inferContract(toolCalls: Array<{ tool: string }>): string | null {
 
 async function ensureEvalTenant(sample: EvalSample): Promise<string> {
   const tenantId = `t_eval_${sample.id}`;
-  const userId = sample.principal.userId;
+  // 每样本独立用户：共享用户会被 upsert 改写 home tenant，导致样本间串扰。
+  const userId = `u_eval_${sample.id}`;
   await prisma.tenant.upsert({
     where: { id: tenantId },
     create: {
@@ -2053,7 +2054,8 @@ export async function runE2eSample(
 ): Promise<SampleOutcome> {
   const started = performance.now();
   const tenantId = await ensureEvalTenant(sample);
-  const userId = sample.principal.userId;
+  // 每样本独立用户：共享用户会被 upsert 改写 home tenant，导致样本间串扰。
+  const userId = `u_eval_${sample.id}`;
   const resolved = await resolveTenantContext(userId, prisma, tenantId);
   const principal = {
     ...resolved,
@@ -2097,7 +2099,13 @@ export async function runE2eSample(
         traceId,
         secret,
         connectSession: async (options) =>
-          connectCrmErpClient({ ...options, gateway, effectsExecutor }),
+          connectCrmErpClient({
+            ...options,
+            gateway,
+            // 预览/执行路径与查询工具必须共享同一份冻结 fixture。
+            gatewayFactory: () => gateway,
+            effectsExecutor,
+          }),
         model: adapter,
       });
       taskState = await taskStateStore.update(
@@ -2133,11 +2141,8 @@ export async function runE2eSample(
     intentSource: last?.intentSource ?? 'none',
     latencyMs: performance.now() - started,
     usage: usages.length > 0 ? usages : undefined,
-    // 只有 live 模式的 usage 才对应真实计费；mock/recorded 的 0 token 不折算成本。
-    cost:
-      modelMode === 'live' && usages.length > 0
-        ? usages.reduce((sum, usage) => sum + (estimateCost(usage) ?? 0), 0)
-        : null,
+    // 只有 live 模式的 usage 才对应真实计费；价目缺失时返回 null，不用 0 掩盖。
+    cost: computeSampleCost(usages, modelMode),
   };
 }
 ```
