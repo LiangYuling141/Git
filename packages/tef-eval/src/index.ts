@@ -5,3 +5,5 @@ export * from './offline';
 export * from './metrics';
 export * from './pricing';
 export * from './report';
+export * from './model';
+export * from './e2e';
