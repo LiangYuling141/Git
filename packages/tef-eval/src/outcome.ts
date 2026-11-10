@@ -21,6 +21,10 @@ export interface SampleOutcome {
   intentSource: 'annotated' | 'deterministic' | 'model' | 'none';
   skipped?: 'multi_turn' | 'non_contract';
   latencyMs: number;
+  /** 本样本最后一条决策链的 traceId，用于从审计表定位该样本。 */
+  traceId?: string;
+  /** 端到端层多轮样本按轮次记录的 traceId；单轮时可省略。 */
+  traceIds?: string[];
   /** 端到端层的模型用量；离线层为空。 */
   usage?: TokenUsage[];
   /** 端到端层按价目快照计算的成本；无 usage 时为 null。 */

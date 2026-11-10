@@ -1,6 +1,27 @@
 import { describe, expect, it } from 'vitest';
+import type { SampleOutcome } from './outcome';
 import { estimateCost } from './pricing';
 import { renderJson, renderMarkdown, type EvalRun } from './report';
+
+const OUTCOMES: SampleOutcome[] = [
+  {
+    sampleId: 'normal_l1_order',
+    category: 'normal',
+    expected: { decision: 'allow' },
+    actual: { decision: 'allow', contract: 'create_order', slots: {}, risk: null, reasons: [] },
+    intentSource: 'annotated',
+    latencyMs: 1.5,
+    traceId: 'tr_eval_normal_l1_order',
+  },
+  {
+    sampleId: 'legacy_sample',
+    category: 'normal',
+    expected: { decision: 'allow' },
+    actual: { decision: 'allow', contract: 'create_order', slots: {}, risk: null, reasons: [] },
+    intentSource: 'annotated',
+    latencyMs: 1,
+  },
+];
 
 const run: EvalRun = {
   schemaVersion: 1,
@@ -9,9 +30,9 @@ const run: EvalRun = {
   mode: 'deterministic',
   layer: 'offline',
   model: { name: 'deterministic', provider: 'none' },
-  sampleCount: 1,
+  sampleCount: 2,
   metrics: {
-    sampleCount: 1,
+    sampleCount: 2,
     evaluatedCount: 1,
     skippedCount: 0,
     confusion: {},
@@ -30,7 +51,7 @@ const run: EvalRun = {
     totalTokens: null,
     totalCost: null,
   },
-  samples: [],
+  samples: OUTCOMES,
   notes: [],
 };
 
@@ -45,12 +66,18 @@ describe('pricing and report', () => {
     ).toBeNull();
   });
 
-  it('renders json and markdown with the run identity', () => {
-    expect(JSON.parse(renderJson(run)).runId).toBe('eval_test');
+  it('renders json and markdown with the run identity and traceId', () => {
+    const parsed = JSON.parse(renderJson(run));
+    expect(parsed.runId).toBe('eval_test');
+    expect(parsed.samples[0].traceId).toBe('tr_eval_normal_l1_order');
     const markdown = renderMarkdown(run);
     expect(markdown).toContain('eval_test');
     expect(markdown).toContain('deterministic');
     expect(markdown).toContain('样本规模');
+    expect(markdown).toContain('| 样本 | 类别 | 期望 | 实际 | 延迟 | traceId |');
+    expect(markdown).toContain('| tr_eval_normal_l1_order |');
+    // 无 traceId 的样本输出占位符，不伪造 trace。
+    expect(markdown).toContain('| legacy_sample | normal | allow | allow | 1.0 ms | - |');
   });
 
   it('shows null instead of fabricating missing rates and costs', () => {

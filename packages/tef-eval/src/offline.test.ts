@@ -53,6 +53,7 @@ describe('offline eval layer', () => {
     expect(outcome.actual.decision).toBe('allow');
     expect(outcome.actual.risk).toBe('L1');
     expect(outcome.intentSource).toBe('annotated');
+    expect(outcome.traceId).toBe('tr_eval_normal_l1_order');
   });
 
   it('returns confirm for an L2 order', async () => {

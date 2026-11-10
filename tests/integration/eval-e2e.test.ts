@@ -95,5 +95,14 @@ describeDb('Phase D 端到端评测（真实数据库）', () => {
       'create_order',
     ]);
     expect(outcomes.every((item) => Array.isArray(item.actual.reasons))).toBe(true);
+    // 每条样本都必须把决策链 traceId 持久化到 outcome，避免证据只留在治理表。
+    expect(
+      outcomes.every(
+        (item) =>
+          typeof item.traceId === 'string' &&
+          item.traceId.startsWith(`tr_eval_${item.sampleId}_`),
+      ),
+    ).toBe(true);
+    expect(outcomes.every((item) => item.traceIds === undefined)).toBe(true);
   }, 60000);
 });

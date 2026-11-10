@@ -31,6 +31,9 @@ function invalidArgReasons(error: ContractValidationError | ZodError): string[] 
 
 export async function runOfflineSample(sample: EvalSample): Promise<SampleOutcome> {
   const started = performance.now();
+  // 离线层不写治理表，但 traceId 是契约执行的确定性标识，结果中保留以便与
+  // 端到端层及审计回放对齐。
+  const traceId = `tr_eval_${sample.id}`;
 
   if (sample.input.messages.length > 1) {
     return {
@@ -47,6 +50,7 @@ export async function runOfflineSample(sample: EvalSample): Promise<SampleOutcom
       intentSource: 'none',
       skipped: 'multi_turn',
       latencyMs: performance.now() - started,
+      traceId,
     };
   }
 
@@ -71,6 +75,7 @@ export async function runOfflineSample(sample: EvalSample): Promise<SampleOutcom
         },
         intentSource,
         latencyMs: performance.now() - started,
+        traceId,
       };
     } else if (parsed.kind === 'chat') {
       // 聊天回复不是写入放行：解析器没有形成可执行操作，需要用户补充信息。
@@ -87,6 +92,7 @@ export async function runOfflineSample(sample: EvalSample): Promise<SampleOutcom
         },
         intentSource,
         latencyMs: performance.now() - started,
+        traceId,
       };
     } else {
       // compound 是多步意图，离线层不拆分执行；也不能冒充 chat。
@@ -103,6 +109,7 @@ export async function runOfflineSample(sample: EvalSample): Promise<SampleOutcom
         },
         intentSource,
         latencyMs: performance.now() - started,
+        traceId,
       };
     }
   }
@@ -125,6 +132,7 @@ export async function runOfflineSample(sample: EvalSample): Promise<SampleOutcom
       intentSource,
       skipped: 'non_contract',
       latencyMs: performance.now() - started,
+      traceId,
     };
   }
 
@@ -133,7 +141,7 @@ export async function runOfflineSample(sample: EvalSample): Promise<SampleOutcom
     userId: sample.principal.userId,
     sessionId: `s_eval_${sample.id}`,
     role: sample.principal.role,
-    traceId: `tr_eval_${sample.id}`,
+    traceId,
     timestampSnapshot: new Date(sample.now ?? DEFAULT_NOW),
     recentOpCount: 0,
     whitelistLevel: 'none',
@@ -160,6 +168,7 @@ export async function runOfflineSample(sample: EvalSample): Promise<SampleOutcom
       actual,
       intentSource,
       latencyMs: performance.now() - started,
+      traceId,
     };
   } catch (error) {
     // 参数不完整时契约引擎会抛 ContractValidationError（内部包装 normalize 的
@@ -179,6 +188,7 @@ export async function runOfflineSample(sample: EvalSample): Promise<SampleOutcom
         },
         intentSource,
         latencyMs: performance.now() - started,
+        traceId,
       };
     }
     throw error;

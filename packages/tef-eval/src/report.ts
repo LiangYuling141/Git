@@ -60,11 +60,11 @@ export function renderMarkdown(run: EvalRun): string {
     '',
     '## 样本明细',
     '',
-    '| 样本 | 类别 | 期望 | 实际 | 延迟 |',
-    '|------|------|------|------|------|',
+    '| 样本 | 类别 | 期望 | 实际 | 延迟 | traceId |',
+    '|------|------|------|------|------|---------|',
     ...run.samples.map(
       (sample) =>
-        `| ${sample.sampleId} | ${sample.category} | ${sample.expected.decision} | ${sample.actual.decision} | ${sample.latencyMs.toFixed(1)} ms |`,
+        `| ${sample.sampleId} | ${sample.category} | ${sample.expected.decision} | ${sample.actual.decision} | ${sample.latencyMs.toFixed(1)} ms | ${sample.traceId ?? '-'} |`,
     ),
     '',
   ];

@@ -4,7 +4,7 @@
 >
 > **验证记录：**
 > - live：`TEF_MODEL_TESTS=1 TEF_DB_TESTS=1 npm run eval -- --mode all --live` → runId `eval_20261110064949674_8dlcta`；离线层 22 条计分 + 2 条 `skipped_non_contract`，端到端层 24/24 执行
-> - 录制回放：`TEF_DB_TESTS=1 npm run eval -- --mode e2e --recorded packages/tef-eval/recordings` → runId `eval_20261110065020550_l55f1k`，24/24 决策与 live 一致
+> - 录制回放：`TEF_DB_TESTS=1 npm run eval -- --mode e2e --recorded packages/tef-eval/recordings` → runId `eval_20261110071035072_9t26ek`，24/24 决策与 live 一致；持久证据 [docs/eval/evidence/phase-d-recorded-replay/](../../eval/evidence/phase-d-recorded-replay/)
 > - 全量验证：`npm run typecheck`、`npm run lint`、`npm run boundaries:check`、`npm run secrets:check`、`TEF_DB_TESTS=1 npm test`（536 passed）、`npm run build` 全部通过
 > - 首版报告：[../../eval/phase-d-baseline.md](../../eval/phase-d-baseline.md)
 

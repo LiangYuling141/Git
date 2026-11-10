@@ -2,8 +2,9 @@
 
 > 状态：已实施（首版）
 > 日期：2026-11-10
-> 实施验证：2026-11-10；live 运行 `TEF_MODEL_TESTS=1 TEF_DB_TESTS=1 npm run eval -- --mode all --live`（runId `eval_20261110064949674_8dlcta`），录制回放 `TEF_DB_TESTS=1 npm run eval -- --mode e2e --recorded packages/tef-eval/recordings`
+> 实施验证：2026-11-10；live 运行 `TEF_MODEL_TESTS=1 TEF_DB_TESTS=1 npm run eval -- --mode all --live`（runId `eval_20261110064949674_8dlcta`），录制回放 `TEF_DB_TESTS=1 npm run eval -- --mode e2e --recorded packages/tef-eval/recordings`（runId `eval_20261110071035072_9t26ek`，24/24 决策与 live 一致）
 > 首版报告：[phase-d-baseline.md](../../eval/phase-d-baseline.md)
+> 持久证据：[phase-d-recorded-replay](../../eval/evidence/phase-d-recorded-replay/)（录制回放 e2e 与确定性重跑 offline 的 `results.json`/`report.md`）
 > 范围：P2 准备的第一步——可复现评测 harness、24 条种子样本与首版报告
 > 权威架构：[14-unified-architecture.md](../../technical/14-unified-architecture.md)
 > 前置：[Phase C 执行状态机计划](../plans/2026-11-09-phase-c-p1-execution-state-machine.md)（已完成）
@@ -143,6 +144,7 @@ interface EvalSample {
 - 离线层只评测契约操作。`intent.contract` 不在契约注册表时，样本标记 `skipped_non_contract`，不计入离线指标；查询类样本仍由端到端层评测。
 - 端到端层的 actual contract 与 actual slots 来自本轮结束后的 `TaskState.intent`（合并 `AgentTurnResult.patch` 后读取）；没有 intent 时 contract 记为 `null`。
 - `actual.code` 取 `Envelope.error.checks[0].code`（具体失败检查的稳定错误码），缺失时回落 `Envelope.error.code`。该口径与离线层 `failedChecks[0].code` 一致，避免把 `VALIDATION_ERROR` 这类外层封装码误判为业务错误码。
+- 每条样本的 outcome 持久化 `traceId`：离线层为 `tr_eval_<sampleId>`，端到端层为该样本最后一轮的 `tr_eval_<sampleId>_<epoch_ms>_<turn>`。多轮样本额外记录 `traceIds` 数组（按轮次），保证 `results.json` 自身即可定位决策链，不依赖治理表。
 
 ### 4.1 样本集
 
@@ -235,7 +237,8 @@ fixture 数据只读且深冻结（`Object.freeze` 或加载后不再修改）�
 - 两层指标分别统计、分别生成报告；不得把 offline 与 e2e 样本合并计算拦截率、误拒率或延迟。
 - 任一比例指标的分母为 0 时输出 `null`，不输出 0 或 100%，避免把“没有样本”误读为“表现完美”。
 - P95 在 24 条样本上不具统计显著性，报告必须标注样本规模与“仅作工程趋势参考”。
-- 每条样本在 JSON 中保留 expected、actual、contract、槽位明细、延迟、usage、traceId 与错误信息，便于人工复核。
+- 每条样本在 JSON 中保留 expected、actual、contract、槽位明细、延迟、usage、`traceId`（多轮另有 `traceIds`）与错误信息，便于人工复核。Markdown 样本明细表包含 `traceId` 列（缺失时渲染 `-`）。
+- 误拒率只统计 `allow → block`；`allow → clarify` 不计入误拒率分母，但会体现在严格拦截率与意图准确率中，报告必须注明该口径。
 
 ## 8. 报告与 CLI
 
@@ -324,9 +327,9 @@ eval-results/<runId>/
 - `e2e.test.ts`：`decision.ts` 的决策映射、工具可见性按角色判定、工具名解析与契约推断，以及成本计算。
 - `exit-code.test.ts`：退出码策略（正常 0、样本执行抛错 1、加载失败 2、加载失败优先）。
 - `offline.test.ts`：24 条样本全部可执行；至少覆盖 allow/confirm/block 三类结果。
-- `report.test.ts`：JSON 与 Markdown 渲染、`null` 成本、skipped 标记。
-- `tests/integration/eval-e2e.test.ts`：3 条代表样本（normal L1、L2 confirm、adversarial block）在真实数据库与 fixture 网关下端到端跑通。
-- 现有 414 项测试全部保持通过。
+- `report.test.ts`：JSON 与 Markdown 渲染、`null` 成本、skipped 标记、`traceId` 在 JSON 与样本明细表中的持久化/渲染。
+- `tests/integration/eval-e2e.test.ts`：3 条代表样本（normal L1、L2 confirm、adversarial block）在真实数据库与 fixture 网关下端到端跑通，并断言每条 outcome 持久化 `traceId`。
+- 现有 536 项测试（461 单元 + 75 数据库）全部保持通过。
 
 ### 10.2 验收
 
@@ -344,7 +347,7 @@ npm run eval -- --mode all --live
 1. 离线层评测全部契约样本，查询工具样本标记 `skipped_non_contract`，输出完整指标。
 2. 端到端层在 `TEF_DB_TESTS=1` 下跑通 24 条样本，无业务数据写入（effects 由评测执行器拦截）。
 3. live 运行产生录制材料，`recorded` 模式可在断网条件下复现同一批响应。
-4. 首版报告入库，指标与 `results.json` 一致。
+4. 首版报告入库，指标与 `results.json` 一致；录制回放的 `e2e`/`offline`  artifacts 复制到 `docs/eval/evidence/phase-d-recorded-replay/` 并入库，报告中的 traceId 引用该持久证据（live 治理数据可能被测试清理）。
 5. 文档同步完成：`CLAUDE.md` Key Files、`docs/00-framework.md`、挑战杯说明书 §8.6、README、设计 spec 与实施计划交叉引用一致。
 
 ## 11. 风险与限制

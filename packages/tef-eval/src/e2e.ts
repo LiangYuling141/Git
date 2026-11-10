@@ -77,12 +77,15 @@ export async function runE2eSample(
 
   let taskState = await taskStateStore.loadOrCreate(tenantId, conversationId, userId);
   let last: Awaited<ReturnType<typeof runAgentTurn>> | undefined;
+  // 每轮一个 traceId；结果保留最后一轮的 traceId（决策链终点），多轮时保留全部。
+  const traceIds: string[] = [];
 
   const previousKey = process.env.DEEPSEEK_API_KEY;
   if (modelMode === 'deterministic') process.env.DEEPSEEK_API_KEY = '';
   try {
     for (let index = 0; index < sample.input.messages.length; index += 1) {
       const traceId = `tr_eval_${sample.id}_${Date.now()}_${index}`;
+      traceIds.push(traceId);
       last = await runAgentTurn({
         message: sample.input.messages[index],
         conversationId,
@@ -149,6 +152,8 @@ export async function runE2eSample(
     actual,
     intentSource: last?.intentSource ?? 'none',
     latencyMs: performance.now() - started,
+    traceId: traceIds[traceIds.length - 1],
+    ...(traceIds.length > 1 ? { traceIds } : {}),
     usage: usages.length > 0 ? usages : undefined,
     // 只有 live 模式的 usage 才对应真实计费；价目缺失时返回 null，不用 0 掩盖。
     cost: computeSampleCost(usages, modelMode),

@@ -805,7 +805,7 @@ sequenceDiagram
 | 闭环集成 | 真实数据库端到端、攻击场景、补偿、内部网关、执行结算与对账 | `tests/integration/` | 70（需 `TEF_DB_TESTS=1`） |
 | 执行器集成 | 进程内 effects 执行器幂等、并发与重放 | `verticals/crm-erp-mcp/src/gateway/effects-executor.test.ts` | 4（需 `TEF_DB_TESTS=1`） |
 
-> 另有遗留测试 `src/agents/SubAgent.validation.test.ts`（2 个）计入 339 个单元测试总数；它属于旧投票路径，不在 TEF 模块映射内。
+> 另有遗留测试 `src/agents/SubAgent.validation.test.ts`（2 个）计入 461 个单元测试总数；它属于旧投票路径，不在 TEF 模块映射内。
 >
 > `BusinessGateway` 是 Phase B2 CRM HTTP 网关的端口：核心只定义泛型 `query` + `executeEffects`，不含 CRM 字段；CRM DTO 与类型化读方法通过垂直包的 `CrmBusinessGateway extends BusinessGateway` 扩展。Phase B2 默认仍使用进程内 Prisma 实现（`PrismaCrmGateway`），仅显式设置 `TEF_CRM_GATEWAY=http` 时切换为 `HttpCrmGateway`；垂直查询工具与契约 `loadEvidence` 均经该端口读取业务数据。
 
@@ -833,7 +833,7 @@ sequenceDiagram
 
 | 层级 | 范围 | 数量 | 运行条件 |
 |------|------|------|----------|
-| 单元测试 | 契约引擎、风险、哈希、快照、令牌、审计链、意图、Runtime 执行结果映射、MCP、创建与补偿契约、Prisma/HTTP 业务网关、执行器重读语义、确认执行计划与结果映射、effects 路由未知映射、包边界检查 | 339 | `npm test` 默认运行 |
+| 单元测试 | 契约引擎、风险、哈希、快照、令牌、审计链、意图、Runtime 执行结果映射、MCP、创建与补偿契约、Prisma/HTTP 业务网关、执行器重读语义、确认执行计划与结果映射、effects 路由未知映射、包边界检查、Phase D 评测 harness（`packages/tef-eval` 的离线/端到端 eval 逻辑） | 461 | `npm test` 默认运行 |
 | 数据库集成测试 | Phase 0 闭环/攻击场景（19）+ Phase 1 补偿闭环（9）+ 内部 HTTP 网关（29）+ 执行结算（2）+ 执行状态机/对账/故障注入（12）+ 进程内执行器（4） | 75 | `TEF_DB_TESTS=1` 且 `DATABASE_URL` 可用 |
 
 本地实测（2026-11-10）：461 个单元测试通过；设置 `TEF_DB_TESTS=1` 后 536 个测试全部通过（461 单元 + 75 数据库）；typecheck、lint、boundaries:check、secrets:check 与 build 通过。
