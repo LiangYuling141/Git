@@ -217,6 +217,7 @@ Agent Runtime 不持有数据库凭据，不直接执行写操作；TaskState �
 | [docs/technical/13-trusted-execution-architecture.md](docs/technical/13-trusted-execution-architecture.md) | 可信执行架构详细设计：业务操作契约、MCP 工具链、评测基准 |
 | [docs/technical/06-system-architecture.md](docs/technical/06-system-architecture.md) | 整体技术架构设计：技术选型、分层职责、核心流程、部署 |
 | [docs/superpowers/specs/2026-11-09-tef-extraction-design.md](docs/superpowers/specs/2026-11-09-tef-extraction-design.md) | 框架剥离与 P1/P2 收尾设计：包边界、API 契约、跨服务执行状态机 |
+| [docs/superpowers/specs/2026-11-10-phase-d-eval-harness-design.md](docs/superpowers/specs/2026-11-10-phase-d-eval-harness-design.md) | Phase D 设计：评测 harness、种子样本、双层指标与首版报告 |
 
 ### 比赛材料
 
