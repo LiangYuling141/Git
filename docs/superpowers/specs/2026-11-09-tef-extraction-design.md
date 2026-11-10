@@ -427,3 +427,4 @@ interface EvalSample {
 - [../plans/2026-11-09-phase-b2-crm-http-gateway.md](../plans/2026-11-09-phase-b2-crm-http-gateway.md) — Phase B2 实施计划：CRM 通用 HTTP 网关与 HttpCrmGateway
 - [../plans/2026-11-09-phase-c-p1-execution-state-machine.md](../plans/2026-11-09-phase-c-p1-execution-state-machine.md) — Phase C 实施计划：P1 收尾、执行状态机、故障注入与并发
 - [2026-11-10-phase-d-eval-harness-design.md](2026-11-10-phase-d-eval-harness-design.md) — Phase D 设计：评测 harness、24 条种子样本、双层指标与首版报告
+- [../plans/2026-11-10-phase-d-eval-harness.md](../plans/2026-11-10-phase-d-eval-harness.md) — Phase D 实施计划：模型注入、fixture 网关、双层 harness、CLI 与首版报告

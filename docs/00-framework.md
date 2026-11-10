@@ -1021,6 +1021,7 @@ npm run rls:verify
 - [technical/06-system-architecture.md](technical/06-system-architecture.md) — 整体技术架构设计：技术选型、分层职责、核心流程、部署
 - [superpowers/specs/2026-11-09-tef-extraction-design.md](superpowers/specs/2026-11-09-tef-extraction-design.md) — 框架剥离与 P1/P2 收尾设计：包边界、API 契约、跨服务执行状态机
 - [superpowers/specs/2026-11-10-phase-d-eval-harness-design.md](superpowers/specs/2026-11-10-phase-d-eval-harness-design.md) — Phase D 设计：评测 harness、种子样本、双层指标与首版报告
+- [superpowers/plans/2026-11-10-phase-d-eval-harness.md](superpowers/plans/2026-11-10-phase-d-eval-harness.md) — Phase D 实施计划：模型注入、fixture 网关、双层 harness、CLI 与首版报告
 
 ### 工具、引擎与安全机制
 

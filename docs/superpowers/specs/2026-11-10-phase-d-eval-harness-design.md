@@ -68,8 +68,10 @@ packages/tef-eval/
 
 | 管道 | 输入 | 经过 | 依赖 | 测量对象 |
 |------|------|------|------|----------|
-| 离线 | 样本 `intent`（标注槽位）；缺失时用确定性解析器 | `contractEngine.preview` + 纯函数 `riskRules` + `FixtureCrmGateway` | 无数据库、无模型 | 契约、风险、权限判定质量 |
+| 离线 | 契约操作的标注槽位；缺失时用确定性解析器 | `contractEngine.preview` + 纯函数 `riskRules` + `FixtureCrmGateway` | 无数据库、无模型 | 契约、风险、权限判定质量 |
 | 端到端 | `input.messages` 逐轮 | `runAgentTurn` → MCP 工具层 → 契约/令牌/审计 → 决策 | PostgreSQL 治理表 + fixture 业务证据 | 完整链路决策、澄清、P95、token 成本、意图准确率 |
+
+离线层只评测已注册契约（`create_order`、`compensate_order`）。客户、库存、信用、订单查询属于查询工具，没有契约，只在端到端层评测；离线层将这些样本标记为 `skipped_non_contract`，不计入指标。
 
 两层使用同一套决策映射与指标结构，报告用 `layer` 字段区分，不合并统计：
 
@@ -96,7 +98,10 @@ envelope.status === 'conflict' / 'error'       → error
 interface EvalSample {
   id: string;
   category: 'normal' | 'ambiguous' | 'adversarial' | 'boundary' | 'conflict' | 'clarify';
+  tenant: { thresholds: Record<string, number> };
   principal: { userId: string; role: 'owner' | 'sales' | 'finance' | 'viewer' };
+  /** 离线层固定时间快照；缺省为 2026-01-01T00:00:00.000Z。端到端层使用运行时刻。 */
+  now?: string;
   input: { messages: string[] };
   intent?: { contract: string; slots: Record<string, unknown> };
   fixtures: {
@@ -118,6 +123,8 @@ interface EvalSample {
 
 字段说明：
 
+- `tenant.thresholds` 在离线层直接作为 `tenantThresholds` 传入 `ExecContext`；端到端层写入该样本租户的 `Tenant.thresholds`。
+- 离线层的 `timestampSnapshot` 取 `now`（缺省固定为 `2026-01-01T00:00:00.000Z`），`recentOpCount` 固定为 0，`whitelistLevel` 固定为 `none`，保证时间因素可复现。端到端层使用运行时刻，报告必须标注该差异。
 - `intent` 只用于离线层。提供它时，离线层直接测量契约与风险，不混入解析误差；缺失时用 `parseIntentDeterministic` 解析 `input.messages[0]`，并在报告中标记 `intentSource: 'deterministic'`。
 - `fixtures.credit` 不需要单独提供：`FixtureCrmGateway.getCredit` 由 `customers` 与 `orders` 组合出 `CreditRecord`。
 - `expect.slots` 只列出需要计分的字段，不要求覆盖全部槽位。
@@ -125,6 +132,7 @@ interface EvalSample {
 - `tags` 用于报告分组（如 `prompt_injection`、`credit_limit`、`ambiguity`）。
 - `fixtures` 由 zod 按垂直包的 `CustomerRecord`、`ProductRecord`、`OrderRecord` 严格校验；缺字段或类型错误属于样本校验失败，不做字段补齐。
 - 离线层只评测单轮样本；`input.messages.length > 1` 的样本在离线层标记 `skipped_multi_turn`，不计入离线指标。
+- 离线层只评测契约操作。`intent.contract` 不在契约注册表时，样本标记 `skipped_non_contract`，不计入离线指标；查询类样本仍由端到端层评测。
 - 端到端层的 actual contract 与 actual slots 来自本轮结束后的 `TaskState.intent`（合并 `AgentTurnResult.patch` 后读取）；没有 intent 时 contract 记为 `null`。
 - `expect.code` 优先与 `Envelope.error.code` 比较；该字段为空时，再检查 `Envelope.error.checks[].code` 是否包含期望码。两种匹配均失败才判定为不匹配。
 
@@ -162,7 +170,7 @@ interface EvalSample {
 ### 5.2 必要的运行时改造
 
 1. `parseIntent(message, options?)` 增加可选的 `chat` 调用器与 `onUsage` 回调，返回 `usage?: TokenUsage`。默认行为不变。
-2. `AgentTurnInput` 增加可选 `model?: { chat: ChatFn; onUsage?: (usage: TokenUsage) => void }`；`AgentTurnResult` 增加可选 `modelUsage?: TokenUsage[]` 与 `modelName?: string`。澄清多轮时按轮次累计。
+2. `AgentTurnInput` 增加可选 `model?: { chat: ChatFn; onUsage?: (usage: TokenUsage) => void }`。usage 由调用方通过 `onUsage` 按轮次收集，不写入 `AgentTurnResult`，避免扩大运行时结果契约。
 3. `ChatFn` 类型为 `(request: LLMChatRequest, signal?: AbortSignal) => Promise<LLMChatResponse>`，从 `@lymtrix/tef-runtime` 导出。
 4. `LLMClient` 已经是 OpenAI 兼容实现，不需要修改请求协议；只需要把响应中的 `usage` 透出。
 
@@ -213,6 +221,8 @@ fixture 与真实 Prisma 网关的行为差异（如手机号匹配、模糊搜�
 
 - 决策为 `error` 的样本在严格拦截率中计为未拦截，在混淆矩阵中单列，不混入 allow。
 - 槽位比较为严格相等（数字按数值、字符串 trim 后比较），不做模糊匹配；报告注明该口径。
+- 槽位 F1 只在离线层计算：`expect.slots` 按契约归一化后的字段标注。端到端层的 actual slots 来自意图解析，字段形状不同，不计算该指标。
+- 两层指标分别统计、分别生成报告；不得把 offline 与 e2e 样本合并计算拦截率、误拒率或延迟。
 - 任一比例指标的分母为 0 时输出 `null`，不输出 0 或 100%，避免把“没有样本”误读为“表现完美”。
 - P95 在 24 条样本上不具统计显著性，报告必须标注样本规模与“仅作工程趋势参考”。
 - 每条样本在 JSON 中保留 expected、actual、contract、槽位明细、延迟、usage、traceId 与错误信息，便于人工复核。
@@ -245,14 +255,18 @@ npm run eval -- --mode all --live
 
 ### 8.2 输出
 
-每次运行生成：
+每次运行按层生成独立产物，不合并指标：
 
 ```
 eval-results/<runId>/
-  results.json     # schemaVersion、runId、mode、layer、metrics、samples
-  report.md        # 人可读报告
-  recordings/      # live 模式自动录制
+  offline/results.json   # schemaVersion、runId、mode、layer、metrics、samples
+  offline/report.md
+  e2e/results.json
+  e2e/report.md
+  recordings/            # live 模式的模型响应录制
 ```
+
+`--mode offline` 与 `--mode e2e` 只生成对应层；`--mode all` 生成两层。某层被跳过时，该层目录仍生成 `results.json`，`skipped` 与原因写入 `notes`，不生成可被误读为通过的报告。
 
 `results.json` 顶层字段：
 
@@ -278,7 +292,7 @@ eval-results/<runId>/
 | 文件 | 改造 | 兼容性 |
 |------|------|--------|
 | `packages/tef-runtime/src/intent.ts` | `parseIntent` 增加可选 `chat` / `onUsage`，返回 usage | 默认行为不变 |
-| `packages/tef-runtime/src/runtime.ts` | `AgentTurnInput.model` 透传；结果回传 usage 与模型名 | 可选字段 |
+| `packages/tef-runtime/src/runtime.ts` | `AgentTurnInput.model` 透传；usage 由调用方通过回调收集 | 可选字段 |
 | `packages/tef-runtime/src/index.ts` | 导出 `ChatFn`、`TokenUsage` | 新增导出 |
 | `verticals/crm-erp-mcp/src/server.ts` | 透传 `gatewayFactory` 到写工具、`gateway` 到查询工具 | 默认仍构造现有网关 |
 | `packages/tef-eval/*` | 新增评测包 | 不被生产包依赖 |
@@ -313,8 +327,8 @@ npm run eval -- --mode all --live
 
 验收标准：
 
-1. 离线层 24 条样本全量跑通，输出完整指标。
-2. 端到端层在 `TEF_DB_TESTS=1` 下跑通 24 条样本，无业务数据写入。
+1. 离线层评测全部契约样本，查询工具样本标记 `skipped_non_contract`，输出完整指标。
+2. 端到端层在 `TEF_DB_TESTS=1` 下跑通 24 条样本，无业务数据写入（effects 由评测执行器拦截）。
 3. live 运行产生录制材料，`recorded` 模式可在断网条件下复现同一批响应。
 4. 首版报告入库，指标与 `results.json` 一致。
 5. 文档同步完成：`CLAUDE.md` Key Files、`docs/00-framework.md`、挑战杯说明书 §8.6、README、设计 spec 与实施计划交叉引用一致。

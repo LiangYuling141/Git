@@ -273,3 +273,4 @@ git merge --no-ff feature/customer-management
 - [docs/technical/04-business-engine.md](docs/technical/04-business-engine.md) — 统一业务引擎设计
 - [docs/superpowers/specs/2026-11-09-tef-extraction-design.md](docs/superpowers/specs/2026-11-09-tef-extraction-design.md) — 框架剥离与 P1/P2 收尾设计：包边界、API 契约、跨服务执行状态机
 - [docs/superpowers/specs/2026-11-10-phase-d-eval-harness-design.md](docs/superpowers/specs/2026-11-10-phase-d-eval-harness-design.md) — Phase D 设计：评测 harness、种子样本、双层指标与首版报告
+- [docs/superpowers/plans/2026-11-10-phase-d-eval-harness.md](docs/superpowers/plans/2026-11-10-phase-d-eval-harness.md) — Phase D 实施计划：模型注入、fixture 网关、双层 harness、CLI 与首版报告
