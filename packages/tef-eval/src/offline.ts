@@ -6,7 +6,9 @@ import {
   type RiskOutcome,
 } from '@lymtrix/tef-core';
 import { parseIntentDeterministic } from '@lymtrix/tef-runtime';
-import { canCallTool, toolsForClient } from '@lymtrix/tef-mcp-kit';
+// 从 tenant 子路径导入，避免经由 kit 根入口拉入 tenant-scope 的
+// `@/lib/prisma` 运行时依赖；离线层必须能在无数据库环境下单测（与 decision.ts 一致）。
+import { canCallTool, toolsForClient } from '@lymtrix/tef-mcp-kit/tenant';
 import { ZodError } from 'zod';
 import { registerCreditOrderContracts } from '@lymtrix/vertical-crm-erp';
 import { FixtureCrmGateway } from './fixtures';

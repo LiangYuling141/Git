@@ -72,7 +72,7 @@
 
 风险等级准确率的分母是全部标注了 `expect.risk` 的 10 条样本，其中只有 4 条实际产生风险判定（覆盖率 40.0%）；另外 6 条在契约预览前被模型澄清，`actual.risk` 为 `null`，按未命中计分。旧口径把 `actual.risk === null` 的样本排除出分母，会得到虚高的 100.0%（4/4），本报告不再使用该口径。
 
-澄清槽位召回率为 7/8。唯一未命中是 `ambiguous_same_name`：模型追问了可选的 `depositRate` / `termsDays`，没有追问期望的客户身份槽位 `customer`。这是模型对可选字段过度澄清的实测结果，样本措辞与预期未做修改。
+澄清槽位召回率为 7/8。唯一未命中是 `ambiguous_same_name`：模型追问了可选的 `depositRate` / `termsDays`，没有追问期望的客户身份槽位 `customer`。这是模型对可选字段过度澄清的实测结果，未修改 decision/risk/contract/code 期望；仅新增 clarifySlots 标注；未放宽指标。
 
 > 误拒率口径：只统计 `allow → block`，分母为期望 `allow` 的 7 条样本。端到端层 5 条 `allow → clarify` 不计入误拒率，也不计入严格拦截率或安全拦截率（后两者的分母只有期望 `block` / `confirm` 的样本），但会体现在混淆矩阵与意图准确率中。`allow → clarify` 率为 5/7 ≈ 71.4%。
 
@@ -196,7 +196,7 @@ TEF_DB_TESTS=1 npm run eval -- --mode e2e --recorded packages/tef-eval/recording
 10. **模型输出漂移**：live 模型输出不可完全复现；`recorded` 模式可复现同一批响应，但录制缺失或顺序不符时会报错，不会退化为 deterministic。
 11. **录制未绑定提示词哈希**：录制文件只按样本与调用顺序保存响应，不记录请求提示词的哈希。修改系统提示词、模型参数或消息文本后，旧录制仍可能被回放成功，从而把旧响应误当成新提示词的结果；修改提示词后必须重新生成录制。
 12. **traceId 持久化范围**：`results.json` 为每条样本保存 `traceId` 与原因，但不保存审计链事件、哈希链或预览快照本体。当前开发库中的 eval 治理数据已被清空（仓库内未记录该清理动作，属 out-of-band 运维操作），持久证据以提交的 live 与 recorded replay 结果为准，不应依赖开发库治理表。
-13. **端到端期望与提示词缺口**：11 条不一致样本反映“样本期望依赖缺省槽位”与“模型被要求缺字段必须澄清”的冲突。模型还会过度澄清可选字段（`depositRate` / `termsDays`），导致 `ambiguous_same_name` 的澄清槽位未命中。本报告不修改样本期望，也不修改提示词；修复方案（例如在样本中显式给出 `depositRate` / `termsDays`，或调整端到端期望为 `clarify`）需要单独评测设计任务。
+13. **端到端期望与提示词缺口**：11 条不一致样本反映“样本期望依赖缺省槽位”与“模型被要求缺字段必须澄清”的冲突。模型还会过度澄清可选字段（`depositRate` / `termsDays`），导致 `ambiguous_same_name` 的澄清槽位未命中。未修改 decision/risk/contract/code 期望；仅新增 clarifySlots 标注；未放宽指标；提示词同样未修改。修复方案（例如在样本中显式给出 `depositRate` / `termsDays`，或调整端到端期望为 `clarify`）需要单独评测设计任务。
 
 ## 7. 复现命令
 
@@ -221,7 +221,7 @@ npm run eval -- --mode offline
 - [Phase D 评测 Harness 设计](../superpowers/specs/2026-11-10-phase-d-eval-harness-design.md) — 双层 harness、样本 schema、指标口径与已知限制
 - [Phase D 评测 Harness 实施计划](../superpowers/plans/2026-11-10-phase-d-eval-harness.md) — 任务拆分、验收标准与验证记录
 - [持久证据：live 运行](evidence/phase-d-live/) — live e2e/offline 的 canonical `results.json`/`report.md`（P50/P95 与成本来源，原样复制）；[README](evidence/phase-d-live/README.md) 说明这些产物早于指标修复，旧风险 100% 口径不得与基线 40% 混用
-- [持久证据：录制回放](evidence/phase-d-recorded-replay/) — 回放 e2e 与确定性重跑 offline 的 `results.json`/`report.md`，含每条样本 traceId
+- [持久证据：录制回放](evidence/phase-d-recorded-replay/) — 回放 e2e 与确定性重跑 offline 的 `results.json`/`report.md`，含每条样本 traceId；[offline README](evidence/phase-d-recorded-replay/offline/README.md) 说明历史模型标注 `deterministic/none` 与当前 `none/none` 的等价性
 - [项目框架总览](../00-framework.md) — 实施进度与已知边界
 - [挑战杯项目设计说明书 §8](../competition/挑战杯项目设计说明书.md) — 评测方案与当前进度
 - [README](../../README.md) — 当前状态与本地运行方式
