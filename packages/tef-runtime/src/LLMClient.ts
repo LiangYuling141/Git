@@ -46,6 +46,24 @@ export interface LLMChatResponse {
   };
 }
 
+/** 一次模型调用的 token 用量；评测层用于统计成本。 */
+export interface TokenUsage {
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+export function toTokenUsage(response: LLMChatResponse): TokenUsage | undefined {
+  if (!response.usage) return undefined;
+  return {
+    model: response.model,
+    promptTokens: response.usage.prompt_tokens,
+    completionTokens: response.usage.completion_tokens,
+    totalTokens: response.usage.total_tokens,
+  };
+}
+
 export interface LLMError {
   error: {
     message: string;

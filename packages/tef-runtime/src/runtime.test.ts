@@ -694,3 +694,66 @@ describe('Runtime：执行工具名只来自契约白名单', () => {
     },
   );
 });
+
+it('AgentTurnInput.model 注入的 chat 与 usage 回调生效', async () => {
+  const calls: FakeCall[] = [];
+  const onUsage = vi.fn();
+  const chat = vi.fn().mockResolvedValue({
+    id: 'chatcmpl_mock',
+    model: 'mock-model',
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: 'assistant',
+          content: JSON.stringify({
+            kind: 'operation',
+            contract: 'create_order',
+            slots: {
+              customerName: '伟业公司',
+              productTerm: '圣诞球',
+              quantity: 5000,
+              unitPrice: 2,
+            },
+          }),
+        },
+        finish_reason: 'stop',
+      },
+    ],
+    usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+  });
+  const state = createTaskState({
+    status: 'idle',
+    pendingExecutionAttemptId: null,
+    pendingConfirmationToken: null,
+    idempotencyKey: null,
+    intent: null,
+  });
+
+  const result = await runAgentTurn({
+    message: MESSAGE,
+    conversationId: state.conversationId,
+    principal: {
+      tenantId: state.tenantId,
+      userId: state.userId,
+      sessionId: 's_runtime',
+      role: 'sales',
+    },
+    taskState: state,
+    traceId: 'tr_runtime_model',
+    secret: 'test-secret-that-is-long-enough-to-be-accepted',
+    connectSession: async () =>
+      fakeSession(l1Handler({ status: 'ok', data: { orderId: 'o_1' } }), calls),
+    model: { chat, onUsage },
+  });
+
+  expect(chat).toHaveBeenCalledTimes(1);
+  expect(onUsage).toHaveBeenCalledWith({
+    model: 'mock-model',
+    promptTokens: 12,
+    completionTokens: 8,
+    totalTokens: 20,
+  });
+  expect(result.intentSource).toBe('model');
+  expect(result.status).toBe('completed');
+});

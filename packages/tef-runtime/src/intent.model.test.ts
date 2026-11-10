@@ -89,3 +89,50 @@ describe('parseIntent 模型路径', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+it('注入 chat 时使用注入实现并回传 usage', async () => {
+  const onUsage = vi.fn();
+  const chat = vi.fn().mockResolvedValue({
+    id: 'chatcmpl_mock',
+    model: 'mock-model',
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: 'assistant',
+          content: JSON.stringify({
+            kind: 'operation',
+            contract: 'create_order',
+            slots: { customerName: '伟业公司', quantity: 100, unitPrice: 2 },
+          }),
+        },
+        finish_reason: 'stop',
+      },
+    ],
+    usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+  });
+
+  const result = await parseIntent('给伟业公司下 100 个圣诞球，单价 2 块', { chat, onUsage });
+
+  expect(chat).toHaveBeenCalledTimes(1);
+  expect(result.source).toBe('model');
+  expect(result.intent).toMatchObject({ kind: 'operation', contract: 'create_order' });
+  expect(result.usage).toEqual({
+    model: 'mock-model',
+    promptTokens: 12,
+    completionTokens: 8,
+    totalTokens: 20,
+  });
+  expect(onUsage).toHaveBeenCalledWith(result.usage);
+});
+
+it('注入 chat 抛错时回落确定性解析器且不回调 usage', async () => {
+  const onUsage = vi.fn();
+  const chat = vi.fn().mockRejectedValue(new Error('network down'));
+
+  const result = await parseIntent('查一下伟业公司的信用额度', { chat, onUsage });
+
+  expect(result.source).toBe('deterministic');
+  expect(result.intent.kind).toBe('operation');
+  expect(onUsage).not.toHaveBeenCalled();
+});

@@ -9,7 +9,7 @@ import type {
   TenantRole,
 } from '@lymtrix/tef-core';
 import type { TefClientSession } from '@lymtrix/tef-mcp-kit';
-import { parseIntent } from './intent';
+import { parseIntent, type IntentChat, type TokenUsage } from './intent';
 import type { TaskStatePatch } from './task-state';
 
 /**
@@ -38,6 +38,11 @@ export type ConnectSession = (options: {
   secret: string;
 }) => Promise<TefClientSession>;
 
+export interface ModelAdapter {
+  chat: IntentChat;
+  onUsage?: (usage: TokenUsage) => void;
+}
+
 export interface AgentTurnInput {
   message: string;
   conversationId: string;
@@ -46,6 +51,8 @@ export interface AgentTurnInput {
   traceId: string;
   secret: string;
   connectSession: ConnectSession;
+  /** 评测注入的模型适配器；缺省时 parseIntent 使用全局 LLMClient。 */
+  model?: ModelAdapter;
 }
 
 export interface ToolCallRecord {
@@ -406,7 +413,10 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResu
       intent = resumed.intent;
       intentSource = 'deterministic';
     } else {
-      const parsed = await parseIntent(input.message);
+      const parsed = await parseIntent(
+        input.message,
+        input.model ? { chat: input.model.chat, onUsage: input.model.onUsage } : undefined,
+      );
       intent = parsed.intent;
       intentSource = parsed.source;
     }
