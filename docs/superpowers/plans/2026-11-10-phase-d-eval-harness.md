@@ -2362,6 +2362,8 @@ async function main(): Promise<void> {
   if (samples.length === 0) fail(`no samples found in ${values.samples}`);
 
   const id = runId();
+  // 运行开始时间只采集一次，不随各层结束时间漂移。
+  const startedAt = new Date().toISOString();
   const outDir = values.out ?? join('eval-results', id);
   mkdirSync(outDir, { recursive: true });
 
@@ -2381,9 +2383,9 @@ async function main(): Promise<void> {
       const hasDb = process.env.TEF_DB_TESTS === '1' && Boolean(process.env.DATABASE_URL);
       if (!hasDb) {
         const skippedNotes = [
-          'skipped: DATABASE_URL/TEF_DB_TESTS not configured; e2e layer did not run',
+          `skipped: DATABASE_URL/TEF_DB_TESTS not configured; e2e layer did not run (requested ${samples.length} samples)`,
         ];
-        const skippedRun = buildRun(id, evalMode, 'e2e', samples, [], skippedNotes);
+        const skippedRun = buildRun(id, startedAt, evalMode, 'e2e', samples, [], skippedNotes);
         mkdirSync(join(outDir, 'e2e'), { recursive: true });
         writeFileSync(join(outDir, 'e2e', 'results.json'), renderJson(skippedRun));
         console.warn(skippedNotes[0]);
@@ -2398,7 +2400,7 @@ async function main(): Promise<void> {
     }
 
     notes.push('种子样本规模不足以支持统计显著性，比例指标与 P95 仅作工程趋势参考。');
-    const run = buildRun(id, evalMode, layer, samples, outcomes, notes);
+    const run = buildRun(id, startedAt, evalMode, layer, samples, outcomes, notes);
     const layerDir = join(outDir, layer);
     mkdirSync(layerDir, { recursive: true });
     writeFileSync(join(layerDir, 'results.json'), renderJson(run));
@@ -2410,23 +2412,27 @@ async function main(): Promise<void> {
 
 function buildRun(
   id: string,
+  startedAt: string,
   evalMode: EvalMode,
   layer: 'offline' | 'e2e',
-  samples: EvalSample[],
+  requestedSamples: EvalSample[],
   outcomes: SampleOutcome[],
   notes: string[],
 ): EvalRun {
   return {
     schemaVersion: 1,
     runId: id,
-    startedAt: new Date().toISOString(),
+    startedAt,
     mode: evalMode,
     layer,
     model: {
       name: evalMode === 'live' ? 'deepseek-chat' : evalMode,
       provider: evalMode === 'live' ? 'deepseek' : 'none',
     },
-    sampleCount: samples.length,
+    // sampleCount 表示实际产出的 outcome 数；被跳过的层为 0，
+    // 请求规模由 requestedSampleCount 单独记录，避免“24 条样本 0 条指标”的误读。
+    sampleCount: outcomes.length,
+    requestedSampleCount: requestedSamples.length,
     metrics: computeMetrics(outcomes, { slotScoring: layer === 'offline' }),
     samples: outcomes,
     notes,
@@ -2481,7 +2487,7 @@ try {
 
 `runE2eSample` 的调用同样处理；这样 live 单个样本失败不会让整批评测丢失。
 
-退出码语义：`loadSamples` 的目录读取、JSON 解析、zod 校验、重复 id 与空样本集失败统一置 `process.exitCode = 2` 后返回，不进入通用 catch；参数非法、`--live` 前置条件缺失与未捕获异常为 1；样本级抛错被隔离记录后批次继续，但整批结束时置 `process.exitCode = 1`，避免 CI 把“有样本崩溃”误判为通过；全部样本正常完成为 0。
+退出码语义：`loadSamplesForCli` 的目录读取、JSON 解析、zod 校验、重复 id 与空样本集失败统一置 `process.exitCode = 2` 后返回，不进入通用 catch；参数非法、`--live` 前置条件缺失、`--live` 与 `--recorded` 同时出现以及未捕获的 harness 异常为 1；样本级抛错被隔离记录为 `errorOutcome` 后批次继续，属于评测数据，**整批退出码仍为 0**；全部样本正常完成同样为 0。
 
 - [ ] **Step 4: 添加运行配置与脚本**
 

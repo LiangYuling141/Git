@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import dotenv from 'dotenv';
 import { prisma } from '@/lib/prisma';
-import { loadSamples, type EvalSample } from './sample';
+import { loadSamplesForCli } from './load';
+import type { EvalSample } from './sample';
 import { runOfflineSample } from './offline';
 import { runE2eSample } from './e2e';
 import { computeMetrics } from './metrics';
@@ -19,25 +20,20 @@ function fail(message: string): never {
 
 /**
  * 退出码约定：0 正常完成；1 配置/执行错误（参数非法、--live 前置条件缺失、
- * 未捕获异常、样本级执行抛错）；2 样本集加载/校验失败（JSON 解析、zod 校验、
- * 重复 id、空样本集）。
+ * 未捕获的 harness 异常）；2 样本集加载/校验失败（目录不可读、JSON 解析、
+ * zod 校验、重复 id、空样本集）。
+ *
+ * 样本级执行抛错会被 errorOutcome 记录为评测数据，批次继续跑完且退出码为 0；
+ * 只有 harness 自身失败才映射为 1。
  */
 function loadSamplesOrExit(dir: string): EvalSample[] | null {
-  let samples: EvalSample[] = [];
-  try {
-    samples = loadSamples(dir);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`failed to load samples from ${dir}: ${message}`);
+  const result = loadSamplesForCli(dir);
+  if (result.kind === 'error') {
+    console.error(result.message);
     process.exitCode = 2;
     return null;
   }
-  if (samples.length === 0) {
-    console.error(`no samples found in ${dir}`);
-    process.exitCode = 2;
-    return null;
-  }
-  return samples;
+  return result.samples;
 }
 
 function runId(): string {
@@ -82,6 +78,9 @@ async function main(): Promise<void> {
   if (!['offline', 'e2e', 'all'].includes(layerMode)) {
     fail(`invalid --mode: ${layerMode} (expected offline|e2e|all)`);
   }
+  if (values.live && values.recorded) {
+    fail('--live and --recorded are mutually exclusive');
+  }
 
   const evalMode: EvalMode = values.live
     ? 'live'
@@ -101,14 +100,13 @@ async function main(): Promise<void> {
   if (!samples) return;
 
   const id = runId();
+  // 运行开始时间只采集一次，不随各层结束时间漂移。
+  const startedAt = new Date().toISOString();
   const outDir = values.out ?? join('eval-results', id);
   mkdirSync(outDir, { recursive: true });
 
   const requested: Array<'offline' | 'e2e'> =
     layerMode === 'all' ? ['offline', 'e2e'] : [layerMode as 'offline' | 'e2e'];
-  // 样本级异常被隔离记录后批次仍继续跑完；但出现执行抛错时整批以退出码 1 结束，
-  // 避免 CI 把“有样本崩了”误判为通过。
-  let sampleExecutionError = false;
 
   for (const layer of requested) {
     const outcomes: SampleOutcome[] = [];
@@ -121,7 +119,6 @@ async function main(): Promise<void> {
         try {
           outcomes.push(await runOfflineSample(sample));
         } catch (error) {
-          sampleExecutionError = true;
           outcomes.push(errorOutcome(sample, error, started));
         }
       }
@@ -129,9 +126,9 @@ async function main(): Promise<void> {
       const hasDb = process.env.TEF_DB_TESTS === '1' && Boolean(process.env.DATABASE_URL);
       if (!hasDb) {
         const skippedNotes = [
-          'skipped: DATABASE_URL/TEF_DB_TESTS not configured; e2e layer did not run',
+          `skipped: DATABASE_URL/TEF_DB_TESTS not configured; e2e layer did not run (requested ${samples.length} samples)`,
         ];
-        const skippedRun = buildRun(id, evalMode, 'e2e', samples, [], skippedNotes);
+        const skippedRun = buildRun(id, startedAt, evalMode, 'e2e', samples, [], skippedNotes);
         mkdirSync(join(outDir, 'e2e'), { recursive: true });
         writeFileSync(join(outDir, 'e2e', 'results.json'), renderJson(skippedRun));
         console.warn(skippedNotes[0]);
@@ -144,7 +141,6 @@ async function main(): Promise<void> {
         try {
           outcomes.push(await runE2eSample(sample, evalMode, modelDir));
         } catch (error) {
-          sampleExecutionError = true;
           outcomes.push(errorOutcome(sample, error, started));
         }
       }
@@ -152,7 +148,7 @@ async function main(): Promise<void> {
     }
 
     notes.push('种子样本规模不足以支持统计显著性，比例指标与 P95 仅作工程趋势参考。');
-    const run = buildRun(id, evalMode, layer, samples, outcomes, notes);
+    const run = buildRun(id, startedAt, evalMode, layer, samples, outcomes, notes);
     const layerDir = join(outDir, layer);
     mkdirSync(layerDir, { recursive: true });
     writeFileSync(join(layerDir, 'results.json'), renderJson(run));
@@ -160,28 +156,31 @@ async function main(): Promise<void> {
   }
 
   console.log(`eval results written to ${outDir}`);
-  if (sampleExecutionError) process.exitCode = 1;
 }
 
 function buildRun(
   id: string,
+  startedAt: string,
   evalMode: EvalMode,
   layer: 'offline' | 'e2e',
-  samples: EvalSample[],
+  requestedSamples: EvalSample[],
   outcomes: SampleOutcome[],
   notes: string[],
 ): EvalRun {
   return {
     schemaVersion: 1,
     runId: id,
-    startedAt: new Date().toISOString(),
+    startedAt,
     mode: evalMode,
     layer,
     model: {
       name: evalMode === 'live' ? 'deepseek-chat' : evalMode,
       provider: evalMode === 'live' ? 'deepseek' : 'none',
     },
-    sampleCount: samples.length,
+    // sampleCount 表示实际产出的 outcome 数；被跳过的层为 0，
+    // 请求规模由 requestedSampleCount 单独记录，避免“24 条样本 0 条指标”的误读。
+    sampleCount: outcomes.length,
+    requestedSampleCount: requestedSamples.length,
     metrics: computeMetrics(outcomes, { slotScoring: layer === 'offline' }),
     samples: outcomes,
     notes,

@@ -11,6 +11,8 @@ export interface EvalRun {
   layer: 'offline' | 'e2e';
   model: { name: string; provider: string };
   sampleCount: number;
+  /** 本次请求的样本数；被跳过的层 sampleCount 为 0，用该字段保留请求规模。 */
+  requestedSampleCount?: number;
   metrics: EvalMetrics;
   samples: SampleOutcome[];
   notes: string[];
@@ -32,7 +34,10 @@ export function renderMarkdown(run: EvalRun): string {
     `- 模式：${run.mode}`,
     `- 层级：${run.layer}`,
     `- 模型：${run.model.provider}/${run.model.name}`,
-    `- 样本数：${run.sampleCount}`,
+    run.requestedSampleCount !== undefined &&
+    run.requestedSampleCount !== run.sampleCount
+      ? `- 样本数：${run.sampleCount}（请求 ${run.requestedSampleCount} 条，跳过 ${run.requestedSampleCount - run.sampleCount} 条）`
+      : `- 样本数：${run.sampleCount}`,
     '',
     '## 指标',
     '',

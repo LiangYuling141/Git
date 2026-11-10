@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createModelAdapter } from './model';
 import type { EvalSample } from './sample';
 
@@ -17,8 +17,12 @@ function sample(overrides: Partial<EvalSample> = {}): EvalSample {
 }
 
 describe('createModelAdapter', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('returns undefined for deterministic mode without touching global env', () => {
-    process.env.DEEPSEEK_API_KEY = 'valid-key-that-is-long-enough';
+    vi.stubEnv('DEEPSEEK_API_KEY', 'valid-key-that-is-long-enough');
     expect(createModelAdapter(sample(), 'deterministic')).toBeUndefined();
     expect(process.env.DEEPSEEK_API_KEY).toBe('valid-key-that-is-long-enough');
   });

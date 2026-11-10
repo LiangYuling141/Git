@@ -252,11 +252,11 @@ npm run eval -- --mode all --live
 | `--mode` | `all` | `offline` / `e2e` / `all` |
 | `--samples` | `packages/tef-eval/samples/*.json` | 样本 glob |
 | `--live` | 关闭 | 启用真实模型，需 `TEF_MODEL_TESTS=1` 与 Key |
-| `--recorded` | 无 | 指定录制目录后使用 recorded 模式 |
+| `--recorded` | 无 | 指定录制目录后使用 recorded 模式；与 `--live` 互斥 |
 | `--out` | `eval-results/<runId>` | 输出目录 |
 | `--verbose` | 关闭 | 输出每条样本执行日志 |
 
-退出码：0 正常完成（不要求指标达标）、1 配置或执行错误、2 样本校验失败。e2e 在缺少数据库时明确输出 `skipped: DATABASE_URL/TEF_DB_TESTS`，以退出码 0 结束但报告标记 `skipped`，不得把跳过计为通过。
+退出码：0 正常完成（不要求指标达标，样本级 `errorOutcome` 属于评测数据，不改变退出码）、1 配置或执行错误（含 `--live` 与 `--recorded` 同时出现）、2 样本集加载/校验失败。e2e 在缺少数据库时明确输出 `skipped: DATABASE_URL/TEF_DB_TESTS`，以退出码 0 结束但报告标记 `skipped`，不得把跳过计为通过。
 
 `npm run eval` 通过 `vite-node` 运行 TypeScript CLI；新增 `vite.eval.config.ts`，复用 `vitest.config.ts` 中的 alias 与 resolve 配置。`vite-node` 作为 vitest 的直接依赖已存在于安装树中，本阶段显式加入 `devDependencies` 以避免依赖提升变化导致脚本失效。
 
@@ -273,7 +273,7 @@ eval-results/<runId>/
   recordings/            # live 模式的模型响应录制
 ```
 
-`--mode offline` 与 `--mode e2e` 只生成对应层；`--mode all` 生成两层。某层被跳过时，该层目录仍生成 `results.json`，`skipped` 与原因写入 `notes`，不生成可被误读为通过的报告。
+`--mode offline` 与 `--mode e2e` 只生成对应层；`--mode all` 生成两层。某层被跳过时，该层目录仍生成 `results.json`，`skipped` 与原因写入 `notes`，不生成可被误读为通过的报告。`sampleCount` 表示实际产出的 outcome 数（跳过层为 0），请求规模由 `requestedSampleCount` 单独记录，避免“24 条样本 / 0 条指标”的误读。
 
 `results.json` 顶层字段：
 
@@ -286,6 +286,7 @@ eval-results/<runId>/
   "layer": "e2e",
   "model": { "name": "deepseek-chat", "provider": "deepseek" },
   "sampleCount": 24,
+  "requestedSampleCount": 24,
   "metrics": {},
   "samples": [],
   "notes": []
