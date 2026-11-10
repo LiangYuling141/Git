@@ -33,8 +33,8 @@ const DEMO_TENANT = 't_yiwu_demo';
 
 // 应用角色。RLS 对超级用户和（未 FORCE 时的）表 owner 都不生效，
 // 所以隔离验证必须用一个既非超级用户、也非表 owner 的角色来跑。
-const APP_ROLE = process.env.APP_DB_ROLE ?? 'lymatrix_app';
-const APP_ROLE_PASSWORD = process.env.APP_DB_PASSWORD ?? 'lymatrix_app_ci_password';
+const APP_ROLE = process.env.APP_DB_ROLE ?? 'lymtrix_app';
+const APP_ROLE_PASSWORD = process.env.APP_DB_PASSWORD ?? 'lymtrix_app_ci_password';
 
 function connect(connectionString = process.env.DATABASE_URL) {
   if (!connectionString) throw new Error('DATABASE_URL is not set');
@@ -233,7 +233,7 @@ async function verify() {
         WHERE n.nspname = 'public' AND c.relrowsecurity ORDER BY 1`,
     );
     const forced = flags.rows.filter((r) => r.f).map((r) => r.t);
-    check('FORCE 档表已生效', forced.length >= 7, `FORCE: ${forced.join(', ')}`);
+    check('FORCE 档表已生效', forced.length >= 8, `FORCE: ${forced.join(', ')}`);
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     check('验证过程无异常', false, error.message);

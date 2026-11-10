@@ -2,7 +2,7 @@
 
 > 本文档描述当前技术架构：以 MCP 工具链为可信执行边界，Agent Runtime 可替换，所有业务写入经过契约校验、预览、确认、幂等执行与审计。
 >
-> 本文档是 **LyMatrix TEF** 的系统全貌文档；CRM-ERP 为参考实现，不是框架本体。
+> 本文档是 **LyMtrix-TEF** 的系统全貌文档；CRM-ERP 为参考实现，不是框架本体。
 
 ---
 
@@ -288,6 +288,8 @@ L2 必须人工确认；确认令牌一次性、绑定用户/会话/操作哈希
 | `CONFLICT` | 并发冲突或重复操作 | 重新读取状态后再决定 |
 | `NEEDS_CONFIRMATION` | 需要人工确认 | 展示 diff 并等待确认 |
 | `RATE_LIMITED` | 频率超限 | 退避后重试 |
+| `EXECUTION_IN_PROGRESS` | 同幂等键的执行仍在进行中 | 保留 pending，用同一幂等键重试 |
+| `EXECUTION_UNKNOWN` | 副作用可能已提交但结果未知 | 保留 pending，用同一幂等键重试或等待对账 |
 | `INTERNAL` | 服务端错误 | 不重试写操作，返回审计 ID |
 
 ---
@@ -390,7 +392,7 @@ idle
 | 认证 | Cookie Session + bcrypt；生产可升级 OAuth/JWT | 当前为 MVP |
 | 评测 | Vitest + 自研评测 harness | 意图、拦截率、延迟、成本 |
 | 部署 | Docker Compose（MVP）；K8s（后续） | 先跑通再扩展 |
-| 模型 | MiniMax 或任意支持工具调用的模型 | 模型可替换，工具链不变 |
+| 模型 | DeepSeek（默认）或任意 OpenAI 兼容模型 | 模型可替换，工具链不变 |
 
 ---
 
@@ -460,7 +462,7 @@ flowchart TB
 | 考量 | 分析 |
 |------|------|
 | 标准化 | 工具发现、Schema、调用协议统一 |
-| 模型无关 | MiniMax、Claude 或其他模型都可以作为大脑 |
+| 模型无关 | DeepSeek、Claude 或其他模型都可以作为大脑 |
 | 信任边界 | MCP Server 是唯一写入通道，权限和审计集中 |
 | 可测试 | 工具可以脱离模型单独测试 |
 
@@ -512,3 +514,4 @@ flowchart TB
 - [11-fallback.md](11-fallback.md) — 多级兜底策略
 - [12-hook-system-design.md](12-hook-system-design.md) — Hook 系统详细设计（作为可选增强保留）
 - [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md) — 可信执行架构详细设计（业务操作契约、MCP 工具链、评测基准）
+- [../superpowers/specs/2026-11-09-tef-extraction-design.md](../superpowers/specs/2026-11-09-tef-extraction-design.md) — 框架剥离与 P1/P2 收尾设计（包边界、API 契约、执行状态机）

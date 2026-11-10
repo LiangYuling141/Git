@@ -207,7 +207,11 @@ describeDb('Phase 1 补偿闭环（真实数据库）', () => {
           'order.execute_compensate',
         ]),
       );
-      const compensationEvent = trace.data.events.find((event) => event.tool === 'order.execute_compensate');
+      // Phase C 起一次执行会产生两条事件：预审计 pending 与结果审计 compensated。
+      // 这里按结果过滤，保留“成功补偿必须留下 allow/compensated 审计”的断言。
+      const compensationEvent = trace.data.events.find(
+        (event) => event.tool === 'order.execute_compensate' && event.result === 'compensated',
+      );
       expect(compensationEvent?.result).toBe('compensated');
       expect(compensationEvent?.decision).toBe('allow');
     } finally {
@@ -236,6 +240,49 @@ describeDb('Phase 1 补偿闭环（真实数据库）', () => {
 
       const order = await prisma.order.findFirst({ where: { id: orderId, tenantId: TENANT } });
       expect(order?.status).toBe('confirmed');
+    } finally {
+      await agent.close();
+      await human.close();
+    }
+  });
+
+  it('跨工具复用同一幂等键：补偿不会重放创建结果，副作用真实执行', async () => {
+    await resetFixture();
+    const traceId = nextTrace();
+    const agent = await connectTefClient({ principal: agentPrincipal, traceId, secret });
+    const human = await connectTefClient({ principal: humanPrincipal, traceId, secret });
+
+    try {
+      const created = await createConfirmedOrder(agent, human, traceId);
+      const { token } = await previewAndApproveCompensation(agent, human, created.orderId, traceId);
+
+      // 创建与补偿复用同一个业务幂等键。TEF 的幂等域按 toolName 隔离，
+      // 执行器的幂等域也必须按 toolName 派生（order.execute_compensate:key），
+      // 否则补偿会命中创建的 internal.effects.execute 记录，被误判为重放。
+      const compensated = (await agent.callTool('order.execute_compensate', {
+        confirmation_token: token,
+        idempotency_key: created.idempotencyKey,
+      })) as Envelope & { data: Record<string, unknown> };
+
+      expect(compensated.status).toBe('ok');
+      expect(compensated.data.compensated).toBe(true);
+      expect(compensated.data.replayed).toBeUndefined();
+      expect(compensated.data.status).toBe('cancelled');
+      expect(compensated.data.orderId).toBe(created.orderId);
+
+      // 若执行器重放了创建结果，补偿的副作用不会发生，订单仍是 confirmed。
+      const orderAfter = await prisma.order.findFirst({
+        where: { id: created.orderId, tenantId: TENANT },
+        include: { payments: true },
+      });
+      expect(orderAfter?.status).toBe('cancelled');
+      expect(orderAfter?.payments.map((payment) => payment.status)).toEqual(['voided', 'voided']);
+
+      const product = await withTenantScope(TENANT, (tx) =>
+        tx.product.findFirst({ where: { tenantId: TENANT, sku: SKU } }),
+      );
+      expect(product?.availableQty).toBe(20000);
+      expect(product?.reservedQty).toBe(0);
     } finally {
       await agent.close();
       await human.close();
@@ -404,6 +451,7 @@ describeDb('Phase 1 补偿闭环（真实数据库）', () => {
         taskState,
         traceId,
         secret,
+        connectSession: connectTefClient,
       });
       const persisted = await taskStateStore.update(
         TENANT,

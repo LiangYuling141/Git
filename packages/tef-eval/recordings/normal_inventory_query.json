@@ -1,0 +1,32 @@
+{
+  "responses": [
+    {
+      "id": "205be7b3-00c6-496a-a8c1-c7afdc43f69e",
+      "object": "chat.completion",
+      "created": 1794293409,
+      "model": "deepseek-flash",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"kind\":\"operation\",\"contract\":\"inventory.check\",\"slots\":{\"productTerm\":\"圣诞球\"}}"
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 338,
+        "completion_tokens": 21,
+        "total_tokens": 359,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 210
+      },
+      "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+    }
+  ]
+}

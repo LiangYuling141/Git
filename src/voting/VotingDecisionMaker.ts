@@ -19,11 +19,7 @@ export interface AgentVoter {
   getReason(): string;
 }
 
-export interface ValidationResult {
-  passed: boolean;
-  reason?: string;
-  riskPoints?: string[];
-}
+export type { ValidationResult } from '@/lib/ai/IAgentKernel';
 
 export class VotingDecisionMaker {
   private config: VotingConfig = {

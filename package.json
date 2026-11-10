@@ -1,8 +1,13 @@
 {
-  "name": "lymatrix-tef",
+  "name": "lymtrix-tef",
   "version": "0.1.0",
   "private": true,
-  "description": "LyMatrix Trusted Execution Framework — a deterministic execution boundary for AI agents.",
+  "workspaces": [
+    "packages/*",
+    "verticals/*",
+    "apps/*"
+  ],
+  "description": "LyMtrix Trusted Execution Framework — a deterministic execution boundary for AI agents.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -10,9 +15,12 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "secrets:check": "node scripts/check-secrets.mjs",
+    "boundaries:check": "node scripts/check-boundaries.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "eval": "vite-node --config vite.eval.config.ts packages/tef-eval/src/cli.ts",
+    "eval:live": "TEF_MODEL_TESTS=1 TEF_DB_TESTS=1 npm run eval -- --mode all --live",
     "db:bootstrap": "node scripts/bootstrap-db.mjs --run",
     "db:seed": "node prisma/seed.mjs",
     "rls:apply": "node scripts/rls.mjs apply",
@@ -44,6 +52,7 @@
     "eslint": "^9.0.0",
     "eslint-config-next": "16.0.0",
     "typescript": "^5.7.0",
+    "vite-node": "^3.2.4",
     "vitest": "^3.2.7"
   }
 }

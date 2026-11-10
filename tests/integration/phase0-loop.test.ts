@@ -134,12 +134,16 @@ describeDb('Phase 0 闭环（真实数据库）', () => {
     try {
       // 1. 客户重名 → 多个候选，必须澄清
       const search = (await session.callTool('customer.search', { name: '伟业' })) as Envelope & {
-        data: { candidates: Array<{ id: string; label: string; matchReason: string }> };
+        data: { candidates: Array<{ id: string; label: string; phone: string; matchReason: string }> };
       };
       expect(search.status).toBe('ok');
       expect(search.risk).toBe('L0');
       expect(search.data.candidates.length).toBeGreaterThanOrEqual(2);
       expect(search.data.candidates.some((c) => c.id === CUSTOMER)).toBe(true);
+      // 候选手机号进入模型上下文前必须打码，不得返回 prisma/seed.mjs 中的原始夹具值。
+      const weiye = search.data.candidates.find((c) => c.id === CUSTOMER);
+      expect(weiye?.phone).toContain('****');
+      expect(weiye?.phone).not.toBe('13905791001');
 
       // 2. 信用额度（L0 只读）
       const credit = (await session.callTool('credit.get', { customerId: CUSTOMER })) as Envelope & {
@@ -560,6 +564,7 @@ describeDb('Phase 0 闭环（真实数据库）', () => {
       taskState,
       traceId,
       secret,
+      connectSession: connectTefClient,
     });
     const persisted = await taskStateStore.update(TENANT, conversationId, { ...result.patch, traceId }, taskState.version);
     return { result, taskState: persisted, traceId };

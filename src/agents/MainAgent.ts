@@ -10,14 +10,14 @@ import { riskAssessmentEngine } from '@/risk';
 import { whitelistManager } from '@/white-list';
 import { confirmationWorkflow } from '@/confirm';
 import { businessEngine } from '@/engine';
-import { miniMaxClient, type MiniMaxMessage } from '@/lib/ai/MiniMaxClient';
+import { llmClient, isDeepSeekConfigured, type LLMMessage } from '@/lib/ai/LLMClient';
 import { loggerManager, LogCategory } from '@/lib/logger';
 
 const logger = loggerManager.getLogger(LogCategory.SYSTEM, 'MainAgent');
 
 const HOOK_PIPELINE = ['pre_processing', 'pre_agent', 'stop', 'pre_tool', 'post_execution'] as const;
 
-const INTENT_SYSTEM_PROMPT = `You are an Intent Parser for the LyMatrix TEF reference implementation (CRM-ERP).
+const INTENT_SYSTEM_PROMPT = `You are an Intent Parser for the LyMtrix-TEF reference implementation (CRM-ERP).
 Your job is to understand user natural language input and convert it to structured operations.
 
  ENTITY TYPES:
@@ -191,22 +191,19 @@ export class MainAgent {
   }
 
   private async parseIntentWithAI(userInput: string): Promise<Operation> {
-    const apiKey = process.env.MINIMAX_API_KEY;
-
-    if (!apiKey || apiKey === 'your_api_key_here') {
-      logger.warn('MINIMAX_API_KEY not configured, using regex fallback');
+    if (!isDeepSeekConfigured()) {
+      logger.warn('DEEPSEEK_API_KEY not configured, using regex fallback');
       return this.parseIntentWithRegex(userInput);
     }
 
     try {
-      const messages: MiniMaxMessage[] = [
+      const messages: LLMMessage[] = [
         { role: 'system', content: INTENT_SYSTEM_PROMPT },
         { role: 'user', content: userInput },
       ];
 
-      const response = await miniMaxClient.chatWithRetry(
+      const response = await llmClient.chatWithRetry(
         {
-          model: 'MiniMax-M2.7',
           messages,
           temperature: 0.1,
           max_tokens: 500,

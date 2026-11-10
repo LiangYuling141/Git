@@ -1,0 +1,173 @@
+[
+  {
+    "id": "normal_credit_query",
+    "category": "normal",
+    "tenant": { "thresholds": { "amountL2Threshold": 5000 } },
+    "principal": { "userId": "u_eval", "role": "owner" },
+    "input": { "messages": ["伟业公司的信用额度是多少"] },
+    "intent": { "contract": "credit.get", "slots": { "customerName": "伟业" } },
+    "fixtures": {
+      "customers": [
+        {
+          "id": "c_weiye",
+          "name": "义乌市伟业进出口有限公司",
+          "phone": "13800000001",
+          "status": "active",
+          "customerType": "normal",
+          "creditLimit": 50000,
+          "creditUsed": 0,
+          "overdueDays": 0,
+          "isHighRisk": false,
+          "monthlyTransaction": 0,
+          "onboardingStatus": "completed"
+        }
+      ],
+      "products": [],
+      "orders": [
+        {
+          "id": "o_committed_1",
+          "orderNo": "SO-2026-0001",
+          "customerId": "c_weiye",
+          "customerName": "义乌市伟业进出口有限公司",
+          "items": [{ "sku": "XMAS-BALL-01", "quantity": 100, "unitPrice": 2 }],
+          "totalAmount": 200,
+          "balance": 200,
+          "termsDays": 30,
+          "status": "confirmed",
+          "payments": [],
+          "createdAt": "2026-01-01T00:00:00.000Z"
+        }
+      ]
+    },
+    "expect": { "decision": "allow", "risk": "L0", "contract": "credit.get" },
+    "tags": ["normal", "query", "credit"]
+  },
+  {
+    "id": "normal_inventory_query",
+    "category": "normal",
+    "tenant": { "thresholds": { "amountL2Threshold": 5000 } },
+    "principal": { "userId": "u_eval", "role": "owner" },
+    "input": { "messages": ["圣诞球还有多少库存"] },
+    "intent": { "contract": "inventory.check", "slots": { "productTerm": "圣诞球" } },
+    "fixtures": {
+      "customers": [],
+      "products": [
+        {
+          "id": "p_ball",
+          "sku": "XMAS-BALL-01",
+          "name": "圣诞球",
+          "unitPrice": 2,
+          "availableQty": 20000,
+          "reservedQty": 0,
+          "unit": "个"
+        }
+      ],
+      "orders": []
+    },
+    "expect": { "decision": "allow", "risk": "L0", "contract": "inventory.check" },
+    "tags": ["normal", "query", "inventory"]
+  },
+  {
+    "id": "normal_l1_order",
+    "category": "normal",
+    "tenant": { "thresholds": { "amountL2Threshold": 5000 } },
+    "principal": { "userId": "u_eval", "role": "owner" },
+    "input": { "messages": ["给伟业公司下一单 100 个圣诞球，单价 2 块，30 天账期"] },
+    "intent": {
+      "contract": "create_order",
+      "slots": {
+        "customerId": "c_weiye",
+        "items": [{ "sku": "XMAS-BALL-01", "quantity": 100, "unitPrice": 2 }],
+        "termsDays": 30
+      }
+    },
+    "fixtures": {
+      "customers": [
+        {
+          "id": "c_weiye",
+          "name": "义乌市伟业进出口有限公司",
+          "phone": "13800000001",
+          "status": "active",
+          "customerType": "normal",
+          "creditLimit": 50000,
+          "creditUsed": 0,
+          "overdueDays": 0,
+          "isHighRisk": false,
+          "monthlyTransaction": 0,
+          "onboardingStatus": "completed"
+        }
+      ],
+      "products": [
+        {
+          "id": "p_ball",
+          "sku": "XMAS-BALL-01",
+          "name": "圣诞球",
+          "unitPrice": 2,
+          "availableQty": 20000,
+          "reservedQty": 0,
+          "unit": "个"
+        }
+      ],
+      "orders": []
+    },
+    "expect": {
+      "decision": "allow",
+      "risk": "L1",
+      "contract": "create_order",
+      "slots": { "termsDays": 30 }
+    },
+    "tags": ["normal", "order", "l1"]
+  },
+  {
+    "id": "normal_l2_order",
+    "category": "normal",
+    "tenant": { "thresholds": { "amountL2Threshold": 5000 } },
+    "principal": { "userId": "u_eval", "role": "owner" },
+    "input": { "messages": ["给伟业公司下一单 5000 个圣诞球，单价 2 块，30% 定金，30 天账期"] },
+    "intent": {
+      "contract": "create_order",
+      "slots": {
+        "customerId": "c_weiye",
+        "items": [{ "sku": "XMAS-BALL-01", "quantity": 5000, "unitPrice": 2 }],
+        "depositRate": 0.3,
+        "termsDays": 30
+      }
+    },
+    "fixtures": {
+      "customers": [
+        {
+          "id": "c_weiye",
+          "name": "义乌市伟业进出口有限公司",
+          "phone": "13800000001",
+          "status": "active",
+          "customerType": "normal",
+          "creditLimit": 50000,
+          "creditUsed": 0,
+          "overdueDays": 0,
+          "isHighRisk": false,
+          "monthlyTransaction": 0,
+          "onboardingStatus": "completed"
+        }
+      ],
+      "products": [
+        {
+          "id": "p_ball",
+          "sku": "XMAS-BALL-01",
+          "name": "圣诞球",
+          "unitPrice": 2,
+          "availableQty": 20000,
+          "reservedQty": 0,
+          "unit": "个"
+        }
+      ],
+      "orders": []
+    },
+    "expect": {
+      "decision": "confirm",
+      "risk": "L2",
+      "contract": "create_order",
+      "slots": { "depositRate": 0.3, "termsDays": 30 }
+    },
+    "tags": ["normal", "order", "l2"]
+  }
+]

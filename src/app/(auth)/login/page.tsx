@@ -51,7 +51,7 @@ export default function LoginPage() {
         width: '100%',
         maxWidth: '400px',
       }}>
-        <h1 style={{ marginBottom: '8px', fontSize: '24px', textAlign: 'center' }}>LyMatrix TEF</h1>
+        <h1 style={{ marginBottom: '8px', fontSize: '24px', textAlign: 'center' }}>LyMtrix-TEF</h1>
         <p style={{ marginBottom: '32px', color: '#666', textAlign: 'center' }}>登录您的账户</p>
 
         <form onSubmit={handleSubmit}>

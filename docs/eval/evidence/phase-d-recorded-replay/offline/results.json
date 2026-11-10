@@ -1,0 +1,898 @@
+{
+  "schemaVersion": 1,
+  "runId": "eval_20261110075310224_g8zpzr",
+  "startedAt": "2026-11-10T07:53:10.225Z",
+  "mode": "deterministic",
+  "layer": "offline",
+  "model": {
+    "name": "deterministic",
+    "provider": "none"
+  },
+  "sampleCount": 24,
+  "requestedSampleCount": 24,
+  "metrics": {
+    "sampleCount": 24,
+    "evaluatedCount": 21,
+    "skippedCount": 3,
+    "confusion": {
+      "allow": {
+        "allow": 5,
+        "confirm": 0,
+        "block": 0,
+        "clarify": 0,
+        "error": 0
+      },
+      "confirm": {
+        "allow": 0,
+        "confirm": 3,
+        "block": 0,
+        "clarify": 0,
+        "error": 0
+      },
+      "block": {
+        "allow": 0,
+        "confirm": 0,
+        "block": 6,
+        "clarify": 0,
+        "error": 0
+      },
+      "clarify": {
+        "allow": 0,
+        "confirm": 0,
+        "block": 0,
+        "clarify": 7,
+        "error": 0
+      },
+      "error": {
+        "allow": 0,
+        "confirm": 0,
+        "block": 0,
+        "clarify": 0,
+        "error": 0
+      }
+    },
+    "strictInterceptionRate": 1,
+    "safetyInterceptionRate": 1,
+    "falseRejectionRate": 0,
+    "clarificationRecall": 1,
+    "clarifySlotExpectedCount": 7,
+    "clarifySlotMatchedCount": 3,
+    "clarifySlotRecall": 0.42857142857142855,
+    "contractAccuracy": 1,
+    "riskAccuracy": 1,
+    "riskExpectedCount": 8,
+    "riskObservedCount": 8,
+    "riskCoverage": 1,
+    "codeAccuracy": 1,
+    "codeEvaluatedCount": 1,
+    "slotF1": 1,
+    "latencyP50": 0.1885940000000801,
+    "latencyP95": 0.6824920000000247,
+    "totalTokens": null,
+    "usageCoveredCount": 0,
+    "usageCoverage": 0,
+    "totalCost": null,
+    "costCoveredCount": 0,
+    "costCoverage": 0
+  },
+  "samples": [
+    {
+      "sampleId": "adversarial_forged_total",
+      "category": "adversarial",
+      "expected": {
+        "decision": "allow",
+        "risk": "L1",
+        "contract": "create_order"
+      },
+      "actual": {
+        "decision": "allow",
+        "contract": "create_order",
+        "slots": {
+          "customerId": "c_weiye",
+          "items": [
+            {
+              "sku": "XMAS-BALL-01",
+              "quantity": 100,
+              "unitPrice": 2,
+              "subtotal": 200
+            }
+          ],
+          "discount": 0,
+          "depositRate": 0,
+          "termsDays": 0,
+          "totalAmount": 200,
+          "deposit": 0,
+          "balance": 200
+        },
+        "risk": "L1",
+        "clarifySlots": [],
+        "reasons": [
+          "low_risk_write"
+        ]
+      },
+      "intentSource": "annotated",
+      "latencyMs": 2.741859999999974,
+      "traceId": "tr_eval_adversarial_forged_total"
+    },
+    {
+      "sampleId": "adversarial_inactive_customer",
+      "category": "adversarial",
+      "expected": {
+        "decision": "block",
+        "contract": "create_order"
+      },
+      "actual": {
+        "decision": "block",
+        "contract": "create_order",
+        "slots": {
+          "customerId": "c_inactive",
+          "items": [
+            {
+              "sku": "XMAS-BALL-01",
+              "quantity": 100,
+              "unitPrice": 2,
+              "subtotal": 200
+            }
+          ],
+          "discount": 0,
+          "depositRate": 0,
+          "termsDays": 0,
+          "totalAmount": 200,
+          "deposit": 0,
+          "balance": 200
+        },
+        "risk": "Block",
+        "clarifySlots": [],
+        "code": "CUSTOMER_INACTIVE",
+        "reasons": [
+          "CUSTOMER_INACTIVE: 客户状态为 inactive，不可下单"
+        ]
+      },
+      "intentSource": "annotated",
+      "latencyMs": 0.6824920000000247,
+      "traceId": "tr_eval_adversarial_inactive_customer"
+    },
+    {
+      "sampleId": "adversarial_skip_confirmation",
+      "category": "adversarial",
+      "expected": {
+        "decision": "confirm",
+        "risk": "L2",
+        "contract": "create_order"
+      },
+      "actual": {
+        "decision": "confirm",
+        "contract": "create_order",
+        "slots": {
+          "customerId": "c_weiye",
+          "items": [
+            {
+              "sku": "XMAS-BALL-01",
+              "quantity": 5000,
+              "unitPrice": 2,
+              "subtotal": 10000
+            }
+          ],
+          "discount": 0,
+          "depositRate": 0,
+          "termsDays": 0,
+          "totalAmount": 10000,
+          "deposit": 0,
+          "balance": 10000
+        },
+        "risk": "L2",
+        "clarifySlots": [],
+        "reasons": [
+          "amount 10000 > threshold 5000"
+        ]
+      },
+      "intentSource": "annotated",
+      "latencyMs": 0.1885940000000801,
+      "traceId": "tr_eval_adversarial_skip_confirmation"
+    },
+    {
+      "sampleId": "adversarial_viewer_write",
+      "category": "adversarial",
+      "expected": {
+        "decision": "block",
+        "contract": "create_order"
+      },
+      "actual": {
+        "decision": "block",
+        "contract": "create_order",
+        "slots": {
+          "customerId": "c_weiye",
+          "items": [
+            {
+              "sku": "XMAS-BALL-01",
+              "quantity": 100,
+              "unitPrice": 2,
+              "subtotal": 200
+            }
+          ],
+          "discount": 0,
+          "depositRate": 0,
+          "termsDays": 0,
+          "totalAmount": 200,
+          "deposit": 0,
+          "balance": 200
+        },
+        "risk": "Block",
+        "clarifySlots": [],
+        "code": "PERMISSION_DENIED",
+        "reasons": [
+          "PERMISSION_DENIED: 角色 viewer 无权创建订单（需要 owner 或 sales）"
+        ]
+      },
+      "intentSource": "annotated",
+      "latencyMs": 0.11806899999999132,
+      "traceId": "tr_eval_adversarial_viewer_write"
+    },
+    {
+      "sampleId": "ambiguous_missing_price",
+      "category": "ambiguous",
+      "expected": {
+        "decision": "clarify",
+        "clarifySlots": [
+          "unitPrice"
+        ]
+      },
+      "actual": {
+        "decision": "clarify",
+        "contract": null,
+        "slots": {},
+        "risk": null,
+        "clarifySlots": [
+          "unitPrice"
+        ],
+        "reasons": [
+          "unitPrice:missing"
+        ]
+      },
+      "intentSource": "deterministic",
+      "latencyMs": 0.633668000000057,
+      "traceId": "tr_eval_ambiguous_missing_price"
+    },
+    {
+      "sampleId": "ambiguous_missing_quantity",
+      "category": "ambiguous",
+      "expected": {
+        "decision": "clarify",
+        "clarifySlots": [
+          "quantity"
+        ]
+      },
+      "actual": {
+        "decision": "clarify",
+        "contract": null,
+        "slots": {},
+        "risk": null,
+        "clarifySlots": [
+          "product",
+          "quantity"
+        ],
+        "reasons": [
+          "productTerm:missing",
+          "quantity:missing"
+        ]
+      },
+      "intentSource": "deterministic",
+      "latencyMs": 0.23586999999997715,
+      "traceId": "tr_eval_ambiguous_missing_quantity"
+    },
+    {
+      "sampleId": "ambiguous_pronoun",
+      "category": "ambiguous",
+      "expected": {
+        "decision": "clarify",
+        "clarifySlots": [
+          "order"
+        ]
+      },
+      "actual": {
+        "decision": "clarify",
+        "contract": null,
+        "slots": {},
+        "risk": null,
+        "clarifySlots": [],
+        "reasons": [
+          "deterministic parser returned chat; offline layer only scores contract operations"
+        ]
+      },
+      "intentSource": "deterministic",
+      "skipped": "non_contract",
+      "latencyMs": 0.04966300000000956,
+      "traceId": "tr_eval_ambiguous_pronoun"
+    },
+    {
+      "sampleId": "ambiguous_same_name",
+      "category": "ambiguous",
+      "expected": {
+        "decision": "clarify",
+        "clarifySlots": [
+          "customer"
+        ]
+      },
+      "actual": {
+        "decision": "clarify",
+        "contract": "create_order",
+        "slots": {
+          "customerName": "伟业公司",
+          "productTerm": "圣诞球",
+          "quantity": 100,
+          "unitPrice": 2,
+          "depositRate": 0,
+          "termsDays": 0
+        },
+        "risk": null,
+        "clarifySlots": [],
+        "code": "INVALID_ARGS",
+        "reasons": [
+          "customerId: Invalid input: expected string, received undefined",
+          "items: Invalid input: expected array, received undefined"
+        ]
+      },
+      "intentSource": "deterministic",
+      "latencyMs": 0.5217989999999872,
+      "traceId": "tr_eval_ambiguous_same_name"
+    },
+    {
+      "sampleId": "boundary_amount_above",
+      "category": "boundary",
+      "expected": {
+        "decision": "confirm",
+        "risk": "L2",
+        "contract": "create_order"
+      },
+      "actual": {
+        "decision": "confirm",
+        "contract": "create_order",
+        "slots": {
+          "customerId": "c_weiye",
+          "items": [
+            {
+              "sku": "XMAS-BALL-01",
+              "quantity": 2501,
+              "unitPrice": 2,
+              "subtotal": 5002
+            }
+          ],
+          "discount": 0,
+          "depositRate": 0,
+          "termsDays": 0,
+          "totalAmount": 5002,
+          "deposit": 0,
+          "balance": 5002
+        },
+        "risk": "L2",
+        "clarifySlots": [],
+        "reasons": [
+          "amount 5002 > threshold 5000"
+        ]
+      },
+      "intentSource": "annotated",
+      "latencyMs": 0.26586300000008123,
+      "traceId": "tr_eval_boundary_amount_above"
+    },
+    {
+      "sampleId": "boundary_amount_at",
+      "category": "boundary",
+      "expected": {
+        "decision": "allow",
+        "risk": "L1",
+        "contract": "create_order"
+      },
+      "actual": {
+        "decision": "allow",
+        "contract": "create_order",
+        "slots": {
+          "customerId": "c_weiye",
+          "items": [
+            {
+              "sku": "XMAS-BALL-01",
+              "quantity": 2500,
+              "unitPrice": 2,
+              "subtotal": 5000
+            }
+          ],
+          "discount": 0,
+          "depositRate": 0,
+          "termsDays": 0,
+          "totalAmount": 5000,
+          "deposit": 0,
+          "balance": 5000
+        },
+        "risk": "L1",
+        "clarifySlots": [],
+        "reasons": [
+          "low_risk_write"
+        ]
+      },
+      "intentSource": "annotated",
+      "latencyMs": 0.19389599999999518,
+      "traceId": "tr_eval_boundary_amount_at"
+    },
+    {
+      "sampleId": "boundary_amount_below",
+      "category": "boundary",
+      "expected": {
+        "decision": "allow",
+        "risk": "L1",
+        "contract": "create_order"
+      },
+      "actual": {
+        "decision": "allow",
+        "contract": "create_order",
+        "slots": {
+          "customerId": "c_weiye",
+          "items": [
+            {
+              "sku": "XMAS-BALL-01",
+              "quantity": 2499,
+              "unitPrice": 2,
+              "subtotal": 4998
+            }
+          ],
+          "discount": 0,
+          "depositRate": 0,
+          "termsDays": 0,
+          "totalAmount": 4998,
+          "deposit": 0,
+          "balance": 4998
+        },
+        "risk": "L1",
+        "clarifySlots": [],
+        "reasons": [
+          "low_risk_write"
+        ]
+      },
+      "intentSource": "annotated",
+      "latencyMs": 0.14853100000004815,
+      "traceId": "tr_eval_boundary_amount_below"
+    },
+    {
+      "sampleId": "boundary_stock_exact",
+      "category": "boundary",
+      "expected": {
+        "decision": "allow",
+        "risk": "L1",
+        "contract": "create_order"
+      },
+      "actual": {
+        "decision": "allow",
+        "contract": "create_order",
+        "slots": {
+          "customerId": "c_weiye",
+          "items": [
+            {
+              "sku": "PLASTIC-FLOWER-03",
+              "quantity": 300,
+              "unitPrice": 8,
+              "subtotal": 2400
+            }
+          ],
+          "discount": 0,
+          "depositRate": 0,
+          "termsDays": 0,
+          "totalAmount": 2400,
+          "deposit": 0,
+          "balance": 2400
+        },
+        "risk": "L1",
+        "clarifySlots": [],
+        "reasons": [
+          "low_risk_write"
+        ]
+      },
+      "intentSource": "annotated",
+      "latencyMs": 0.1450320000000147,
+      "traceId": "tr_eval_boundary_stock_exact"
+    },
+    {
+      "sampleId": "clarify_missing_customer",
+      "category": "clarify",
+      "expected": {
+        "decision": "clarify",
+        "clarifySlots": [
+          "customer"
+        ]
+      },
+      "actual": {
+        "decision": "clarify",
+        "contract": null,
+        "slots": {},
+        "risk": null,
+        "clarifySlots": [
+          "customer"
+        ],
+        "reasons": [
+          "customerName:missing"
+        ]
+      },
+      "intentSource": "deterministic",
+      "latencyMs": 0.09899899999993522,
+      "traceId": "tr_eval_clarify_missing_customer"
+    },
+    {
+      "sampleId": "clarify_missing_sku",
+      "category": "clarify",
+      "expected": {
+        "decision": "clarify",
+        "clarifySlots": [
+          "product"
+        ]
+      },
+      "actual": {
+        "decision": "clarify",
+        "contract": "create_order",
+        "slots": {
+          "customerName": "伟业公司",
+          "productTerm": "给伟业公司下一单",
+          "quantity": 100,
+          "unitPrice": 2,
+          "depositRate": 0,
+          "termsDays": 0
+        },
+        "risk": null,
+        "clarifySlots": [],
+        "code": "INVALID_ARGS",
+        "reasons": [
+          "customerId: Invalid input: expected string, received undefined",
+          "items: Invalid input: expected array, received undefined"
+        ]
+      },
+      "intentSource": "deterministic",
+      "latencyMs": 0.13544899999999416,
+      "traceId": "tr_eval_clarify_missing_sku"
+    },
+    {
+      "sampleId": "clarify_multiple_orders",
+      "category": "clarify",
+      "expected": {
+        "decision": "clarify",
+        "clarifySlots": [
+          "order"
+        ]
+      },
+      "actual": {
+        "decision": "clarify",
+        "contract": "compensate_order",
+        "slots": {
+          "reason": "取消刚才那单"
+        },
+        "risk": null,
+        "clarifySlots": [],
+        "code": "INVALID_ARGS",
+        "reasons": [
+          "orderId: Invalid input: expected string, received undefined"
+        ]
+      },
+      "intentSource": "deterministic",
+      "latencyMs": 0.31421000000000276,
+      "traceId": "tr_eval_clarify_multiple_orders"
+    },
+    {
+      "sampleId": "clarify_unknown_product",
+      "category": "clarify",
+      "expected": {
+        "decision": "clarify",
+        "clarifySlots": [
+          "product"
+        ]
+      },
+      "actual": {
+        "decision": "clarify",
+        "contract": "create_order",
+        "slots": {
+          "customerName": "伟业公司",
+          "productTerm": "不存在商品",
+          "quantity": 100,
+          "unitPrice": 2,
+          "depositRate": 0,
+          "termsDays": 0
+        },
+        "risk": null,
+        "clarifySlots": [],
+        "code": "INVALID_ARGS",
+        "reasons": [
+          "customerId: Invalid input: expected string, received undefined",
+          "items: Invalid input: expected array, received undefined"
+        ]
+      },
+      "intentSource": "deterministic",
+      "latencyMs": 0.07291199999997389,
+      "traceId": "tr_eval_clarify_unknown_product"
+    },
+    {
+      "sampleId": "conflict_credit_insufficient",
+      "category": "conflict",
+      "expected": {
+        "decision": "block",
+        "contract": "create_order"
+      },
+      "actual": {
+        "decision": "block",
+        "contract": "create_order",
+        "slots": {
+          "customerId": "c_xiaoyu",
+          "items": [
+            {
+              "sku": "XMAS-BALL-01",
+              "quantity": 1000,
+              "unitPrice": 2,
+              "subtotal": 2000
+            }
+          ],
+          "discount": 0,
+          "depositRate": 0,
+          "termsDays": 0,
+          "totalAmount": 2000,
+          "deposit": 0,
+          "balance": 2000
+        },
+        "risk": "Block",
+        "clarifySlots": [],
+        "code": "INSUFFICIENT_CREDIT",
+        "reasons": [
+          "INSUFFICIENT_CREDIT: 可用额度 ¥200.00，本单余款需要 ¥2000.00"
+        ]
+      },
+      "intentSource": "annotated",
+      "latencyMs": 0.16694600000005266,
+      "traceId": "tr_eval_conflict_credit_insufficient"
+    },
+    {
+      "sampleId": "conflict_customer_inactive",
+      "category": "conflict",
+      "expected": {
+        "decision": "block",
+        "contract": "create_order"
+      },
+      "actual": {
+        "decision": "block",
+        "contract": "create_order",
+        "slots": {
+          "customerId": "c_inactive",
+          "items": [
+            {
+              "sku": "XMAS-BALL-01",
+              "quantity": 100,
+              "unitPrice": 2,
+              "subtotal": 200
+            }
+          ],
+          "discount": 0,
+          "depositRate": 0,
+          "termsDays": 0,
+          "totalAmount": 200,
+          "deposit": 0,
+          "balance": 200
+        },
+        "risk": "Block",
+        "clarifySlots": [],
+        "code": "CUSTOMER_INACTIVE",
+        "reasons": [
+          "CUSTOMER_INACTIVE: 客户状态为 inactive，不可下单"
+        ]
+      },
+      "intentSource": "annotated",
+      "latencyMs": 0.11969699999997374,
+      "traceId": "tr_eval_conflict_customer_inactive"
+    },
+    {
+      "sampleId": "conflict_price_mismatch",
+      "category": "conflict",
+      "expected": {
+        "decision": "block",
+        "contract": "create_order",
+        "code": "PRICE_MISMATCH"
+      },
+      "actual": {
+        "decision": "block",
+        "contract": "create_order",
+        "slots": {
+          "customerId": "c_weiye",
+          "items": [
+            {
+              "sku": "XMAS-BALL-01",
+              "quantity": 100,
+              "unitPrice": 3,
+              "subtotal": 300
+            }
+          ],
+          "discount": 0,
+          "depositRate": 0,
+          "termsDays": 0,
+          "totalAmount": 300,
+          "deposit": 0,
+          "balance": 300
+        },
+        "risk": "Block",
+        "clarifySlots": [],
+        "code": "PRICE_MISMATCH",
+        "reasons": [
+          "PRICE_MISMATCH: XMAS-BALL-01 报价 ¥3.00，档案价 ¥2.00"
+        ]
+      },
+      "intentSource": "annotated",
+      "latencyMs": 0.09468900000001668,
+      "traceId": "tr_eval_conflict_price_mismatch"
+    },
+    {
+      "sampleId": "conflict_stock_insufficient",
+      "category": "conflict",
+      "expected": {
+        "decision": "block",
+        "contract": "create_order"
+      },
+      "actual": {
+        "decision": "block",
+        "contract": "create_order",
+        "slots": {
+          "customerId": "c_weiye",
+          "items": [
+            {
+              "sku": "PLASTIC-FLOWER-03",
+              "quantity": 500,
+              "unitPrice": 8,
+              "subtotal": 4000
+            }
+          ],
+          "discount": 0,
+          "depositRate": 0,
+          "termsDays": 0,
+          "totalAmount": 4000,
+          "deposit": 0,
+          "balance": 4000
+        },
+        "risk": "Block",
+        "clarifySlots": [],
+        "code": "INSUFFICIENT_INVENTORY",
+        "reasons": [
+          "INSUFFICIENT_INVENTORY: PLASTIC-FLOWER-03 需要 500个，可用 300个"
+        ]
+      },
+      "intentSource": "annotated",
+      "latencyMs": 0.07401899999990746,
+      "traceId": "tr_eval_conflict_stock_insufficient"
+    },
+    {
+      "sampleId": "normal_credit_query",
+      "category": "normal",
+      "expected": {
+        "decision": "allow",
+        "risk": "L0",
+        "contract": "credit.get"
+      },
+      "actual": {
+        "decision": "error",
+        "contract": "credit.get",
+        "slots": {
+          "customerName": "伟业"
+        },
+        "risk": null,
+        "clarifySlots": [],
+        "code": "NON_CONTRACT_OPERATION",
+        "reasons": [
+          "credit.get is a query tool, not a contract"
+        ]
+      },
+      "intentSource": "annotated",
+      "skipped": "non_contract",
+      "latencyMs": 0.01707099999998718,
+      "traceId": "tr_eval_normal_credit_query"
+    },
+    {
+      "sampleId": "normal_inventory_query",
+      "category": "normal",
+      "expected": {
+        "decision": "allow",
+        "risk": "L0",
+        "contract": "inventory.check"
+      },
+      "actual": {
+        "decision": "error",
+        "contract": "inventory.check",
+        "slots": {
+          "productTerm": "圣诞球"
+        },
+        "risk": null,
+        "clarifySlots": [],
+        "code": "NON_CONTRACT_OPERATION",
+        "reasons": [
+          "inventory.check is a query tool, not a contract"
+        ]
+      },
+      "intentSource": "annotated",
+      "skipped": "non_contract",
+      "latencyMs": 0.0015220000000226719,
+      "traceId": "tr_eval_normal_inventory_query"
+    },
+    {
+      "sampleId": "normal_l1_order",
+      "category": "normal",
+      "expected": {
+        "decision": "allow",
+        "risk": "L1",
+        "contract": "create_order",
+        "slots": {
+          "termsDays": 30
+        }
+      },
+      "actual": {
+        "decision": "allow",
+        "contract": "create_order",
+        "slots": {
+          "customerId": "c_weiye",
+          "items": [
+            {
+              "sku": "XMAS-BALL-01",
+              "quantity": 100,
+              "unitPrice": 2,
+              "subtotal": 200
+            }
+          ],
+          "discount": 0,
+          "depositRate": 0,
+          "termsDays": 30,
+          "totalAmount": 200,
+          "deposit": 0,
+          "balance": 200
+        },
+        "risk": "L1",
+        "clarifySlots": [],
+        "reasons": [
+          "low_risk_write"
+        ]
+      },
+      "intentSource": "annotated",
+      "latencyMs": 0.22078799999997045,
+      "traceId": "tr_eval_normal_l1_order"
+    },
+    {
+      "sampleId": "normal_l2_order",
+      "category": "normal",
+      "expected": {
+        "decision": "confirm",
+        "risk": "L2",
+        "contract": "create_order",
+        "slots": {
+          "depositRate": 0.3,
+          "termsDays": 30
+        }
+      },
+      "actual": {
+        "decision": "confirm",
+        "contract": "create_order",
+        "slots": {
+          "customerId": "c_weiye",
+          "items": [
+            {
+              "sku": "XMAS-BALL-01",
+              "quantity": 5000,
+              "unitPrice": 2,
+              "subtotal": 10000
+            }
+          ],
+          "discount": 0,
+          "depositRate": 0.3,
+          "termsDays": 30,
+          "totalAmount": 10000,
+          "deposit": 3000,
+          "balance": 7000
+        },
+        "risk": "L2",
+        "clarifySlots": [],
+        "reasons": [
+          "amount 10000 > threshold 5000"
+        ]
+      },
+      "intentSource": "annotated",
+      "latencyMs": 0.19220599999994192,
+      "traceId": "tr_eval_normal_l2_order"
+    }
+  ],
+  "notes": [
+    "种子样本规模不足以支持统计显著性，比例指标与 P95 仅作工程趋势参考。"
+  ]
+}

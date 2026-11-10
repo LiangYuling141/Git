@@ -4,11 +4,26 @@ import { prisma } from '@/lib/prisma';
 
 const PUBLIC_PATHS = ['/api/auth/login', '/api/auth/logout'];
 
+// 内部网关不使用会话 Cookie：路由内部用 Bearer 服务令牌鉴权
+// （src/lib/internal-auth.ts）。必须在会话检查前放行，否则服务令牌请求
+// 永远到不了路由，跨服务网关会被统一拦成 401。
+const INTERNAL_PATHS = ['/api/internal'];
+
+function matchesPath(pathname: string, paths: readonly string[]): boolean {
+  return paths.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Allow public paths
-  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+  if (matchesPath(pathname, PUBLIC_PATHS)) {
+    return NextResponse.next();
+  }
+
+  // Allow internal service-to-service paths; the route authenticates with a
+  // Bearer service token instead of a session cookie.
+  if (matchesPath(pathname, INTERNAL_PATHS)) {
     return NextResponse.next();
   }
 

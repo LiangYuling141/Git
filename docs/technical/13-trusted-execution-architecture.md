@@ -226,14 +226,20 @@ stateDiagram-v2
   AwaitingConfirmation --> Executing: confirmation.approve
   AwaitingConfirmation --> Rejected: 用户拒绝
   AwaitingConfirmation --> Expired: 超过 TTL
-  Executing --> Completed: 事务提交
-  Executing --> Failed: 校验失败/并发冲突
+  Executing --> Succeeded: Phase 3 结算提交
+  Executing --> Failed: 确定性失败/并发冲突
+  Executing --> Unknown: 响应丢失/超时/进程崩溃
+  Unknown --> Succeeded: 对账按同一幂等键重放成功
+  Unknown --> Failed: 对账确认确定性失败
+  Unknown --> Unknown: 仍无法确认（等待下一轮）
   Failed --> RolledBack: 补偿完成
-  Completed --> [*]
+  Succeeded --> [*]
   Rejected --> [*]
   Expired --> [*]
   RolledBack --> [*]
 ```
+
+> 状态机自 Phase C 起以 `execution_attempts` 持久化：`executing / succeeded / failed / unknown`。`executing` 与 `unknown` 都表示副作用可能已经发生，只允许对账用同一幂等键收敛，不允许调用方换 key 重试。工具层分别返回 `EXECUTION_IN_PROGRESS` 与 `EXECUTION_UNKNOWN`，并带 `retryWithSameKey: true`，让 Runtime 无需解析文案就能保留幂等键与 pending 状态。
 
 ### 4.2 确认令牌
 
@@ -255,21 +261,64 @@ stateDiagram-v2
 - 服务端以 `(tenantId, toolName, idempotency_key)` 建唯一约束。
 - 重复请求返回第一次的结果，不重复执行。
 - 幂等键由 Agent Runtime 生成，并在 TaskState 中持久化。
+- 执行器幂等域必须按工具名作用域派生：`scopedExecutorIdempotencyKey(toolName, idempotencyKey)`。直接复用裸业务 key 会让创建与补偿等不同操作互相重放。
 
 ### 4.4 事务与补偿
 
-- 单次执行使用数据库事务，保证订单、库存、支付计划一致。
-- 跨服务操作使用 outbox / 事件驱动，保证最终一致。
-- 失败时执行契约中定义的补偿动作，并记录 `rolled_back` 事件。
-- 补偿动作本身也必须幂等。
+Phase C 起，一次写入拆成“两阶段执行 + 三个阶段”，不再假设副作用与数据库写入共享一个事务：
 
-> **实现状态（2026-11-08）**：已提交订单的补偿通过 `compensate_order` 契约执行，复用原契约的 `compensation` 声明；补偿本身是 L2，需要人工确认后才能执行。详见 [../00-framework.md](../00-framework.md) §4.5、§7.5。
+1. **Phase 1（数据库事务一）**：消费令牌与预览快照、重校验前置条件、创建 `execution_attempts`（`executing`）、写预审计事件（`result = pending`，`eventId = ${attemptId}:pre`），提交。提交是语义分水岭：此前失败可以写确定失败审计；此后副作用可能发生。
+2. **Phase 2（副作用）**：通过 `EffectsExecutor` 执行声明式 effects。执行器必须幂等，键为 `scopedExecutorIdempotencyKey(toolName, idempotencyKey)`。执行器成功、确定性失败、结果未知三种结果分别进入 Phase 3 或 `unknown`。
+3. **Phase 3（数据库事务二）**：条件更新尝试状态（只允许从 `executing/unknown` 迁移），写确定性结果审计（`eventId = ${attemptId}:result`）与幂等记录。成功为 `succeeded`；`CONFLICT`/`INTERNAL` 为 `failed`；结果未知则保持/迁移为 `unknown`。
+
+| 场景 | 处理方式 |
+|------|----------|
+| Phase 1 内失败（校验、令牌、审计写入） | 事务回滚，不调用执行器，写事务外失败审计 |
+| Phase 2 确定性失败 | 条件结算为 `failed`，写失败审计；`CONFLICT` 额外写幂等记录 |
+| Phase 2 响应丢失/超时/崩溃 | 尝试保持 `executing` 或迁移到 `unknown`，由对账收敛；不写幂等记录 |
+| 已提交后撤销 | 执行契约声明的补偿动作，记录 `compensated` 事件 |
+| 补偿失败 | 记录 `compensation_failed`，告警并要求人工介入 |
+
+> **审计链的 `pending` 语义**：预审计事件在副作用之前提交，表示“执行意图已登记、结果未定”。若进程崩溃，审计链中会留下一条没有对应结果事件的 `pending` 记录；对账补写 `${attemptId}:result` 后语义闭合。因此审计链校验必须允许 `pending` 作为合法结果类型。
+
+> **实现状态（2026-11-10）**：两阶段执行状态机、`execution_attempts`、`pending` 预审计、进程内幂等执行器与对账（`reconcileExecutions`）均已落地。已提交订单的补偿通过 `compensate_order` 契约执行，复用原契约的 `compensation` 声明；补偿本身是 L2，需要人工确认后才能执行。详见 [../00-framework.md](../00-framework.md) §4.5、§7.5。
 
 ### 4.5 并发控制
 
 - 客户信用额度、库存使用乐观锁或行级锁。
 - 版本号不匹配时返回 `CONFLICT`，要求重新预览。
 - 禁止“先读后写”跨越预览与执行；执行前重新校验关键前置条件。
+
+### 4.6 执行尝试与对账
+
+对账任务 `reconcileExecutions` 是崩溃恢复的唯一入口，规则如下：
+
+| 项 | 规则 |
+|----|------|
+| 扫描范围 | 全部 `unknown`；`executing` 且 `updatedAt` 早于静默期（默认 5 分钟） |
+| 幂等键 | 必须用 `scopedExecutorIdempotencyKey(attempt.toolName, attempt.idempotencyKey)`，与前台 Phase 2 完全一致 |
+| 上下文重建 | 按 `attempt.previewId` 读取预览快照，按 `contract@version` 取回旧契约；快照绑定不一致或依赖缺失时保持原状态，交人工处理 |
+| 结算 | 复用 Phase 3 的条件更新与审计助手；结果审计使用确定性 `${attemptId}:result`，重复对账不重复写 |
+| 并发 | 两个对账/前台同时结算时只有一个条件更新胜者，失败方按数据库实际终态归类 |
+| 异常隔离 | 单条尝试的上下文读取或结算异常只记日志并计为 `unknown`，不中断整批 |
+
+失败语义：
+
+- `executing` 的重复请求返回 `EXECUTION_IN_PROGRESS`，`unknown` 返回 `EXECUTION_UNKNOWN`，`data` 携带 `{ attemptId, retryWithSameKey: true }`；两者都必须在消费令牌之前返回。
+- Runtime 与确认路由识别这两个错误码后保留 pending 预览、幂等键与可重放意图，并写入显式标记 `TaskState.pendingExecutionAttemptId`（`attemptId`，缺失时为 `pending:<idempotencyKey>`），提示“用同一操作重试”，不得清空 pending 或生成新 key。标记非空期间禁止解析新意图；只有确定结果（成功/确定失败）才清空标记与幂等键。marker 重试返回 `CONFLICT` 不足以证明原 attempt 已失败（可能是令牌/快照状态不一致，或写入已提交但结果记录缺失），必须保持非终结 `executing` 等待对账或人工处理，不得清空 marker/key/token。
+- 重试执行工具只能由与 marker 一起持久化的 `TaskState.intent.contract`（或等价的显式 `pendingExecutionContract`）决定，禁止用 `pendingPreview.contract` 反推：旧预览快照可能属于更早的操作，用错工具会把令牌送进错误的幂等命名空间。新操作首次执行落到 `EXECUTION_*` 时，pending 字段必须整体改写为产生该令牌的当前预览（`pendingPreviewId`、`pendingContract`、`pendingContractVersion`、`pendingExpiresAt`）与当前令牌。
+- 未结算执行还必须持久化本次实际使用的确认令牌 `TaskState.pendingConfirmationToken`（L1 取预览签发值，L2 取确认路由请求令牌或服务端已存值）。重试路径直接以该令牌 + 原幂等键调用执行工具，**绝不重新预览**：重新预览会签发新令牌/新快照，且预览一旦被阻断会让任务既保留 marker 又失去可重放意图。Phase 1 在消费令牌之前检查 attempt，因此已消费的令牌在 attempt 存在时是安全的重试凭据。
+- `pendingConfirmationToken` 是纯服务端重试状态：不得下发给模型、不得出现在提示词或任何模型可见的上下文字符串中；确定结果时与 marker、幂等键一起清空。标记存在但令牌缺失时，Runtime 与确认路由只能返回非终结的 `executing` 提示并等待人工对账，不得重新预览或新开操作。
+- 历史数据迁移：升级前已存在 `status=executing` 或 `unknown`、但没有 marker 的 TaskState，可按 `execution_attempts`（`attemptId`）回填 `pendingExecutionAttemptId`，再用 `previewId`/`idempotencyKey` 校准 intent。但**原始确认令牌无法回填**：`confirmation_tokens` 只保存 `tokenHash`，明文令牌只在签发时出现一次，数据库无法重建。缺少令牌的历史行不能自动恢复同 token 重试，必须人工对账（确认原 attempt 已结算或失败）后才能继续；不得为了“补齐字段”重新预览并生成新 key。
+
+已知限制：
+
+- **对账重放不重新执行 `contractEngine.revalidate`**：对账直接使用 attempt 持久化的 effects 与快照证据重放。生产/B3 必须在执行器侧增加按 attempt 查找，并在真正执行前重新校验前置条件，否则对账可能执行一个在当前数据状态下已不再合法的操作。
+- **提交确认歧义只在执行器主动标注时保守处理**：进程内 Prisma 只有在执行器抛出 `EffectsExecutionUnknownError`（驱动/连接异常、冲突后重读失败）时才把结果收敛为 `unknown`；执行器未抛出而事务实际已提交的极端场景无法被本地状态机识别。
+- 无法重建的尝试（快照/契约缺失、绑定不一致）每轮都会重新扫描并占用 `limit` 名额，长期可能挤压后续可收敛记录；需要 `reconcileBlockedAt` 或游标分页，留待 B3。
+- 证据版本冲突尚未参与执行判定，需第二证据版本来源后启用。
+- HTTP effects 路由已把 `EffectsExecutionUnknownError` 映射为 503 / `EXECUTION_UNKNOWN`；`HttpCrmGateway.executeEffects` 把网络错误/超时与 500/502/503/504 统一抛为 `EffectsExecutionUnknownError`（409 保持 `CONFLICT`，400 保持确定性校验失败）。但 `HttpCrmGateway.executeEffects` 尚未接入 `executeContract`，真实跨服务接线留待 B3。
+- 对账保证**按幂等键计**的副作用 at-most-once，不宣称 exactly-once；`unknown` 必须用同一幂等键重试，换 key 不受该保证覆盖。
 
 ---
 
@@ -303,6 +352,10 @@ interface TaskState {
   activeCustomerId?: string;
   pendingConfirmationId?: string;
   idempotencyKey?: string;
+  /** 未结算执行尝试；非空时禁止解析新意图，只能用同一幂等键重试 */
+  pendingExecutionAttemptId?: string | null;
+  /** 未结算执行使用的确认令牌；仅服务端重试可见，绝不下发给模型 */
+  pendingConfirmationToken?: string | null;
   version: number;
   updatedAt: Date;
 }
@@ -567,6 +620,7 @@ src/
 - [../00-framework.md](../00-framework.md) — 项目框架总览（分层架构、MCP 工具、数据模型、核心流程与实施进度）
 - [14-unified-architecture.md](14-unified-architecture.md) — 统一架构框架（裁决版，权威；operationHash 已拆分为 intentHash + evidenceDigest）
 - [06-system-architecture.md](06-system-architecture.md) — 整体技术架构设计
+- [../superpowers/specs/2026-11-09-tef-extraction-design.md](../superpowers/specs/2026-11-09-tef-extraction-design.md) — 框架剥离与 P1/P2 收尾设计（包边界、API 契约、执行状态机）
 - [03-mcp-tool-whitelist.md](03-mcp-tool-whitelist.md) — MCP 工具白名单体系
 - [04-business-engine.md](04-business-engine.md) — 统一业务引擎设计
 - [07-data-flow-design.md](07-data-flow-design.md) — 核心请求全流程设计

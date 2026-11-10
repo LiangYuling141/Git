@@ -1,11 +1,11 @@
-# LyMatrix TEF
+# LyMtrix-TEF
 
 > **Trusted Execution Framework for AI Agents**
 > 为 LLM 的副作用建立确定性执行边界。
 
-LyMatrix TEF 是一个面向 AI Agent 的可信执行框架。它不试图让模型输出变得确定，而是让模型产生的**副作用**变得确定：任何写操作都必须经过契约校验、证据加载、风险定级、预览快照、一次性令牌确认和幂等执行，否则被阻断、拒绝或转人工。
+LyMtrix-TEF 是一个面向 AI Agent 的可信执行框架。它不试图让模型输出变得确定，而是让模型产生的**副作用**变得确定：任何写操作都必须经过契约校验、证据加载、风险定级、预览快照、一次性令牌确认和幂等执行，否则被阻断、拒绝或转人工。
 
-**当前状态（2026-11-08）**：Phase 0 闭环与 Phase 1 补偿运行时已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime、确认 UI 与补偿闭环全部可运行，279 个测试通过（含 27 个对真实 PostgreSQL 的闭环、攻击场景与补偿集成测试）。尚未达到生产可用：评测体系（Phase 2）、遗留代码清理、崩溃恢复与并发压测仍未完成。成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
+**当前状态（2026-11-10）**：Phase 0 闭环、Phase 1 补偿运行时、Phase B2 CRM 内部 HTTP 网关、Phase C 执行状态机与 Phase D 首版评测 harness 已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime、确认 UI 与补偿闭环全部可运行；B2 新增 `/api/internal/v1/query` 与 `/api/internal/v1/effects/execute` 内部端点及 `HttpCrmGateway`，默认仍走进程内 Prisma 网关；Phase C 新增 `execution_attempts` 两阶段执行状态机、`pending` 预审计、结果审计、UNKNOWN 对账与故障注入测试，保证副作用 at-most-once；Phase D 新增 `packages/tef-eval` 双层评测 harness、24 条六类种子样本、live 录制回放与首版报告，离线层 21 条计分、3 条跳过，端到端层 24/24 执行。564 个测试通过（488 单元 + 76 个对真实 PostgreSQL 的闭环、攻击场景、补偿、状态机、对账与 Phase D 评测 e2e 集成测试）。尚未达到生产可用：正式 300–500 条评测集与消融实验（Phase 2/D 后续）、遗留代码清理、跨服务 HTTP effects 接线（Phase B3）与生产级压测仍未完成。首版指标见 [Phase D 首版评测报告](docs/eval/phase-d-baseline.md)，成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
 
 ---
 
@@ -42,10 +42,14 @@ LyMatrix TEF 是一个面向 AI Agent 的可信执行框架。它不试图让模
 | 目录 | 现状 | 目标 |
 |------|------|------|
 | `docs/` | 框架设计、参考实现与合规文档 | 拆分为 `docs/core/` 与 `docs/reference/crm-erp/` |
-| `src/` | Next.js 参考实现 + TEF 框架核心（`src/tef/`）、MCP 工具层（`src/mcp-server/`）、垂直契约（`src/contracts/`）、Agent Runtime（`src/agent-runtime/`） | 框架核心下沉到 `packages/core`，垂直移入 `examples/crm-erp` |
-| `prisma/` | 参考实现数据模型 | 保留为 `examples/crm-erp` 的数据层 |
+| `packages/tef-core/` | 纯治理核心（契约、风险、哈希、effects），不依赖 IO 与业务字段 | 保持零 IO、零垂直依赖，作为 MCP Kit、Runtime 与垂直包的公共底座 |
+| `packages/tef-mcp-kit/` | 通用 MCP 工厂、治理工具、契约运行时与状态存储 | 保持不依赖垂直包、Agent Runtime 与 Next.js |
+| `packages/tef-runtime/` | 意图、LLM、TaskState 与编排 | 通过注入的 MCP 连接器访问工具；不直接持有数据库凭据，TaskState 持久化经 tef-mcp-kit 的租户作用域存储完成 |
+| `verticals/crm-erp-mcp/` | CRM 查询工具与赊账订单契约 | 作为首个参考垂直插件独立演进 |
+| `src/` | Next.js 参考实现与迁移 shim | 后续阶段继续下沉到 `packages/` 与 `apps/` |
+| `prisma/` | 参考实现数据模型 | 后续阶段拆分为 business / tef / runtime schema |
 
-当前阶段先完成"改名 + 定位 + 文档"，代码目录拆分与仓库改名随 Phase 0 一起做。框架核心不得依赖 CRM 字段、订单模型或义乌规则。
+代码目录拆分已推进到 Phase A2：纯治理模块位于 `packages/tef-core/`，通用 MCP 工具层位于 `packages/tef-mcp-kit/`，Agent Runtime 位于 `packages/tef-runtime/`，CRM 垂直位于 `verticals/crm-erp-mcp/`；`src/` 下对应路径保留 re-export shim，Next.js 应用迁移到 `apps/crm-erp`、SDK 与服务化随后续阶段推进。框架核心不得依赖 CRM 字段、订单模型或义乌规则。
 
 ---
 
@@ -145,13 +149,13 @@ flowchart TB
 
 | 能力 | 说明 |
 |------|------|
-| 模型调用 | 可接 MiniMax 或其他支持工具调用的模型 |
+| 模型调用 | 默认接入 DeepSeek，也可替换为任意 OpenAI 兼容模型 |
 | MCP Client | 工具发现、调用、结果解析 |
 | 上下文装配 | TaskState、最近对话、摘要、实体快照 |
 | 任务状态 | 多轮对话、待确认操作、断点恢复 |
 | 流式输出 | 响应展示 |
 
-Agent Runtime 不持有数据库凭据，不直接执行写操作；模型可以替换，工具链和护栏不变。
+Agent Runtime 不持有数据库凭据，不直接执行写操作；TaskState 的持久化经 tef-mcp-kit 的租户作用域存储完成。模型可以替换，工具链和护栏不变。
 
 ---
 
@@ -163,6 +167,16 @@ Agent Runtime 不持有数据库凭据，不直接执行写操作；模型可以
 | **L1** | 低风险写入 | preview → execute | 不需要，但需幂等与审计 |
 | **L2** | 高风险写入 | preview → 可选验证器 → 人工确认 → execute | 必须 |
 | **Block** | 非法/越权/违反不变量 | 直接阻断 | 不进入确认 |
+
+### 执行语义（Phase C）
+
+一次写入不再假设“副作用与数据库写入同事务”，而是拆成两个事务、三个阶段：
+
+1. **预审计（事务一）**：消费令牌与预览快照、重校验、登记 `execution_attempts(executing)`，写 `result = pending` 的预审计事件后提交。提交后副作用才可能发生。
+2. **effects（Phase 2）**：通过可替换的 `EffectsExecutor` 执行声明式 effects；幂等键按 `scopedExecutorIdempotencyKey(toolName, idempotencyKey)` 派生，同一操作至多产生一次副作用。
+3. **结果审计（事务二）**：条件结算尝试为 `succeeded / failed`，写确定性结果审计（`${attemptId}:result`）与幂等记录。
+
+响应丢失、超时或进程崩溃时，尝试保持 `executing` 或迁移为 `unknown`；对账任务 `reconcileExecutions` 用同一幂等键重放并补写结果审计。系统保证 **at-most-once 副作用**，不宣称 exactly-once。仍未知的尝试会保留给下一轮或人工处理；无法重建的尝试可能占用扫描批次，需要后续加入 `reconcileBlockedAt` 或游标（B3）。
 
 ### 多 Agent 的定位
 
@@ -187,7 +201,7 @@ Agent Runtime 不持有数据库凭据，不直接执行写操作；模型可以
 - L2 人工确认与一次性令牌
 - 审计事件与 trace 回放
 
-它属于 reference implementation，不是框架本体。后续目标路径为 `examples/crm-erp`。
+它属于 reference implementation，不是框架本体。后续目标路径为 `apps/crm-erp`。
 
 ---
 
@@ -202,6 +216,10 @@ Agent Runtime 不持有数据库凭据，不直接执行写操作；模型可以
 | [docs/technical/14-unified-architecture.md](docs/technical/14-unified-architecture.md) | **统一架构框架（裁决版，单一权威）**：六条公理、信任域、L0/L1/L2/Block、契约引擎、审计合规 |
 | [docs/technical/13-trusted-execution-architecture.md](docs/technical/13-trusted-execution-architecture.md) | 可信执行架构详细设计：业务操作契约、MCP 工具链、评测基准 |
 | [docs/technical/06-system-architecture.md](docs/technical/06-system-architecture.md) | 整体技术架构设计：技术选型、分层职责、核心流程、部署 |
+| [docs/superpowers/specs/2026-11-09-tef-extraction-design.md](docs/superpowers/specs/2026-11-09-tef-extraction-design.md) | 框架剥离与 P1/P2 收尾设计：包边界、API 契约、跨服务执行状态机 |
+| [docs/superpowers/specs/2026-11-10-phase-d-eval-harness-design.md](docs/superpowers/specs/2026-11-10-phase-d-eval-harness-design.md) | Phase D 设计（已实施，首版）：评测 harness、种子样本、双层指标与首版报告 |
+| [docs/superpowers/plans/2026-11-10-phase-d-eval-harness.md](docs/superpowers/plans/2026-11-10-phase-d-eval-harness.md) | Phase D 实施计划：模型注入、fixture 网关、双层 harness、CLI 与首版报告 |
+| [docs/eval/phase-d-baseline.md](docs/eval/phase-d-baseline.md) | **Phase D 首版评测报告**：24 条种子样本的离线/端到端指标、决策混淆矩阵、失败样本归因、价目快照与已知限制 |
 
 ### 比赛材料
 
@@ -247,20 +265,21 @@ Agent Runtime 不持有数据库凭据，不直接执行写操作；模型可以
 
 ## 成熟度与落地计划
 
-| 阶段 | 核心交付物 | 状态（2026-11-08） |
+| 阶段 | 核心交付物 | 状态（2026-11-10） |
 |------|------------|--------------------|
 | Phase 0 | 多租户底座 + 契约引擎 + 跑通"赊账订单"闭环：查询客户、查额度、查库存、预览订单、执行订单 | **已完成**，CI 每次推送对真实 PostgreSQL 复跑闭环与攻击场景 |
-| Phase 1 | L1 自动执行路径、dry-run/diff、确认令牌、幂等、冲突恢复、补偿、审计事件 | **已完成主要项**：L1 路径、diff、令牌、幂等、审计事件、`CONFLICT` 检测与旧令牌作废、`compensate_order` 契约与完整补偿运行时（preview → L2 → 人工确认 → execute）均已实现并有测试；崩溃恢复与并发压测仍待补 |
-| Phase 2 | 300-500 条评测集、危险写入拦截率、误拒率、P95、成本；核心与垂直解耦 | 未开始 |
+| Phase 1 | L1 自动执行路径、dry-run/diff、确认令牌、幂等、冲突恢复、补偿、审计事件 | **已完成**：L1 路径、diff、令牌、幂等、审计事件、`CONFLICT` 检测与旧令牌作废、`compensate_order` 契约与完整补偿运行时（preview → L2 → 人工确认 → execute）均已实现并有测试 |
+| Phase C（P1 收尾） | 执行状态机、`execution_attempts`、预审计 `pending`、UNKNOWN 对账、故障注入与并发 | **已完成**：两阶段执行 + 三阶段语义、进程内幂等执行器、对账补写结果审计、12 项故障注入/恢复测试；保证按幂等键计的 at-most-once 副作用 |
+| Phase 2 / D | 300-500 条评测集、危险写入拦截率、误拒率、P95、成本 | **Phase D 首版已完成**：24 条种子样本、双层 harness、live 录制回放与[首版报告](docs/eval/phase-d-baseline.md)；正式 300-500 条评测集、置信区间与消融实验未开始，样本规模不足以支撑统计结论 |
 | Phase 3 | 参考垂直插件、计量计费与配额、角色细化、生产部署、软著/专利/论文材料 | 未开始 |
 
-当前对外表述应使用"参考架构 / framework，目标工业级"，不得宣称已达到工业级生产可用。Phase 0 闭环与补偿回滚均已验证，但崩溃恢复、并发压测与生产级认证尚未完成，因此仍不宣称 L1 完整达成。
+当前对外表述应使用"参考架构 / framework，目标工业级"，不得宣称已达到工业级生产可用。执行尝试级崩溃恢复与并发幂等已验证，但 TaskState 会话级恢复、生产级压测与跨服务 effects 接线尚未完成，因此仍不宣称 L1 完整达成。
 
 ---
 
 ## 本地运行
 
-前置：Node 22+、PostgreSQL、（可选）Redis 与 MiniMax API key。
+前置：Node 22+、PostgreSQL、（可选）Redis 与 DeepSeek API key。
 
 所有配置统一放在仓库根目录的 `.env`（已被 `.gitignore` 忽略），模板见 `.env.example`。项目不再读取 `.env.local`。
 
@@ -287,7 +306,14 @@ npm run rls:verify              # 7 项隔离检查，用真实查询证明策�
 npm test                        # 单元测试
 TEF_DB_TESTS=1 npm test         # 加上对真实数据库的闭环与攻击场景集成测试
 npm run dev                     # http://localhost:3000/login，账号 admin@example.com / demo123
+
+# 5. 评测（Phase D 首版 harness）
+npm run eval -- --mode all      # 离线/端到端确定性结果；e2e 需 TEF_DB_TESTS=1 与 DATABASE_URL，缺库跳过时退出码 1（--allow-missing-db 可允许 0）
+TEF_MODEL_TESTS=1 TEF_DB_TESTS=1 npm run eval -- --mode all --live   # 真实模型，自动录制响应
+TEF_DB_TESTS=1 npm run eval -- --mode e2e --recorded packages/tef-eval/recordings  # 断网回放
 ```
+
+首版指标、失败样本归因与已知限制见 [Phase D 首版评测报告](docs/eval/phase-d-baseline.md)；24 条种子样本不足以支撑统计结论，不得把其中的比例指标表述为正式评测或生产可用性证据。
 
 登录后进入 `/chat`，输入：
 
@@ -296,6 +322,27 @@ npm run dev                     # http://localhost:3000/login，账号 admin@exa
 会依次看到：重名澄清（两个"伟业"候选）→ 选定客户 → L2 风险判定与服务端 diff → 人工批准 → 出单与审计事件 ID。整个过程共用一条 `traceId`，可用 `audit.trace` 工具回放。
 
 完整变量清单与默认值见 [docs/00-framework.md §9.5](docs/00-framework.md#95-关键环境变量)。
+
+### 内部 HTTP 网关（Phase B2）
+
+CRM 应用暴露两个仅内网可达的 Route Handler，业务 MCP 可以通过服务令牌读取证据与提交 effects，而无需为跨进程调用直接持有 CRM 的业务库连接：
+
+| 端点 | 请求 | 响应 |
+|------|------|------|
+| `POST /api/internal/v1/query` | `{ tenantId, operation, params }` | `{ data }` |
+| `POST /api/internal/v1/effects/execute` | `{ tenantId, idempotencyKey, previewId, traceId, expectedEvidenceVersion?, effects }` | `{ ok, refs, replayed? }` 或 `{ ok:false, error:{ code, message } }` |
+
+- 鉴权：`Authorization: Bearer $TEF_CRM_SERVICE_TOKEN`；未配置令牌时 fail-closed 返回 503，令牌错误返回 401。`/api/internal/*` 不走会话 Cookie，由 `src/proxy.ts` 直接放行后在路由内做服务令牌校验。
+- 租户：请求体必须显式携带 `tenantId`，服务端在 `withTenantScope` 事务内设置 RLS 变量；`payload.tenantId` / `payload.id` 以及 bind 的目标字段（`bind.tenantId` / `bind.id`）均在 zod 层直接拒绝；来源 ref 的字段名不受限制，因此 `bind: { orderId: { fromRef: 'order', field: 'id' } }` 合法。
+- 幂等：`effects:execute` 的幂等记录与业务写入同事务提交；同一 `idempotencyKey` 重放返回首次响应并标记 `replayed: true`。并发同 key 时后提交者收到 Prisma P2002，整个事务回滚后读取先提交者的记录按重放返回。
+- 默认模式：`TEF_CRM_GATEWAY` 未设置、为空或为 `prisma` 时使用进程内 `PrismaCrmGateway`；设置为 `http` 时使用 `HttpCrmGateway`，通过 `TEF_CRM_API_BASE` 调用上述端点。未知非空值直接报错，不静默回落。默认值保证现有部署行为不变。
+- 写入开关：`/api/internal/v1/effects/execute` 默认关闭。`TEF_CRM_EFFECTS_ENABLED` 未设置或不为 `1` 时，即使服务令牌正确也返回 404；在 B3 完成跨服务预览、令牌与审计接线前，仅允许在受控环境显式启用。
+
+已知限制：
+
+- HTTP 读仍在本地 `withTenantScope` 事务内发起网络 IO，网络往返期间占用数据库连接。因此业务 MCP 进程目前仍需要业务库访问权限；只有在 B3 把远程读取移出事务后，“业务 MCP 不持有业务库凭据”才是完整成立的部署形态。
+- B2 的 HTTP 通道确实暴露了 `effects:execute` 写入端点（默认关闭），但 TEF 的契约执行路径仍使用本地 Prisma 适配器（`adapterFactory`），`HttpCrmGateway.executeEffects` 尚未接入 `executeContract`；Phase C 已提供本地执行状态机与对账，跨服务接线推迟到 B3，在此之前契约写入不会改道跨服务。
+- 在 B3 完成跨服务 effects 接线与对账游标前，禁止在生产启用 `TEF_CRM_GATEWAY=http` 或 `TEF_CRM_EFFECTS_ENABLED=1`。
 
 ---
 

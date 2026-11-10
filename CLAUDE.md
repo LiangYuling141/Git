@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**LyMatrix TEF（Trusted Execution Framework）** — 一个为 AI Agent 的副作用建立确定性执行边界的可信执行框架。它不追求 LLM 输出确定，而是保证写操作只有在契约校验、证据加载、风险定级、预览快照、一次性令牌确认和幂等执行之后才产生副作用。
+**LyMtrix-TEF（Trusted Execution Framework）** — 一个为 AI Agent 的副作用建立确定性执行边界的可信执行框架。它不追求 LLM 输出确定，而是保证写操作只有在契约校验、证据加载、风险定级、预览快照、一次性令牌确认和幂等执行之后才产生副作用。
 
 **参考实现**：义乌赊账订单场景的 CRM-ERP（`src/`，Phase 0 建设中）。CRM-ERP 不是项目的最终形态，而是框架的第一个验证垂直。
 
@@ -116,7 +116,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | 能力 | 如何使用 |
 |------|----------|
-| 模型适配 | MiniMax 或任意支持工具调用的模型 |
+| 模型适配 | DeepSeek（默认）或任意 OpenAI 兼容模型 |
 | MCP Client | 工具发现、调用、结果解析 |
 | 上下文装配 | TaskState、最近对话、摘要、实体快照 |
 | 任务状态 | 多轮对话、待确认操作、断点恢复 |
@@ -190,7 +190,7 @@ L1 接入/认证 → L2 上下文/任务状态 → L3 意图契约 → L4 MCP �
 | **业务引擎** | TypeScript + Prisma 7 | 契约、规则、事务、补偿 |
 | **数据库** | PostgreSQL、Redis | 业务数据、缓存、审计事件 |
 | **前端** | Next.js 16 / React 19 | 当前代码已采用 |
-| **AI** | MiniMax 或任意支持工具调用的模型 | 模型可替换，工具链不变 |
+| **AI** | DeepSeek（默认）或任意 OpenAI 兼容模型 | 模型可替换，工具链不变 |
 | **评测** | Vitest + 自研评测 harness | 意图、拦截率、延迟、成本 |
 | **部署** | Docker Compose（MVP）、K8s（后续） | 先跑通再扩展 |
 
@@ -263,7 +263,7 @@ git merge --no-ff feature/customer-management
 
 ## Key Files
 
-- [docs/00-positioning.md](docs/00-positioning.md) — **定位与命名**：LyMatrix TEF 的核心命题、边界、成熟度与参考实现关系
+- [docs/00-positioning.md](docs/00-positioning.md) — **定位与命名**：LyMtrix-TEF 的核心命题、边界、成熟度与参考实现关系
 - [docs/00-framework.md](docs/00-framework.md) — **项目框架总览**：分层架构、信任域、核心机制、MCP 工具、数据模型、核心流程、代码映射与实施进度
 - [docs/technical/14-unified-architecture.md](docs/technical/14-unified-architecture.md) — **统一架构框架（裁决版，单一权威）**：六条公理、信任域分层、L0/L1/L2/Block、预览快照、双层哈希、契约引擎、澄清协议、审计合规、多租户
 - [README.md](README.md) — 完整项目文档
@@ -271,3 +271,7 @@ git merge --no-ff feature/customer-management
 - [docs/technical/13-trusted-execution-architecture.md](docs/technical/13-trusted-execution-architecture.md) — 可信执行架构详细设计
 - [docs/technical/03-mcp-tool-whitelist.md](docs/technical/03-mcp-tool-whitelist.md) — MCP 工具白名单体系
 - [docs/technical/04-business-engine.md](docs/technical/04-business-engine.md) — 统一业务引擎设计
+- [docs/superpowers/specs/2026-11-09-tef-extraction-design.md](docs/superpowers/specs/2026-11-09-tef-extraction-design.md) — 框架剥离与 P1/P2 收尾设计：包边界、API 契约、跨服务执行状态机
+- [docs/superpowers/specs/2026-11-10-phase-d-eval-harness-design.md](docs/superpowers/specs/2026-11-10-phase-d-eval-harness-design.md) — Phase D 设计（已实施，首版）：评测 harness、种子样本、双层指标与首版报告
+- [docs/superpowers/plans/2026-11-10-phase-d-eval-harness.md](docs/superpowers/plans/2026-11-10-phase-d-eval-harness.md) — Phase D 实施计划：模型注入、fixture 网关、双层 harness、CLI、live 录制与首版报告
+- [docs/eval/phase-d-baseline.md](docs/eval/phase-d-baseline.md) — Phase D 首版评测报告：离线/端到端指标、决策混淆矩阵、失败样本归因、价目快照与已知限制

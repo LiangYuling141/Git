@@ -1,0 +1,186 @@
+[
+  {
+    "id": "conflict_credit_insufficient",
+    "category": "conflict",
+    "tenant": { "thresholds": { "amountL2Threshold": 5000 } },
+    "principal": { "userId": "u_eval", "role": "owner" },
+    "input": { "messages": ["给小雨贸易下一单 1000 个圣诞球，单价 2 块"] },
+    "intent": {
+      "contract": "create_order",
+      "slots": {
+        "customerId": "c_xiaoyu",
+        "items": [{ "sku": "XMAS-BALL-01", "quantity": 1000, "unitPrice": 2 }]
+      }
+    },
+    "fixtures": {
+      "customers": [
+        {
+          "id": "c_xiaoyu",
+          "name": "义乌市小雨贸易有限公司",
+          "phone": "13800000003",
+          "status": "active",
+          "customerType": "normal",
+          "creditLimit": 5000,
+          "creditUsed": 4800,
+          "overdueDays": 0,
+          "isHighRisk": false,
+          "monthlyTransaction": 0,
+          "onboardingStatus": "completed"
+        }
+      ],
+      "products": [
+        {
+          "id": "p_ball",
+          "sku": "XMAS-BALL-01",
+          "name": "圣诞球",
+          "unitPrice": 2,
+          "availableQty": 20000,
+          "reservedQty": 0,
+          "unit": "个"
+        }
+      ],
+      "orders": []
+    },
+    "expect": { "decision": "block", "contract": "create_order" },
+    "tags": ["conflict", "credit", "insufficient"]
+  },
+  {
+    "id": "conflict_stock_insufficient",
+    "category": "conflict",
+    "tenant": { "thresholds": { "amountL2Threshold": 5000 } },
+    "principal": { "userId": "u_eval", "role": "owner" },
+    "input": { "messages": ["给伟业公司下一单 500 个塑料花，单价 8 块"] },
+    "intent": {
+      "contract": "create_order",
+      "slots": {
+        "customerId": "c_weiye",
+        "items": [{ "sku": "PLASTIC-FLOWER-03", "quantity": 500, "unitPrice": 8 }]
+      }
+    },
+    "fixtures": {
+      "customers": [
+        {
+          "id": "c_weiye",
+          "name": "义乌市伟业进出口有限公司",
+          "phone": "13800000001",
+          "status": "active",
+          "customerType": "normal",
+          "creditLimit": 50000,
+          "creditUsed": 0,
+          "overdueDays": 0,
+          "isHighRisk": false,
+          "monthlyTransaction": 0,
+          "onboardingStatus": "completed"
+        }
+      ],
+      "products": [
+        {
+          "id": "p_flower",
+          "sku": "PLASTIC-FLOWER-03",
+          "name": "塑料花",
+          "unitPrice": 8,
+          "availableQty": 300,
+          "reservedQty": 0,
+          "unit": "个"
+        }
+      ],
+      "orders": []
+    },
+    "expect": { "decision": "block", "contract": "create_order" },
+    "tags": ["conflict", "inventory", "insufficient"]
+  },
+  {
+    "id": "conflict_customer_inactive",
+    "category": "conflict",
+    "tenant": { "thresholds": { "amountL2Threshold": 5000 } },
+    "principal": { "userId": "u_eval", "role": "owner" },
+    "input": { "messages": ["给停业贸易下一单 100 个圣诞球，单价 2 块"] },
+    "intent": {
+      "contract": "create_order",
+      "slots": {
+        "customerId": "c_inactive",
+        "items": [{ "sku": "XMAS-BALL-01", "quantity": 100, "unitPrice": 2 }]
+      }
+    },
+    "fixtures": {
+      "customers": [
+        {
+          "id": "c_inactive",
+          "name": "义乌市停业贸易有限公司",
+          "phone": "13800000004",
+          "status": "inactive",
+          "customerType": "normal",
+          "creditLimit": 50000,
+          "creditUsed": 0,
+          "overdueDays": 0,
+          "isHighRisk": false,
+          "monthlyTransaction": 0,
+          "onboardingStatus": "completed"
+        }
+      ],
+      "products": [
+        {
+          "id": "p_ball",
+          "sku": "XMAS-BALL-01",
+          "name": "圣诞球",
+          "unitPrice": 2,
+          "availableQty": 20000,
+          "reservedQty": 0,
+          "unit": "个"
+        }
+      ],
+      "orders": []
+    },
+    "expect": { "decision": "block", "contract": "create_order" },
+    "tags": ["conflict", "customer", "inactive"]
+  },
+  {
+    "id": "conflict_price_mismatch",
+    "category": "conflict",
+    "tenant": { "thresholds": { "amountL2Threshold": 5000 } },
+    "principal": { "userId": "u_eval", "role": "owner" },
+    "input": { "messages": ["给伟业公司下一单 100 个圣诞球，单价 3 块"] },
+    "intent": {
+      "contract": "create_order",
+      "slots": {
+        "customerId": "c_weiye",
+        "items": [{ "sku": "XMAS-BALL-01", "quantity": 100, "unitPrice": 3 }]
+      }
+    },
+    "fixtures": {
+      "customers": [
+        {
+          "id": "c_weiye",
+          "name": "义乌市伟业进出口有限公司",
+          "phone": "13800000001",
+          "status": "active",
+          "customerType": "normal",
+          "creditLimit": 50000,
+          "creditUsed": 0,
+          "overdueDays": 0,
+          "isHighRisk": false,
+          "monthlyTransaction": 0,
+          "onboardingStatus": "completed"
+        }
+      ],
+      "products": [
+        {
+          "id": "p_ball",
+          "sku": "XMAS-BALL-01",
+          "name": "圣诞球",
+          "unitPrice": 2,
+          "availableQty": 20000,
+          "reservedQty": 0,
+          "unit": "个"
+        }
+      ],
+      "orders": []
+    },
+    "expect": {
+      "decision": "block",
+      "contract": "create_order",
+      "code": "PRICE_MISMATCH"
+    },
+    "tags": ["conflict", "price", "mismatch"]
+  }
+]

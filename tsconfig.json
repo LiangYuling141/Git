@@ -1,27 +1,17 @@
 {
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2017",
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "esnext"
-    ],
-    "allowJs": true,
-    "skipLibCheck": true,
-    "strict": false,
-    "noEmit": true,
-    "incremental": true,
-    "module": "esnext",
-    "esModuleInterop": true,
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./src/*"
-      ]
+      "@/*": ["./src/*"],
+      "@lymtrix/tef-core": ["./packages/tef-core/src/index.ts"],
+      "@lymtrix/tef-core/*": ["./packages/tef-core/src/*"],
+      "@lymtrix/tef-mcp-kit": ["./packages/tef-mcp-kit/src/index.ts"],
+      "@lymtrix/tef-mcp-kit/*": ["./packages/tef-mcp-kit/src/*"],
+      "@lymtrix/tef-runtime": ["./packages/tef-runtime/src/index.ts"],
+      "@lymtrix/tef-runtime/*": ["./packages/tef-runtime/src/*"],
+      "@lymtrix/vertical-crm-erp": ["./verticals/crm-erp-mcp/src/index.ts"],
+      "@lymtrix/vertical-crm-erp/*": ["./verticals/crm-erp-mcp/src/*"]
     },
     "plugins": [
       {
@@ -37,8 +27,5 @@
     "**/*.ts",
     "**/*.tsx"
   ],
-  "exclude": [
-    "node_modules",
-    "BASE"
-  ]
+  "exclude": ["node_modules", "BASE"]
 }

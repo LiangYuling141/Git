@@ -1,0 +1,15 @@
+{
+  "name": "@lymtrix/tef-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LyMtrix-TEF governance core: contracts, risk, hashing, effects.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
+}

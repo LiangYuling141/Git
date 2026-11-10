@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { runAgentTurn } from '@/agent-runtime/runtime';
 import { prisma } from '@/lib/prisma';
+import { connectTefClient } from '@/mcp-server';
 import { taskStateStore } from '@/tef/task-state';
 import { resolveTenantContext } from '@/tef/tenant';
 import { loadTokenSecret } from '@/tef/token';
@@ -61,6 +62,12 @@ export async function POST(request: Request) {
 
   const taskState = await taskStateStore.loadOrCreate(tenant.tenantId, conversationId, session.userId);
 
+  // conversationId 来自请求体：同一租户内也不能复用别人的任务状态。
+  // 否则可以用他人未结算的 token/key 继续写入，或读取他人的任务快照。
+  if (taskState.userId !== session.userId) {
+    return NextResponse.json({ error: 'forbidden', message: '该会话不属于当前用户' }, { status: 403 });
+  }
+
   // trace 属于任务而不是轮次：澄清往返、预览、确认、执行要落在同一条链上，
   // 否则 audit.trace 回放不出完整的决策过程（公理 I6）。
   const traceId = isTaskInFlight(taskState.status) && taskState.traceId ? taskState.traceId : `tr_${randomUUID()}`;
@@ -77,13 +84,16 @@ export async function POST(request: Request) {
     taskState,
     traceId,
     secret,
+    connectSession: connectTefClient,
   });
 
   try {
     await taskStateStore.update(tenant.tenantId, conversationId, { ...result.patch, traceId }, taskState.version);
-  } catch {
+  } catch (error) {
     // TaskState 更新失败不影响已经发生的判定：写入路径本身是幂等的，
-    // 而把乐观锁冲突当成 500 抛给用户会掩盖真正的结果。
+    // 而把乐观锁冲突当成 500 抛给用户会掩盖真正的结果。但这一 patch 可能
+    // 承载未结算执行的 marker/key/token，必须留下日志供对账排查。
+    console.error('[agent] failed to persist task state', error);
   }
 
   const envelope = result.envelope;

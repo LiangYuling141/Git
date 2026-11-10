@@ -5,7 +5,7 @@
 > 它汇总并裁决了三类历史遗留冲突：多 Agent 投票 vs 单模型提议、L0/L1/L2/L3 三套风险分级、Hook 系统的归属。
 > 被本文档裁决或替代的内容见 [§13 与旧文档的关系](#13-与旧文档的关系)。
 >
-> 本文档同时是 **LyMatrix TEF** 的核心架构规范；参考实现为义乌赊账订单场景（CRM-ERP），框架核心不依赖该垂直。
+> 本文档同时是 **LyMtrix-TEF** 的核心架构规范；参考实现为义乌赊账订单场景（CRM-ERP），框架核心不依赖该垂直。
 
 ---
 
@@ -167,10 +167,20 @@ L4 preview ── 载入证据 → 生成 diff/risk/reasons → 落 preview_snap
   ├─ L1    → executing（令牌自动生效）
   └─ L2    → awaiting_confirmation → [验证器] → executing / rejected / expired
   ▼
-L5 execute（事务内：重校验前置条件 → 写入 → 预占库存 → 审计事件）
-  ├─ 前置条件失败 → conflict（要求重新 preview，不复用令牌）
-  ├─ 成功         → completed
-  └─ 异常         → compensated / compensation_failed
+L5 execute（Phase 1 事务：消费令牌/快照 → 重校验 → 建 executing 尝试 → 预审计 pending，提交）
+  ├─ Phase 1 失败 → conflict / blocked（事务回滚，副作用未发生）
+  ▼
+Phase 2 effects（EffectsExecutor，幂等键 = scopedExecutorIdempotencyKey(toolName, key)）
+  ├─ 成功         → Phase 3 结算 succeeded（结果审计 + 幂等记录）
+  ├─ 确定性失败   → Phase 3 结算 failed（失败审计）
+  └─ 响应丢失/超时 → unknown（不写结果审计，交对账）
+  ▼
+Phase 3 / 对账（条件更新 + 确定性事件 `${attemptId}:result`）
+  ├─ 成功         → succeeded
+  ├─ 确定失败     → failed
+  └─ 仍未知       → unknown（下一轮继续收敛）
+  ▼
+成功后可撤销 → compensated / compensation_failed
 ```
 
 ### 4.1 Preview 快照
@@ -217,20 +227,37 @@ L5 execute（事务内：重校验前置条件 → 写入 → 预占库存 → �
 - 唯一约束：`(tenantId, toolName, idempotency_key)`。
 - 重复请求返回第一次的结果，不重复执行。
 - 幂等键由 Agent Runtime 生成，持久化在 `TaskState.idempotencyKey`，任务重试时复用。
+- 执行器幂等键按工具名作用域派生：`scopedExecutorIdempotencyKey(toolName, idempotencyKey)`。创建与补偿等不同工具即使复用同一业务 key，也不得互相重放。
+- `execution_attempts` 以 `(tenantId, toolName, idempotencyKey)` 唯一约束登记执行；`executing/unknown` 期间的重复请求返回 in-progress 或等待对账，不重新执行。
 
 ### 4.5 事务与补偿
 
-必须区分两种失败：
+Phase C 起，副作用不再与治理写入共享一个事务，执行被拆成三个步骤、两个事务：
+
+| 阶段 | 内容 | 失败语义 |
+|------|------|----------|
+| Phase 1（事务一） | 消费令牌/快照、重校验、创建 `execution_attempts(executing)`、写 `pending` 预审计（`${attemptId}:pre`） | 事务回滚，副作用未发生，可写确定失败审计 |
+| Phase 2 | `EffectsExecutor` 执行声明式 effects，幂等键按工具名作用域 | 成功 → Phase 3；确定性失败 → failed；未知 → unknown |
+| Phase 3（事务二） | 条件结算尝试，写确定性结果审计（`${attemptId}:result`）与幂等记录 | 只允许 `executing/unknown → succeeded/failed`，不覆盖终态 |
+
+必须区分以下场景：
 
 | 场景 | 处理方式 |
 |------|----------|
 | 事务内失败（校验失败、写入异常、约束冲突） | 数据库事务回滚，无需补偿契约 |
+| 副作用结果未知（响应丢失、超时、崩溃） | 尝试进入 `unknown`，由 `reconcileExecutions` 用同一幂等键收敛；绝不当作确定失败 |
 | 已提交后撤销（用户取消、事后发现异常、外部系统失败） | 执行契约声明的补偿动作，记录 `compensated` 事件 |
 | 补偿失败 | 记录 `compensation_failed`，告警并要求人工介入 |
 
 补偿动作本身必须幂等、可重试。
 
-> **实现状态（2026-11-08）**：`compensate_order@1.0` 契约与补偿运行时已落地。补偿本身走 preview → 风险 L2 → 一次性令牌 → 人工确认 → execute，并复用 `create_order.compensation()`，不重写补偿规则。实现细节见 [../00-framework.md](../00-framework.md) §4.5、§7.5。
+> 系统保证 **按幂等键计的 at-most-once 副作用**：执行器幂等记录 + 执行尝试唯一键 + 对账同一 key 重放。调用方在 `EXECUTION_IN_PROGRESS` / `EXECUTION_UNKNOWN` 时必须用**同一个幂等键**重试或等待对账；换 key 会被视为新操作，不在保证范围内。跨进程/跨服务场景不宣称 exactly-once。
+
+> **Phase C 已知限制**：对账重放当前不重新执行 `contractEngine.revalidate`，生产/B3 需在执行器侧增加按 attempt 查找并重校验后再执行；进程内 Prisma 的提交确认歧义只有在执行器抛出 `EffectsExecutionUnknownError` 时才会保守地收敛为 `unknown`；对账扫描存在批次饥饿；证据版本冲突尚未参与执行判定；HTTP effects 的网络错误/超时与 500/502/503/504 已在网关映射为 `EXECUTION_UNKNOWN`（409 保持确定性 `CONFLICT`，400 保持确定性校验失败），真实跨服务部署接线仍属 B3。
+
+> **审计链的 `pending`**：预审计先于副作用提交；崩溃会留下 `pending` 事件，对账补写结果事件后闭合。哈希链校验把 `pending` 视为合法结果类型。
+
+> **实现状态（2026-11-10）**：`compensate_order@1.0` 契约与补偿运行时已落地。补偿本身走 preview → 风险 L2 → 一次性令牌 → 人工确认 → execute，并复用 `create_order.compensation()`，不重写补偿规则。执行状态机、进程内 effects 执行器与对账均已落地；跨服务 HTTP effects 接线推迟到 B3。实现细节见 [../00-framework.md](../00-framework.md) §4.5、§7.5。
 
 ---
 
@@ -342,6 +369,8 @@ interface Effect {
 | `CONFLICT` | 并发冲突 / 令牌已使用 / 前置条件失效 | 重新预览，不复用令牌 |
 | `NEEDS_CONFIRMATION` | 需要人工确认 | 展示 diff 并等待确认 |
 | `RATE_LIMITED` | 频率超限 | 退避后重试 |
+| `EXECUTION_IN_PROGRESS` | 同幂等键的执行仍在进行中 | 保留 pending 状态，用**同一幂等键**重试，不重新预览 |
+| `EXECUTION_UNKNOWN` | 副作用可能已提交但结果未知 | 保留 pending 状态，用**同一幂等键**重试或等待对账，不换 key |
 | `INTERNAL` | 服务端错误 | 不重试写操作，返回审计 ID |
 
 ### 6.4 工具可见性隔离
@@ -500,7 +529,7 @@ interface AuditEvent {
   risk: 'L0' | 'L1' | 'L2' | 'Block';
   reasons: string[];
   decision: 'allow' | 'confirm' | 'block' | 'reject';
-  result: 'success' | 'failure' | 'compensated';
+  result: 'success' | 'failure' | 'compensated' | 'compensation_failed' | 'pending';
   modelVersion?: string;
   promptVersion?: string;
   ts: Date;
@@ -510,6 +539,8 @@ interface AuditEvent {
 ```
 
 哈希链只追加：`hash = H(prevHash ‖ canonical(event))`。
+
+`pending` 表示预审计：执行意图与 `attemptId` 已登记，但副作用与结果尚未结算。预审计事件使用 `${attemptId}:pre`，结果事件使用 `${attemptId}:result`，均为确定性 eventId；对账重复执行不会追加重复事件。崩溃后审计链中可能短暂存在“只有 pending、没有 result”的组合，这是执行语义的诚实记录，不是链损坏。
 
 ### 10.2 删除权与不可变性
 
@@ -701,6 +732,7 @@ execute 失败
 - [../00-framework.md](../00-framework.md) — 项目框架总览（全景索引与代码映射，架构裁决仍以本篇为准）
 - [13-trusted-execution-architecture.md](13-trusted-execution-architecture.md) — 可信执行架构详细设计（契约、MCP 工具链、preview/confirm/execute、评测基准）
 - [06-system-architecture.md](06-system-architecture.md) — 整体技术架构设计
+- [../superpowers/specs/2026-11-09-tef-extraction-design.md](../superpowers/specs/2026-11-09-tef-extraction-design.md) — 框架剥离与 P1/P2 收尾设计（包边界、API 契约、执行状态机）
 - [03-mcp-tool-whitelist.md](03-mcp-tool-whitelist.md) — MCP 工具白名单体系（工具命名与分类以 14 号为准）
 - [04-business-engine.md](04-business-engine.md) — 统一业务引擎设计（规则系统已并入契约 Check）
 - [08-risk-classification.md](08-risk-classification.md) — 风险分级素材（等级模型已由 14 号裁决为 L0/L1/L2/Block）

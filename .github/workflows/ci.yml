@@ -31,7 +31,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: lymatrix_ci
+          POSTGRES_DB: lymtrix_ci
         ports:
           - 5432:5432
         options: >-
@@ -42,9 +42,9 @@ jobs:
 
     env:
       NEXT_TELEMETRY_DISABLED: "1"
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/lymatrix_ci
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/lymtrix_ci
       REDIS_URL: redis://localhost:6379
-      MINIMAX_API_KEY: ci-placeholder
+      DEEPSEEK_API_KEY: ci-placeholder
       # 至少 32 字符：缺失或过短时服务会拒绝签发确认令牌，CI 必须显式提供
       TEF_TOKEN_SECRET: ci-only-token-signing-secret-not-for-production
       TEF_DB_TESTS: "1"
@@ -93,6 +93,9 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Check package boundaries
+        run: npm run boundaries:check
 
       # 含 tests/integration：对真实 PostgreSQL 跑通
       # preview → confirm → execute 闭环与三个攻击场景

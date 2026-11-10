@@ -1,0 +1,32 @@
+{
+  "responses": [
+    {
+      "id": "69fb4682-ac05-4dfb-8282-42dbf4dc1f55",
+      "object": "chat.completion",
+      "created": 1794293390,
+      "model": "deepseek-flash",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"kind\":\"operation\",\"contract\":\"create_order\",\"slots\":{\"customerName\":\"停业贸易\",\"productTerm\":\"圣诞球\",\"quantity\":100,\"unitPrice\":2}}"
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 357,
+        "completion_tokens": 35,
+        "total_tokens": 392,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 229
+      },
+      "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+    }
+  ]
+}

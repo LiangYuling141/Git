@@ -39,7 +39,7 @@ const ALLOWLIST_VALUES = new Set([
   'your_api_key_here',
   'your_group_id_here',
   'ci-only-token-signing-secret-not-for-production',
-  'lymatrix_app_ci_password',
+  'lymtrix_app_ci_password',
   'postgresql://user:password@localhost:5432/lymtrix?schema=public',
   // 单元测试固定夹具，只用于验证签名逻辑，不是真实凭证。
   'test-secret-that-is-long-enough-to-be-accepted',

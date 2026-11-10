@@ -9,6 +9,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { resolveCardResolution } from './confirm-resolution';
 
 interface DiffChange {
   field: string;
@@ -69,7 +70,7 @@ const WELCOME: Message = {
   id: 'welcome',
   role: 'assistant',
   content:
-    '我是 LyMatrix TEF 参考实现助手。业务写入必须经过 preview → confirm → execute，我不会直接改数据。\n\n可以试试：\n· 给伟业公司下一单，5000 个圣诞球，单价 2 块，先付 30% 定金，余款 30 天账期\n· 查一下伟业公司的信用额度\n· 圣诞球还有多少库存',
+    '我是 LyMtrix-TEF 参考实现助手。业务写入必须经过 preview → confirm → execute，我不会直接改数据。\n\n可以试试：\n· 给伟业公司下一单，5000 个圣诞球，单价 2 块，先付 30% 定金，余款 30 天账期\n· 查一下伟业公司的信用额度\n· 圣诞球还有多少库存',
   timestamp: new Date(),
 };
 
@@ -167,7 +168,6 @@ export default function ChatPage() {
 
   async function decide(messageId: string, token: string, action: 'approve' | 'reject') {
     if (loading) return;
-    markResolved(messageId, action === 'reject' ? 'rejected' : 'executed');
     setLoading(true);
     try {
       const response = await fetch('/api/agent/confirm', {
@@ -176,6 +176,15 @@ export default function ChatPage() {
         body: JSON.stringify({ confirmationToken: token, action, conversationId }),
       });
       const data = await response.json();
+      // executing / EXECUTION_UNKNOWN 不是确定结果：不把确认卡片标记为已执行
+      // 或已拒绝，用户必须能对同一操作再次点击确认（服务端会用同一 token 与
+      // 幂等键重试）。拒绝亦如此——它不会撤销可能已经发生的副作用。
+      const resolved: MessageMeta['resolved'] = resolveCardResolution({
+        ok: response.ok,
+        action,
+        status: data.status,
+      });
+      if (resolved) markResolved(messageId, resolved);
       pushAssistant(response.status === 403 ? `无权批准：${data.message}` : data.reply, {
         status: data.status,
         risk: data.risk,
@@ -183,8 +192,7 @@ export default function ChatPage() {
         traceId: data.traceId,
         auditId: data.auditId,
         errorCode: data.error?.code,
-        resolved:
-          data.status === 'completed' ? 'executed' : data.status === 'conflict' ? 'conflict' : 'failed',
+        resolved,
       });
     } catch (error) {
       pushAssistant(`确认请求失败：${String(error)}`);

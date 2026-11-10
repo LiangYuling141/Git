@@ -30,6 +30,8 @@ ALTER TABLE idempotency_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE idempotency_records FORCE  ROW LEVEL SECURITY;
 ALTER TABLE task_states         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE task_states         FORCE  ROW LEVEL SECURITY;
+ALTER TABLE execution_attempts  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE execution_attempts  FORCE  ROW LEVEL SECURITY;
 ALTER TABLE products            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products            FORCE  ROW LEVEL SECURITY;
 
@@ -60,6 +62,11 @@ CREATE POLICY tenant_isolation ON idempotency_records
 
 DROP POLICY IF EXISTS tenant_isolation ON task_states;
 CREATE POLICY tenant_isolation ON task_states
+  USING ("tenantId" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenantId" = current_setting('app.tenant_id', true));
+
+DROP POLICY IF EXISTS tenant_isolation ON execution_attempts;
+CREATE POLICY tenant_isolation ON execution_attempts
   USING ("tenantId" = current_setting('app.tenant_id', true))
   WITH CHECK ("tenantId" = current_setting('app.tenant_id', true));
 

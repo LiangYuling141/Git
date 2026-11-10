@@ -1,0 +1,32 @@
+{
+  "responses": [
+    {
+      "id": "41cf0f82-83b7-49a8-8b04-ad95e8e23760",
+      "object": "chat.completion",
+      "created": 1794293404,
+      "model": "deepseek-flash",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"kind\":\"operation\",\"contract\":\"create_order\",\"slots\":{\"customerName\":\"伟业公司\",\"productTerm\":\"不存在商品\",\"quantity\":100,\"unitPrice\":2}}"
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 351,
+        "completion_tokens": 35,
+        "total_tokens": 386,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 223
+      },
+      "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 // =============================================================================
-// Prisma Schema for LyMatrix TEF reference implementation (CRM-ERP)
+// Prisma Schema for LyMtrix-TEF reference implementation (CRM-ERP)
 //
 // 多租户约定：所有租户隔离表都带 tenantId，默认值为 DEFAULT_TENANT_ID
 // （"t_yiwu_demo"，定义于 src/tef/tenant.ts）。该默认值只为让既有演示数据无损
@@ -127,6 +127,16 @@ enum AuditResult {
   failure
   compensated
   compensation_failed
+  // 执行意图已在副作用之前提交，但结果尚未结算。对账会补齐结果事件。
+  pending
+}
+
+// 两阶段执行的状态。executing/unknown 都需要由 reconcileExecutions 收敛。
+enum ExecutionStatus {
+  executing
+  succeeded
+  failed
+  unknown
 }
 
 // TaskState 的 12 个状态（§8.1）
@@ -162,22 +172,23 @@ model Tenant {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  members       TenantMember[]
-  users         User[]                @relation("UserHomeTenant")
-  sessions      Session[]
-  customers     Customer[]
-  orders        Order[]
-  payments      Payment[]
-  products      Product[]
-  whitelist     WhitelistEntry[]
-  confirmations ConfirmationRequest[]
-  auditLogs     AuditLog[]
-  previews      PreviewSnapshot[]
-  tokens        ConfirmationToken[]
-  idempotency   IdempotencyRecord[]
-  auditEvents   AuditEvent[]
-  chainHead     AuditChainHead?
-  taskStates    TaskState[]
+  members           TenantMember[]
+  users             User[]                @relation("UserHomeTenant")
+  sessions          Session[]
+  customers         Customer[]
+  orders            Order[]
+  payments          Payment[]
+  products          Product[]
+  whitelist         WhitelistEntry[]
+  confirmations     ConfirmationRequest[]
+  auditLogs         AuditLog[]
+  previews          PreviewSnapshot[]
+  tokens            ConfirmationToken[]
+  idempotency       IdempotencyRecord[]
+  auditEvents       AuditEvent[]
+  chainHead         AuditChainHead?
+  taskStates        TaskState[]
+  executionAttempts ExecutionAttempt[]
 
   @@map("tenants")
 }
@@ -527,32 +538,74 @@ model AuditEvent {
 
 // 对话上下文只保存"说了什么"，任务进行到哪一步只存在这里（§8.3）
 model TaskState {
-  id                     String     @id @default(cuid())
-  tenantId               String     @default("t_yiwu_demo")
-  tenant                 Tenant     @relation(fields: [tenantId], references: [id])
-  userId                 String
-  conversationId         String
-  status                 TaskStatus @default(idle)
-  intent                 Json?
-  pendingPreviewId       String?
-  pendingIntentHash      String?
-  pendingContract        String?
-  pendingContractVersion String?
-  pendingExpiresAt       DateTime?
-  activeCustomerId       String?
-  activeOrderId          String?
-  idempotencyKey         String?
-  clarificationRounds    Int        @default(0)
-  version                Int        @default(0)
+  id                        String     @id @default(cuid())
+  tenantId                  String     @default("t_yiwu_demo")
+  tenant                    Tenant     @relation(fields: [tenantId], references: [id])
+  userId                    String
+  conversationId            String
+  status                    TaskStatus @default(idle)
+  intent                    Json?
+  pendingPreviewId          String?
+  pendingIntentHash         String?
+  pendingContract           String?
+  pendingContractVersion    String?
+  pendingExpiresAt          DateTime?
+  activeCustomerId          String?
+  activeOrderId             String?
+  idempotencyKey            String?
+  // 未结算执行尝试的显式标记（execution_attempts.attemptId 或 pending:<key>）。
+  // 非空表示副作用可能已经发生：禁止解析新意图，必须用同一幂等键重试/等待对账。
+  pendingExecutionAttemptId String?
+  // 未结算执行使用的确认令牌（服务端重试状态，绝不下发给模型或放入模型上下文）。
+  // 与 pendingExecutionAttemptId 同生命周期：重试直接用它执行，绝不重新预览。
+  pendingConfirmationToken   String?
+  clarificationRounds       Int        @default(0)
+  version                   Int        @default(0)
   // 任务级 trace：一次写入的完整生命周期（含澄清往返）共用一条链，
   // 否则 audit.trace 会把同一个任务切成几段，回放不出完整决策过程。
-  traceId                String?
-  createdAt              DateTime   @default(now())
-  updatedAt              DateTime   @updatedAt
+  traceId                   String?
+  createdAt                 DateTime   @default(now())
+  updatedAt                 DateTime   @updatedAt
 
   @@unique([tenantId, conversationId])
   @@index([tenantId, userId, status])
   @@map("task_states")
+}
+
+// -----------------------------------------------------------------------------
+// TEF: Execution Attempt（两阶段执行状态机）
+// -----------------------------------------------------------------------------
+
+// 一次写入尝试的对账锚点：预审计先于副作用提交，结果审计在结算时补写。
+// executing/unknown 表示副作用可能已发生，只能按同一 idempotencyKey 重放收敛。
+model ExecutionAttempt {
+  id                      String          @id @default(cuid())
+  tenantId                String
+  tenant                  Tenant          @relation(fields: [tenantId], references: [id])
+  attemptId               String          @unique
+  traceId                 String
+  previewId               String
+  contract                String
+  contractVersion         String
+  intentHash              String
+  toolName                String
+  idempotencyKey          String
+  status                  ExecutionStatus @default(executing)
+  risk                    RiskOutcome
+  effects                 Json
+  expectedEvidenceVersion String?
+  result                  Json?
+  errorCode               String?
+  errorMessage            String?
+  preAuditEventId         String?
+  resultAuditEventId      String?
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+  settledAt               DateTime?
+
+  @@unique([tenantId, toolName, idempotencyKey])
+  @@index([tenantId, status, updatedAt])
+  @@map("execution_attempts")
 }
 
 // -----------------------------------------------------------------------------

@@ -1,0 +1,32 @@
+{
+  "responses": [
+    {
+      "id": "d2bf2e36-2b8d-49ff-9ac9-ece10120d60a",
+      "object": "chat.completion",
+      "created": 1794293411,
+      "model": "deepseek-flash",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"kind\":\"operation\",\"contract\":\"create_order\",\"slots\":{\"customerName\":\"伟业公司\",\"productTerm\":\"圣诞球\",\"quantity\":5000,\"unitPrice\":2,\"depositRate\":0.3,\"termsDays\":30}}"
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 363,
+        "completion_tokens": 49,
+        "total_tokens": 412,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 235
+      },
+      "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+    }
+  ]
+}
