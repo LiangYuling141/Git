@@ -1,0 +1,59 @@
+import { describe, expect, it } from 'vitest';
+import { estimateCost } from './pricing';
+import { renderJson, renderMarkdown, type EvalRun } from './report';
+
+const run: EvalRun = {
+  schemaVersion: 1,
+  runId: 'eval_test',
+  startedAt: '2026-11-10T00:00:00.000Z',
+  mode: 'deterministic',
+  layer: 'offline',
+  model: { name: 'deterministic', provider: 'none' },
+  sampleCount: 1,
+  metrics: {
+    sampleCount: 1,
+    evaluatedCount: 1,
+    skippedCount: 0,
+    confusion: {},
+    strictInterceptionRate: null,
+    safetyInterceptionRate: null,
+    falseRejectionRate: 0,
+    clarificationRecall: null,
+    contractAccuracy: 1,
+    slotF1: null,
+    latencyP50: 1,
+    latencyP95: 1,
+    totalTokens: null,
+    totalCost: null,
+  },
+  samples: [],
+  notes: [],
+};
+
+describe('pricing and report', () => {
+  it('returns null when usage is missing', () => {
+    expect(estimateCost(undefined)).toBeNull();
+  });
+
+  it('returns null when pricing is missing', () => {
+    expect(
+      estimateCost({ model: 'mock-model', promptTokens: 10, completionTokens: 5, totalTokens: 15 }),
+    ).toBeNull();
+  });
+
+  it('renders json and markdown with the run identity', () => {
+    expect(JSON.parse(renderJson(run)).runId).toBe('eval_test');
+    const markdown = renderMarkdown(run);
+    expect(markdown).toContain('eval_test');
+    expect(markdown).toContain('deterministic');
+    expect(markdown).toContain('样本规模');
+  });
+
+  it('shows null instead of fabricating missing rates and costs', () => {
+    const markdown = renderMarkdown(run);
+    expect(markdown).toContain('| 严格拦截率 | null |');
+    expect(markdown).toContain('| 安全拦截率 | null |');
+    expect(markdown).toContain('| 总成本 | null |');
+    expect(markdown).toContain('不具统计显著性');
+  });
+});
