@@ -1,0 +1,32 @@
+{
+  "responses": [
+    {
+      "id": "a6409125-049e-43d8-a216-b28f636c8217",
+      "object": "chat.completion",
+      "created": 1794293409,
+      "model": "deepseek-flash",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"kind\":\"operation\",\"contract\":\"credit.get\",\"slots\":{\"customerName\":\"伟业公司\"}}"
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 339,
+        "completion_tokens": 21,
+        "total_tokens": 360,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 211
+      },
+      "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+    }
+  ]
+}

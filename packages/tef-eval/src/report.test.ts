@@ -41,7 +41,7 @@ describe('pricing and report', () => {
 
   it('returns null when pricing is missing', () => {
     expect(
-      estimateCost({ model: 'mock-model', promptTokens: 10, completionTokens: 5, totalTokens: 15 }),
+      estimateCost({ model: 'mock-model', promptTokens: 10, completionTokens: 5, totalTokens: 15 }, null),
     ).toBeNull();
   });
 

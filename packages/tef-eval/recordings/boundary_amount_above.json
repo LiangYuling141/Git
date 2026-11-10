@@ -1,0 +1,32 @@
+{
+  "responses": [
+    {
+      "id": "c42c5584-9e73-4dd0-b127-fc145b3ff533",
+      "object": "chat.completion",
+      "created": 1794293397,
+      "model": "deepseek-flash",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"kind\":\"clarify\",\"questions\":[{\"slot\":\"depositRate\",\"reason\":\"missing\"},{\"slot\":\"termsDays\",\"reason\":\"missing\"}]}"
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 352,
+        "completion_tokens": 31,
+        "total_tokens": 383,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 224
+      },
+      "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+    }
+  ]
+}

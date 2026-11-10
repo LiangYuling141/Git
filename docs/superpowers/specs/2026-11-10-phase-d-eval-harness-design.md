@@ -1,7 +1,9 @@
 # Phase D：评测 Harness 与首版报告设计
 
-> 状态：待实施
+> 状态：已实施（首版）
 > 日期：2026-11-10
+> 实施验证：2026-11-10；live 运行 `TEF_MODEL_TESTS=1 TEF_DB_TESTS=1 npm run eval -- --mode all --live`（runId `eval_20261110064949674_8dlcta`），录制回放 `TEF_DB_TESTS=1 npm run eval -- --mode e2e --recorded packages/tef-eval/recordings`
+> 首版报告：[phase-d-baseline.md](../../eval/phase-d-baseline.md)
 > 范围：P2 准备的第一步——可复现评测 harness、24 条种子样本与首版报告
 > 权威架构：[14-unified-architecture.md](../../technical/14-unified-architecture.md)
 > 前置：[Phase C 执行状态机计划](../plans/2026-11-09-phase-c-p1-execution-state-machine.md)（已完成）
@@ -361,7 +363,9 @@ npm run eval -- --mode all --live
 ## 12. 相关文档
 
 - [2026-11-09-tef-extraction-design.md](2026-11-09-tef-extraction-design.md) — 框架剥离与 P1/P2 收尾设计：包边界、API 契约、跨服务执行状态机
+- [2026-11-10-phase-d-eval-harness.md](../plans/2026-11-10-phase-d-eval-harness.md) — Phase D 实施计划：任务拆分、验收标准与验证记录
 - [2026-11-09-phase-c-p1-execution-state-machine.md](../plans/2026-11-09-phase-c-p1-execution-state-machine.md) — Phase C 执行状态机、故障注入与并发计划
+- [phase-d-baseline.md](../../eval/phase-d-baseline.md) — Phase D 首版评测报告：指标、混淆矩阵、失败样本归因与已知限制
 - [14-unified-architecture.md](../../technical/14-unified-architecture.md) — 统一架构框架（裁决版）
 - [13-trusted-execution-architecture.md](../../technical/13-trusted-execution-architecture.md) — 可信执行架构详细设计
 - [00-framework.md](../../00-framework.md) — 项目框架总览与实施进度
@@ -372,6 +376,6 @@ npm run eval -- --mode all --live
 ## 自检记录
 
 - 规格覆盖：对应设计文档 §8.4 Phase D 的五项交付；双层管道与 §8.5 可复现性设计一致。
-- 占位符：无 TBD/TODO；价目快照要求在实现阶段填入并记录来源，属于明确动作而非待定设计。
+- 占位符：无 TBD/TODO；价目快照已于 2026-11-10 从官方页面抓取并填入 `pricing.ts`，来源 URL、抓取日期与保守上界口径记录在首版报告中。
 - 内部一致性：样本 schema、决策映射、指标定义与报告字段使用同一组枚举；离线层与端到端层不合并统计。
 - 范围：本设计只覆盖 Phase D 首版报告，不包含 300–500 条正式评测集与消融实验。

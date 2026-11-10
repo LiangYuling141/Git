@@ -67,6 +67,9 @@ export const evalSampleSchema = z.object({
   id: z.string().min(1),
   category: z.enum(EVAL_CATEGORIES),
   tenant: z.object({ thresholds: z.record(z.string(), z.number()) }),
+  // 离线层把 userId 用作 ExecContext.userId；端到端层改用派生的
+  // `u_eval_<sampleId>` 作为登录用户，不使用该字段作为登录身份。
+  // 样本作者不应依赖 principal.userId 在端到端层做身份断言。
   principal: z.object({
     userId: z.string().min(1),
     role: z.enum(['owner', 'sales', 'finance', 'viewer']),

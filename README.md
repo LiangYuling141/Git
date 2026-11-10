@@ -5,7 +5,7 @@
 
 LyMtrix-TEF 是一个面向 AI Agent 的可信执行框架。它不试图让模型输出变得确定，而是让模型产生的**副作用**变得确定：任何写操作都必须经过契约校验、证据加载、风险定级、预览快照、一次性令牌确认和幂等执行，否则被阻断、拒绝或转人工。
 
-**当前状态（2026-11-10）**：Phase 0 闭环、Phase 1 补偿运行时、Phase B2 CRM 内部 HTTP 网关与 Phase C 执行状态机已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime、确认 UI 与补偿闭环全部可运行；B2 新增 `/api/internal/v1/query` 与 `/api/internal/v1/effects/execute` 内部端点及 `HttpCrmGateway`，默认仍走进程内 Prisma 网关；Phase C 新增 `execution_attempts` 两阶段执行状态机、`pending` 预审计、结果审计、UNKNOWN 对账与故障注入测试，保证副作用 at-most-once。414 个测试通过（339 单元 + 75 个对真实 PostgreSQL 的闭环、攻击场景、补偿、状态机与对账集成测试）。尚未达到生产可用：评测体系（Phase 2/D）、遗留代码清理、跨服务 HTTP effects 接线（Phase B3）与生产级压测仍未完成。成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
+**当前状态（2026-11-10）**：Phase 0 闭环、Phase 1 补偿运行时、Phase B2 CRM 内部 HTTP 网关、Phase C 执行状态机与 Phase D 首版评测 harness 已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime、确认 UI 与补偿闭环全部可运行；B2 新增 `/api/internal/v1/query` 与 `/api/internal/v1/effects/execute` 内部端点及 `HttpCrmGateway`，默认仍走进程内 Prisma 网关；Phase C 新增 `execution_attempts` 两阶段执行状态机、`pending` 预审计、结果审计、UNKNOWN 对账与故障注入测试，保证副作用 at-most-once；Phase D 新增 `packages/tef-eval` 双层评测 harness、24 条六类种子样本、live 录制回放与首版报告，离线层 22 条计分、端到端层 24/24 执行。536 个测试通过（461 单元 + 75 个对真实 PostgreSQL 的闭环、攻击场景、补偿、状态机与对账集成测试）。尚未达到生产可用：正式 300–500 条评测集与消融实验（Phase 2/D 后续）、遗留代码清理、跨服务 HTTP effects 接线（Phase B3）与生产级压测仍未完成。首版指标见 [Phase D 首版评测报告](docs/eval/phase-d-baseline.md)，成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
 
 ---
 
@@ -217,8 +217,9 @@ Agent Runtime 不持有数据库凭据，不直接执行写操作；TaskState �
 | [docs/technical/13-trusted-execution-architecture.md](docs/technical/13-trusted-execution-architecture.md) | 可信执行架构详细设计：业务操作契约、MCP 工具链、评测基准 |
 | [docs/technical/06-system-architecture.md](docs/technical/06-system-architecture.md) | 整体技术架构设计：技术选型、分层职责、核心流程、部署 |
 | [docs/superpowers/specs/2026-11-09-tef-extraction-design.md](docs/superpowers/specs/2026-11-09-tef-extraction-design.md) | 框架剥离与 P1/P2 收尾设计：包边界、API 契约、跨服务执行状态机 |
-| [docs/superpowers/specs/2026-11-10-phase-d-eval-harness-design.md](docs/superpowers/specs/2026-11-10-phase-d-eval-harness-design.md) | Phase D 设计：评测 harness、种子样本、双层指标与首版报告 |
+| [docs/superpowers/specs/2026-11-10-phase-d-eval-harness-design.md](docs/superpowers/specs/2026-11-10-phase-d-eval-harness-design.md) | Phase D 设计（已实施，首版）：评测 harness、种子样本、双层指标与首版报告 |
 | [docs/superpowers/plans/2026-11-10-phase-d-eval-harness.md](docs/superpowers/plans/2026-11-10-phase-d-eval-harness.md) | Phase D 实施计划：模型注入、fixture 网关、双层 harness、CLI 与首版报告 |
+| [docs/eval/phase-d-baseline.md](docs/eval/phase-d-baseline.md) | **Phase D 首版评测报告**：24 条种子样本的离线/端到端指标、决策混淆矩阵、失败样本归因、价目快照与已知限制 |
 
 ### 比赛材料
 
@@ -269,7 +270,7 @@ Agent Runtime 不持有数据库凭据，不直接执行写操作；TaskState �
 | Phase 0 | 多租户底座 + 契约引擎 + 跑通"赊账订单"闭环：查询客户、查额度、查库存、预览订单、执行订单 | **已完成**，CI 每次推送对真实 PostgreSQL 复跑闭环与攻击场景 |
 | Phase 1 | L1 自动执行路径、dry-run/diff、确认令牌、幂等、冲突恢复、补偿、审计事件 | **已完成**：L1 路径、diff、令牌、幂等、审计事件、`CONFLICT` 检测与旧令牌作废、`compensate_order` 契约与完整补偿运行时（preview → L2 → 人工确认 → execute）均已实现并有测试 |
 | Phase C（P1 收尾） | 执行状态机、`execution_attempts`、预审计 `pending`、UNKNOWN 对账、故障注入与并发 | **已完成**：两阶段执行 + 三阶段语义、进程内幂等执行器、对账补写结果审计、12 项故障注入/恢复测试；保证按幂等键计的 at-most-once 副作用 |
-| Phase 2 / D | 300-500 条评测集、危险写入拦截率、误拒率、P95、成本 | 评测未开始；指标埋点、fixture 与 eval harness 属 Phase D |
+| Phase 2 / D | 300-500 条评测集、危险写入拦截率、误拒率、P95、成本 | **Phase D 首版已完成**：24 条种子样本、双层 harness、live 录制回放与[首版报告](docs/eval/phase-d-baseline.md)；正式 300-500 条评测集、置信区间与消融实验未开始，样本规模不足以支撑统计结论 |
 | Phase 3 | 参考垂直插件、计量计费与配额、角色细化、生产部署、软著/专利/论文材料 | 未开始 |
 
 当前对外表述应使用"参考架构 / framework，目标工业级"，不得宣称已达到工业级生产可用。执行尝试级崩溃恢复与并发幂等已验证，但 TaskState 会话级恢复、生产级压测与跨服务 effects 接线尚未完成，因此仍不宣称 L1 完整达成。
@@ -305,7 +306,14 @@ npm run rls:verify              # 7 项隔离检查，用真实查询证明策�
 npm test                        # 单元测试
 TEF_DB_TESTS=1 npm test         # 加上对真实数据库的闭环与攻击场景集成测试
 npm run dev                     # http://localhost:3000/login，账号 admin@example.com / demo123
+
+# 5. 评测（Phase D 首版 harness）
+npm run eval -- --mode all      # 离线/端到端确定性结果；e2e 需 TEF_DB_TESTS=1 与 DATABASE_URL
+TEF_MODEL_TESTS=1 TEF_DB_TESTS=1 npm run eval -- --mode all --live   # 真实模型，自动录制响应
+TEF_DB_TESTS=1 npm run eval -- --mode e2e --recorded packages/tef-eval/recordings  # 断网回放
 ```
+
+首版指标、失败样本归因与已知限制见 [Phase D 首版评测报告](docs/eval/phase-d-baseline.md)；24 条种子样本不足以支撑统计结论，不得把其中的比例指标表述为正式评测或生产可用性证据。
 
 登录后进入 `/chat`，输入：
 

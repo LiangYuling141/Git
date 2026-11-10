@@ -1,5 +1,13 @@
 # Phase D 评测 Harness 实施计划
 
+> **状态：已完成（2026-11-10）**
+>
+> **验证记录：**
+> - live：`TEF_MODEL_TESTS=1 TEF_DB_TESTS=1 npm run eval -- --mode all --live` → runId `eval_20261110064949674_8dlcta`；离线层 22 条计分 + 2 条 `skipped_non_contract`，端到端层 24/24 执行
+> - 录制回放：`TEF_DB_TESTS=1 npm run eval -- --mode e2e --recorded packages/tef-eval/recordings` → runId `eval_20261110065020550_l55f1k`，24/24 决策与 live 一致
+> - 全量验证：`npm run typecheck`、`npm run lint`、`npm run boundaries:check`、`npm run secrets:check`、`TEF_DB_TESTS=1 npm test`（536 passed）、`npm run build` 全部通过
+> - 首版报告：[../../eval/phase-d-baseline.md](../../eval/phase-d-baseline.md)
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 交付可复现的双层评测 harness、24 条种子样本与首版评测报告，让拦截率、误拒率、P95 与成本从设计口径变成可执行证据。
@@ -2116,6 +2124,12 @@ export async function runE2eSample(
           }),
         model: adapter,
       });
+      // 非确定性模式必须真实走到模型；静默回落会把 mock/recorded/live 失败标成成功样本。
+      if (modelMode !== 'deterministic' && last.intentSource !== 'model') {
+        throw new Error(
+          `sample ${sample.id}: model mode ${modelMode} fell back to deterministic on turn ${index}`,
+        );
+      }
       taskState = await taskStateStore.update(
         tenantId,
         conversationId,
@@ -2124,7 +2138,11 @@ export async function runE2eSample(
       );
     }
   } finally {
-    if (modelMode === 'deterministic') process.env.DEEPSEEK_API_KEY = previousKey;
+    if (modelMode === 'deterministic') {
+      // previousKey 未定义时必须 delete；赋值为 undefined 会留下字符串 "undefined"。
+      if (previousKey === undefined) delete process.env.DEEPSEEK_API_KEY;
+      else process.env.DEEPSEEK_API_KEY = previousKey;
+    }
   }
 
   const envelope = last?.envelope;
@@ -2816,11 +2834,18 @@ git commit -m "docs(eval): publish Phase D baseline report and sync docs"
 
 ---
 
+## 相关文档
+
+- [2026-11-10-phase-d-eval-harness-design.md](../specs/2026-11-10-phase-d-eval-harness-design.md) — Phase D 评测 harness 设计（已实施，首版）
+- [phase-d-baseline.md](../../eval/phase-d-baseline.md) — Phase D 首版评测报告：指标、混淆矩阵、失败样本归因与已知限制
+- [00-framework.md](../../00-framework.md) — 项目框架总览、实施进度与已知边界
+- [挑战杯项目设计说明书.md](../../competition/挑战杯项目设计说明书.md) — §8 评测方案与 §8.6 当前进度
+
 ## 自检记录
 
 - 规格覆盖：样本 schema（任务 3）、fixture 网关（任务 4）、离线层（任务 5）、指标与报告（任务 6）、端到端层（任务 7）、CLI 与样本集（任务 8）、live 与文档（任务 9）均对应 spec 第 4–10 节。
 - 分层边界：离线层只评测契约操作，查询工具样本标记 `skipped_non_contract`；两层分别生成报告，指标不合并。
 - 副作用边界：端到端层注入 no-op `EffectsExecutor`，L1 执行不写业务表；治理数据默认保留并输出 traceId。
-- 占位符：`pricing.ts` 默认 `null`，任务 9 从官方页面获取后填入；无法获取时成本保持 `null` 并在报告标注。其余步骤均含完整代码或明确规格表。
+- 占位符：`pricing.ts` 已在任务 9 从官方页面抓取并填入 deepseek-flash 价目快照（2026-11-10）；报告标注了高峰/缓存未命中的保守上界口径。其余步骤均含完整代码或明确规格表。
 - 类型一致性：`SampleOutcome`、`Decision`、`EvalMode`、`ModelAdapter`、`TokenUsage`、`EvalRun` 在任务 1、5、6、7、8 中保持同名同形。
 - 范围：本计划只覆盖 Phase D 首版，不包含 300–500 条正式评测集、消融实验与 B3 服务化。

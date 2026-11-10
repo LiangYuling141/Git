@@ -10,10 +10,22 @@ export interface PricingSnapshot {
 }
 
 /**
- * 价目快照：实现阶段（任务 9 步骤 1）从官方页面获取后填入完整对象。
- * 若无法获取，保持 null；报告中的成本必须显示 null，不得用猜测值。
+ * 价目快照：2026-11-10 抓取自官方页面
+ * https://api-docs.deepseek.com/quick_start/pricing
+ *
+ * 实际请求的 `deepseek-chat` 别名由服务端映射为 `deepseek-flash`
+ * （录制响应中的 model 字段），因此按 deepseek-flash 计价。
+ * 官方同时给出高峰/低谷与缓存命中/未命中价格；TokenUsage 只保留总
+ * prompt/completion token，没有缓存命中拆分，所以这里取“高峰 + 缓存
+ * 未命中输入价”作为保守上界，报告需注明该口径。
  */
-export const PRICING_SNAPSHOT: PricingSnapshot | null = null;
+export const PRICING_SNAPSHOT: PricingSnapshot | null = {
+  capturedAt: '2026-11-10',
+  source: 'https://api-docs.deepseek.com/quick_start/pricing',
+  model: 'deepseek-flash',
+  inputPerMillion: 0.3,
+  outputPerMillion: 1.2,
+};
 
 export function estimateCost(
   usage: TokenUsage | undefined,

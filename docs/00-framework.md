@@ -836,7 +836,7 @@ sequenceDiagram
 | 单元测试 | 契约引擎、风险、哈希、快照、令牌、审计链、意图、Runtime 执行结果映射、MCP、创建与补偿契约、Prisma/HTTP 业务网关、执行器重读语义、确认执行计划与结果映射、effects 路由未知映射、包边界检查 | 339 | `npm test` 默认运行 |
 | 数据库集成测试 | Phase 0 闭环/攻击场景（19）+ Phase 1 补偿闭环（9）+ 内部 HTTP 网关（29）+ 执行结算（2）+ 执行状态机/对账/故障注入（12）+ 进程内执行器（4） | 75 | `TEF_DB_TESTS=1` 且 `DATABASE_URL` 可用 |
 
-本地实测（2026-11-10）：339 个单元测试通过；设置 `TEF_DB_TESTS=1` 后 414 个测试全部通过（339 单元 + 75 数据库）；typecheck、lint、boundaries:check、secrets:check 与 build 通过。
+本地实测（2026-11-10）：461 个单元测试通过；设置 `TEF_DB_TESTS=1` 后 536 个测试全部通过（461 单元 + 75 数据库）；typecheck、lint、boundaries:check、secrets:check 与 build 通过。
 
 ### 9.3 CI 流水线
 
@@ -909,11 +909,11 @@ npm run rls:verify
 
 | 阶段 | 目标 | 状态（2026-11-10） |
 |------|------|--------------------|
-| **Phase 0** | 跑通赊账订单闭环：租户、契约引擎、查询工具、预览/执行、令牌、快照、审计 | **已完成**。多租户、契约引擎、13 个 MCP 工具、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、TaskState、最小 Agent Runtime、确认 UI 全部可运行；当前全量 414 个测试（339 单元 + 75 真实数据库）在 CI 中持续验证 |
+| **Phase 0** | 跑通赊账订单闭环：租户、契约引擎、查询工具、预览/执行、令牌、快照、审计 | **已完成**。多租户、契约引擎、13 个 MCP 工具、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、TaskState、最小 Agent Runtime、确认 UI 全部可运行；当前全量 536 个测试（461 单元 + 75 真实数据库）在 CI 中持续验证 |
 | **Phase 1** | 完善写入协议：L1 自动执行、冲突恢复、补偿、澄清 | **已完成主要项**。L1 自动执行、澄清（上限 3 轮）、`CONFLICT` 检测与旧令牌作废、`compensate_order` 契约与完整补偿运行时（preview → L2 → 人工确认 → execute）均已实现并有测试 |
 | **Phase B2** | CRM 内部 HTTP 网关：`query`、`effects:execute`、`HttpCrmGateway` 与切换工厂 | **已完成**。内部端点使用服务令牌鉴权、租户绑定、effect 白名单与同事务幂等；默认仍为进程内 Prisma，HTTP 通道含 query 与默认关闭的 effects:execute，但契约执行仍走本地适配器并受已知限制约束（见 §11），跨服务 effects 接线留待 B3 |
 | **Phase C** | P1 收尾：执行状态机、`execution_attempts`、预审计 `pending`、UNKNOWN 对账、故障注入与并发 | **已完成**。两阶段执行 + 三阶段语义、进程内幂等执行器、对账补写结果审计、故障注入与并发测试全部落地；保证按幂等键计的副作用 at-most-once。已知限制见 §10.3 |
-| **Phase 2** | 评测体系：300–500 条样本、拦截率、误拒率、P95、成本、可选验证器 | **未开始**（Phase D 准备指标埋点、fixture 与 eval harness） |
+| **Phase 2** | 评测体系：300–500 条样本、拦截率、误拒率、P95、成本、可选验证器 | **Phase D 首版 harness 与种子样本已完成**（24 条种子样本、离线/端到端双层指标、live 录制回放与首版报告）；正式 300–500 条评测集、置信区间与消融实验未开始 |
 | **Phase 3** | 框架化与行业扩展：行业插件、计量计费、角色细化、SDK、生产部署 | **未开始** |
 | 后续 | 工业级：安全评审、压测、兼容性、SLA、私有化 | **未开始** |
 
@@ -980,7 +980,7 @@ npm run rls:verify
 | 提交歧义依赖执行器标注 | 进程内 Prisma 只有在执行器抛出 `EffectsExecutionUnknownError` 时才收敛为 `unknown`；执行器未标注而事务已提交的极端场景无法本地识别 |
 | 跨服务 effects 未接线 | 内部 effects 路由已把 `EffectsExecutionUnknownError` 映射为 503 / `EXECUTION_UNKNOWN`，`HttpCrmGateway` 也把 503 / `EXECUTION_UNKNOWN` 抛回状态机；但 `HttpCrmGateway.executeEffects` 尚未接入 `executeContract`。完成前禁止生产启用 HTTP 写入 |
 | TaskState 会话恢复 | 执行尝试可对账恢复；对话会话从 TaskState 恢复的多轮验证未完成 |
-| 评测与压测 | 模型成本指标、完整评测属 Phase D；生产级负载与 P95 尚无数据 |
+| 评测与压测 | Phase D 首版 harness 已产出 24 条种子样本的决策指标与成本上界；300–500 条正式评测集、置信区间与生产级负载/P95 尚无数据 |
 
 ---
 
@@ -992,7 +992,7 @@ npm run rls:verify
 | 已收款订单 | 不直接补偿，需要退款流程（未实现） |
 | 跨会话批准 | 发起与批准目前在同一会话；跨用户/跨会话批准未实现 |
 | 补偿的补偿 | 返回空列表，不支持多级撤销 |
-| 评测 harness | 未实现；拦截率、误拒率、P95、成本均无实测数据 |
+| 评测 harness | Phase D 首版已实现（24 条种子样本、双层指标、live 录制回放）；样本规模与 fixture 证据不足以支撑统计结论，正式 300–500 条评测集未开始 |
 | 遗留代码 | `src/voting`、`src/agents`、`src/hooks`、`src/confirm`、`src/engine`、`src/rules`、`src/risk`、`src/audit` 与部分 REST 路由仍在仓库，但不在 TEF 路径 |
 | KMS 与 crypto-shredding | 假名化与脱敏已实现；密钥管理与可销毁映射未实现 |
 | 崩溃恢复 | 执行尝试由对账恢复；TaskState 会话级恢复未完整验证 |
@@ -1020,8 +1020,9 @@ npm run rls:verify
 - [technical/13-trusted-execution-architecture.md](technical/13-trusted-execution-architecture.md) — 可信执行架构详细设计：业务操作契约、MCP 工具链、评测基准
 - [technical/06-system-architecture.md](technical/06-system-architecture.md) — 整体技术架构设计：技术选型、分层职责、核心流程、部署
 - [superpowers/specs/2026-11-09-tef-extraction-design.md](superpowers/specs/2026-11-09-tef-extraction-design.md) — 框架剥离与 P1/P2 收尾设计：包边界、API 契约、跨服务执行状态机
-- [superpowers/specs/2026-11-10-phase-d-eval-harness-design.md](superpowers/specs/2026-11-10-phase-d-eval-harness-design.md) — Phase D 设计：评测 harness、种子样本、双层指标与首版报告
+- [superpowers/specs/2026-11-10-phase-d-eval-harness-design.md](superpowers/specs/2026-11-10-phase-d-eval-harness-design.md) — Phase D 设计（已实施，首版）：评测 harness、种子样本、双层指标与首版报告
 - [superpowers/plans/2026-11-10-phase-d-eval-harness.md](superpowers/plans/2026-11-10-phase-d-eval-harness.md) — Phase D 实施计划：模型注入、fixture 网关、双层 harness、CLI 与首版报告
+- [eval/phase-d-baseline.md](eval/phase-d-baseline.md) — Phase D 首版评测报告：24 条种子样本的离线/端到端指标、决策混淆矩阵、失败样本归因、价目快照与已知限制
 
 ### 工具、引擎与安全机制
 

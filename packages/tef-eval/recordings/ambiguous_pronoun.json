@@ -1,0 +1,32 @@
+{
+  "responses": [
+    {
+      "id": "02253e7a-476a-4daf-aef4-c079286f508b",
+      "object": "chat.completion",
+      "created": 1794293395,
+      "model": "deepseek-flash",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"kind\":\"clarify\",\"questions\":[{\"slot\":\"orderNo\",\"reason\":\"ambiguous\"},{\"slot\":\"change\",\"reason\":\"missing\"}]}"
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 338,
+        "completion_tokens": 29,
+        "total_tokens": 367,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 210
+      },
+      "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+    }
+  ]
+}

@@ -148,9 +148,9 @@ describe('computeSampleCost', () => {
     expect(computeSampleCost([], 'live')).toBeNull();
   });
 
-  it('returns null when the default pricing snapshot is unavailable', () => {
-    // PRICING_SNAPSHOT 当前为 null（任务 9 填充）；未知价目不得折算成 0。
-    expect(computeSampleCost(USAGES, 'live')).toBeNull();
+  it('returns null when pricing is unavailable', () => {
+    // 未知价目不得折算成 0；显式传入 null，不依赖默认快照当前取值。
+    expect(computeSampleCost(USAGES, 'live', null)).toBeNull();
   });
 
   it('returns null when any usage cannot be priced', () => {

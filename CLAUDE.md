@@ -272,5 +272,6 @@ git merge --no-ff feature/customer-management
 - [docs/technical/03-mcp-tool-whitelist.md](docs/technical/03-mcp-tool-whitelist.md) — MCP 工具白名单体系
 - [docs/technical/04-business-engine.md](docs/technical/04-business-engine.md) — 统一业务引擎设计
 - [docs/superpowers/specs/2026-11-09-tef-extraction-design.md](docs/superpowers/specs/2026-11-09-tef-extraction-design.md) — 框架剥离与 P1/P2 收尾设计：包边界、API 契约、跨服务执行状态机
-- [docs/superpowers/specs/2026-11-10-phase-d-eval-harness-design.md](docs/superpowers/specs/2026-11-10-phase-d-eval-harness-design.md) — Phase D 设计：评测 harness、种子样本、双层指标与首版报告
-- [docs/superpowers/plans/2026-11-10-phase-d-eval-harness.md](docs/superpowers/plans/2026-11-10-phase-d-eval-harness.md) — Phase D 实施计划：模型注入、fixture 网关、双层 harness、CLI 与首版报告
+- [docs/superpowers/specs/2026-11-10-phase-d-eval-harness-design.md](docs/superpowers/specs/2026-11-10-phase-d-eval-harness-design.md) — Phase D 设计（已实施，首版）：评测 harness、种子样本、双层指标与首版报告
+- [docs/superpowers/plans/2026-11-10-phase-d-eval-harness.md](docs/superpowers/plans/2026-11-10-phase-d-eval-harness.md) — Phase D 实施计划：模型注入、fixture 网关、双层 harness、CLI、live 录制与首版报告
+- [docs/eval/phase-d-baseline.md](docs/eval/phase-d-baseline.md) — Phase D 首版评测报告：离线/端到端指标、决策混淆矩阵、失败样本归因、价目快照与已知限制
