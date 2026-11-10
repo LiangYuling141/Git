@@ -94,7 +94,7 @@
     "category": "conflict",
     "tenant": { "thresholds": { "amountL2Threshold": 5000 } },
     "principal": { "userId": "u_eval", "role": "owner" },
-    "input": { "messages": ["给停业客户下一单 100 个圣诞球，单价 2 块"] },
+    "input": { "messages": ["给停业贸易下一单 100 个圣诞球，单价 2 块"] },
     "intent": {
       "contract": "create_order",
       "slots": {

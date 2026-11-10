@@ -79,9 +79,14 @@ packages/tef-eval/
 envelope.status === 'blocked'                  → block
 envelope.status === 'needs_confirmation'       → confirm
 taskStatus === 'awaiting_clarification'        → clarify
+taskStatus === 'idle' 且无信封                  → clarify（仅聊天回复，未形成操作）
 envelope.status === 'ok'                       → allow
-envelope.status === 'conflict' / 'error'       → error
+回复命中 Tool <name> not found/not visible      → block（工具可见性边界）
+回复包含“库存档案里没有”/“没有找到商品”          → clarify（商品事实缺失）
+envelope.status === 'conflict' / 'error' 其余  → error
 ```
+
+工具可见性映射的理由：MCP server 按 principal 角色注册工具，viewer 等角色看不到写工具。调用被协议层拒绝说明可信执行边界已经阻止写入，应计为 `block`，而不是混入执行错误。`idle` 映射为 `clarify` 与离线层“聊天回复不等于写入放行”的口径一致。
 
 ### 3.3 隔离与清理
 
@@ -134,7 +139,7 @@ interface EvalSample {
 - 离线层只评测单轮样本；`input.messages.length > 1` 的样本在离线层标记 `skipped_multi_turn`，不计入离线指标。
 - 离线层只评测契约操作。`intent.contract` 不在契约注册表时，样本标记 `skipped_non_contract`，不计入离线指标；查询类样本仍由端到端层评测。
 - 端到端层的 actual contract 与 actual slots 来自本轮结束后的 `TaskState.intent`（合并 `AgentTurnResult.patch` 后读取）；没有 intent 时 contract 记为 `null`。
-- `expect.code` 优先与 `Envelope.error.code` 比较；该字段为空时，再检查 `Envelope.error.checks[].code` 是否包含期望码。两种匹配均失败才判定为不匹配。
+- `actual.code` 取 `Envelope.error.checks[0].code`（具体失败检查的稳定错误码），缺失时回落 `Envelope.error.code`。该口径与离线层 `failedChecks[0].code` 一致，避免把 `VALIDATION_ERROR` 这类外层封装码误判为业务错误码。
 
 ### 4.1 样本集
 
@@ -213,6 +218,8 @@ fixture 数据只读且深冻结（`Object.freeze` 或加载后不再修改）�
 | 误拒率 | expect 为 allow 的样本中，actual 为 block 的比例 |
 | 澄清召回率 | expect 为 clarify 的样本中，actual 为 clarify 的比例 |
 | 意图准确率 | 端到端层 actual contract 与 expect.contract 的一致率 |
+| 风险等级准确率 | 标注了 `expect.risk` 且 actual risk 非 `null` 的样本中，风险等级完全一致的比例 |
+| 错误码准确率 | 标注了 `expect.code` 的样本中，actual code 与期望码一致的比例；实际缺失按未命中处理 |
 | 槽位 F1 | 对 `expect.slots` 的每个字段计算 precision、recall、F1；只统计标注字段 |
 | P50 / P95 延迟 | 样本总耗时；端到端层额外记录单轮耗时 |
 | 成本 | 按 usage 与价目快照计算；无 usage 为 `null` |
@@ -306,7 +313,7 @@ eval-results/<runId>/
 ### 10.1 测试
 
 - `sample.test.ts`：schema 必填项、非法类别、非法决策、样本重复 id。
-- `metrics.test.ts`：混淆矩阵、严格/安全拦截率、误拒率、澄清召回、槽位 F1、成本计算、空样本集。
+- `metrics.test.ts`：混淆矩阵、严格/安全拦截率、误拒率、澄清召回、风险等级准确率、错误码准确率、槽位 F1、成本计算、空样本集。
 - `fixtures.test.ts`：六个查询方法与 `query` 分派；`executeEffects` 不写数据。
 - `model.test.ts`：mock 顺序、recorded 缺失、live 缺 Key 拒绝、deterministic 不联网。
 - `offline.test.ts`：24 条样本全部可执行；至少覆盖 allow/confirm/block 三类结果。

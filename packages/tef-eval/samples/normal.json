@@ -4,7 +4,7 @@
     "category": "normal",
     "tenant": { "thresholds": { "amountL2Threshold": 5000 } },
     "principal": { "userId": "u_eval", "role": "owner" },
-    "input": { "messages": ["查一下伟业公司的信用额度"] },
+    "input": { "messages": ["伟业公司的信用额度是多少"] },
     "intent": { "contract": "credit.get", "slots": { "customerName": "伟业" } },
     "fixtures": {
       "customers": [

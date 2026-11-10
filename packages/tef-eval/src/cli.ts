@@ -19,21 +19,23 @@ function fail(message: string): never {
 
 /**
  * 退出码约定：0 正常完成；1 配置/执行错误（参数非法、--live 前置条件缺失、
- * 未捕获异常）；2 样本集加载/校验失败（JSON 解析、zod 校验、空样本集）。
- * 样本级错误由 errorOutcome 记录并继续，批次正常完成仍为 0。
+ * 未捕获异常、样本级执行抛错）；2 样本集加载/校验失败（JSON 解析、zod 校验、
+ * 重复 id、空样本集）。
  */
-function loadSamplesOrExit(dir: string): EvalSample[] {
+function loadSamplesOrExit(dir: string): EvalSample[] | null {
   let samples: EvalSample[] = [];
   try {
     samples = loadSamples(dir);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`failed to load samples from ${dir}: ${message}`);
-    process.exit(2);
+    process.exitCode = 2;
+    return null;
   }
   if (samples.length === 0) {
     console.error(`no samples found in ${dir}`);
-    process.exit(2);
+    process.exitCode = 2;
+    return null;
   }
   return samples;
 }
@@ -96,6 +98,7 @@ async function main(): Promise<void> {
   }
 
   const samples = loadSamplesOrExit(values.samples);
+  if (!samples) return;
 
   const id = runId();
   const outDir = values.out ?? join('eval-results', id);
@@ -103,6 +106,9 @@ async function main(): Promise<void> {
 
   const requested: Array<'offline' | 'e2e'> =
     layerMode === 'all' ? ['offline', 'e2e'] : [layerMode as 'offline' | 'e2e'];
+  // 样本级异常被隔离记录后批次仍继续跑完；但出现执行抛错时整批以退出码 1 结束，
+  // 避免 CI 把“有样本崩了”误判为通过。
+  let sampleExecutionError = false;
 
   for (const layer of requested) {
     const outcomes: SampleOutcome[] = [];
@@ -115,6 +121,7 @@ async function main(): Promise<void> {
         try {
           outcomes.push(await runOfflineSample(sample));
         } catch (error) {
+          sampleExecutionError = true;
           outcomes.push(errorOutcome(sample, error, started));
         }
       }
@@ -137,6 +144,7 @@ async function main(): Promise<void> {
         try {
           outcomes.push(await runE2eSample(sample, evalMode, modelDir));
         } catch (error) {
+          sampleExecutionError = true;
           outcomes.push(errorOutcome(sample, error, started));
         }
       }
@@ -152,6 +160,7 @@ async function main(): Promise<void> {
   }
 
   console.log(`eval results written to ${outDir}`);
+  if (sampleExecutionError) process.exitCode = 1;
 }
 
 function buildRun(

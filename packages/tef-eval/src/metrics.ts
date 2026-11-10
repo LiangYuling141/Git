@@ -12,6 +12,8 @@ export interface EvalMetrics {
   falseRejectionRate: number | null;
   clarificationRecall: number | null;
   contractAccuracy: number | null;
+  riskAccuracy: number | null;
+  codeAccuracy: number | null;
   slotF1: number | null;
   latencyP50: number | null;
   latencyP95: number | null;
@@ -88,6 +90,20 @@ export function computeMetrics(
     (item) => item.actual.contract === item.expected.contract,
   ).length;
 
+  // 风险等级只在“期望有 risk 且实际观测到 risk”的样本上计分；actual 为 null
+  // 表示本轮没有产生风险判定（例如澄清、执行错误），不能算作匹配。
+  const riskSamples = evaluated.filter(
+    (item) => item.expected.risk !== undefined && item.actual.risk !== null,
+  );
+  const riskHits = riskSamples.filter(
+    (item) => item.actual.risk === item.expected.risk,
+  ).length;
+
+  const codeSamples = evaluated.filter((item) => item.expected.code !== undefined);
+  const codeHits = codeSamples.filter(
+    (item) => item.actual.code === item.expected.code,
+  ).length;
+
   const usages = evaluated.flatMap((item) => item.usage ?? []);
   const totalTokens =
     usages.length === 0 ? null : usages.reduce((sum, usage) => sum + usage.totalTokens, 0);
@@ -106,6 +122,8 @@ export function computeMetrics(
     falseRejectionRate: ratio(falseRejections, allowSamples.length),
     clarificationRecall: ratio(clarifyHits, clarifySamples.length),
     contractAccuracy: ratio(contractHits, contractSamples.length),
+    riskAccuracy: ratio(riskHits, riskSamples.length),
+    codeAccuracy: ratio(codeHits, codeSamples.length),
     slotF1: options.slotScoring === false ? null : computeSlotF1(evaluated),
     latencyP50: percentile(evaluated.map((item) => item.latencyMs), 50),
     latencyP95: percentile(evaluated.map((item) => item.latencyMs), 95),

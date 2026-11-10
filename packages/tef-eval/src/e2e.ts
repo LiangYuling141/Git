@@ -8,14 +8,41 @@ import { FixtureCrmGateway } from './fixtures';
 import type { EvalSample } from './sample';
 import type { ActualOutcome, Decision, SampleOutcome } from './outcome';
 
-function decisionForEnvelope(
-  status: string | undefined,
-  taskStatus: string,
-): Decision {
-  if (taskStatus === 'awaiting_clarification') return 'clarify';
-  if (status === 'blocked') return 'block';
-  if (status === 'needs_confirmation') return 'confirm';
-  if (status === 'ok') return 'allow';
+export interface TurnDecisionInput {
+  envelopeStatus?: string;
+  taskStatus: string;
+  reply?: string;
+  hasEnvelope: boolean;
+}
+
+/** MCP 工具层拒绝未注册/不可见工具时返回的原始错误文本。 */
+const TOOL_NOT_VISIBLE = /Tool [\w.]+ (?:not found|not visible)/;
+
+/**
+ * 端到端决策映射：信封状态优先，边界情况再参考回复文本。
+ *
+ * - `idle` 且无信封：本轮只产生了聊天回复，没有形成可执行操作，用户需要
+ *   补充信息；与离线层 chat → clarify 的口径一致。
+ * - 回复命中工具可见性错误：MCP server 按 principal 注册工具，viewer 等角色
+ *   看不到写工具。这是可信执行边界在协议层已阻止写入，应计为 block，
+ *   不是普通执行错误。
+ * - 回复表示库存档案缺失/未知商品：业务事实不足，交还用户澄清。
+ */
+export function decisionForTurn(input: TurnDecisionInput): Decision {
+  if (input.taskStatus === 'awaiting_clarification') return 'clarify';
+  if (input.taskStatus === 'idle' && !input.hasEnvelope) return 'clarify';
+  if (input.envelopeStatus === 'blocked') return 'block';
+  if (input.envelopeStatus === 'needs_confirmation') return 'confirm';
+  if (input.envelopeStatus === 'ok') return 'allow';
+  if (input.reply) {
+    if (TOOL_NOT_VISIBLE.test(input.reply)) return 'block';
+    if (
+      input.reply.includes('库存档案里没有') ||
+      input.reply.includes('没有找到商品')
+    ) {
+      return 'clarify';
+    }
+  }
   return 'error';
 }
 
@@ -154,14 +181,20 @@ export async function runE2eSample(
   const envelope = last?.envelope;
   const intent = taskState.intent;
   const actual: ActualOutcome = {
-    decision: decisionForEnvelope(envelope?.status, last?.status ?? taskState.status),
+    decision: decisionForTurn({
+      envelopeStatus: envelope?.status,
+      taskStatus: last?.status ?? taskState.status,
+      reply: last?.reply,
+      hasEnvelope: envelope !== undefined,
+    }),
     contract:
       intent?.kind === 'operation'
         ? intent.contract
         : inferContract(last?.toolCalls ?? []),
     slots: intent?.kind === 'operation' ? intent.slots : {},
     risk: envelope?.risk ?? null,
-    code: envelope?.error?.code,
+    // 与离线层口径一致：优先记录具体失败检查的稳定错误码，缺省回落信封错误码。
+    code: envelope?.error?.checks?.[0]?.code ?? envelope?.error?.code,
     reasons: envelope?.reasons ?? (last?.reply ? [last.reply] : []),
   };
 

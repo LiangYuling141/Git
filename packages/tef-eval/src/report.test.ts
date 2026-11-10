@@ -20,6 +20,8 @@ const run: EvalRun = {
     falseRejectionRate: 0,
     clarificationRecall: null,
     contractAccuracy: 1,
+    riskAccuracy: null,
+    codeAccuracy: null,
     slotF1: null,
     latencyP50: 1,
     latencyP95: 1,
@@ -53,6 +55,8 @@ describe('pricing and report', () => {
     const markdown = renderMarkdown(run);
     expect(markdown).toContain('| 严格拦截率 | null |');
     expect(markdown).toContain('| 安全拦截率 | null |');
+    expect(markdown).toContain('| 风险等级准确率 | null |');
+    expect(markdown).toContain('| 错误码准确率 | null |');
     expect(markdown).toContain('| 总成本 | null |');
     expect(markdown).toContain('不具统计显著性');
   });
