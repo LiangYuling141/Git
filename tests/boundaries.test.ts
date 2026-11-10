@@ -111,6 +111,18 @@ describe('package boundary checker', () => {
     });
   });
 
+  it('rejects Next.js app imports from the eval package', () => {
+    const violations = checkSource(
+      'packages/tef-eval/src/probe.ts',
+      "import { prisma } from '@/app/lib/prisma';",
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({
+      file: 'packages/tef-eval/src/probe.ts',
+      rule: 'forbidden-import',
+    });
+  });
+
   it('accepts clean tef-core sources', () => {
     const violations = checkSource(
       'packages/tef-core/src/probe.ts',

@@ -19,6 +19,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "eval": "vite-node --config vite.eval.config.ts packages/tef-eval/src/cli.ts",
+    "eval:live": "TEF_MODEL_TESTS=1 npm run eval -- --mode all --live",
     "db:bootstrap": "node scripts/bootstrap-db.mjs --run",
     "db:seed": "node prisma/seed.mjs",
     "rls:apply": "node scripts/rls.mjs apply",
@@ -50,6 +52,7 @@
     "eslint": "^9.0.0",
     "eslint-config-next": "16.0.0",
     "typescript": "^5.7.0",
+    "vite-node": "^3.2.4",
     "vitest": "^3.2.7"
   }
 }

@@ -69,6 +69,9 @@ next-env.d.ts
 # Tool artifacts
 .playwright-mcp/
 
+# Evaluation run artifacts
+eval-results/
+
 # WPS temporary files
 ~$*.pptx
 *.pptx:WPSSyncID

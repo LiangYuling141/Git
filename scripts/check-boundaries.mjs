@@ -82,6 +82,17 @@ export const PACKAGES = [
       { prefix: 'next', message: 'the CRM vertical must not depend on Next.js.' },
     ],
   },
+  {
+    root: 'packages/tef-eval',
+    scanDir: 'packages/tef-eval/src',
+    forbidden: [
+      { prefix: '@/app', message: 'the evaluation package must not depend on the Next.js app layer.' },
+      { prefix: '@/agent-runtime', message: 'the evaluation package must use tef-runtime, not migration shims.' },
+      { prefix: '@/mcp-server', message: 'the evaluation package must use the vertical package, not migration shims.' },
+      { prefix: '@/contracts', message: 'the evaluation package must use the vertical package, not migration shims.' },
+      { prefix: 'next', message: 'the evaluation package must not depend on Next.js.' },
+    ],
+  },
 ];
 
 const IMPORT_PATTERNS = [
