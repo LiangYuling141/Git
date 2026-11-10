@@ -21,7 +21,9 @@ const run: EvalRun = {
     clarificationRecall: null,
     contractAccuracy: 1,
     riskAccuracy: null,
+    riskEvaluatedCount: 0,
     codeAccuracy: null,
+    codeEvaluatedCount: 0,
     slotF1: null,
     latencyP50: 1,
     latencyP95: 1,
@@ -55,9 +57,14 @@ describe('pricing and report', () => {
     const markdown = renderMarkdown(run);
     expect(markdown).toContain('| 严格拦截率 | null |');
     expect(markdown).toContain('| 安全拦截率 | null |');
-    expect(markdown).toContain('| 风险等级准确率 | null |');
-    expect(markdown).toContain('| 错误码准确率 | null |');
+    expect(markdown).toContain('| 风险等级准确率 | null（0 条） |');
+    expect(markdown).toContain('| 错误码准确率 | null（0 条） |');
     expect(markdown).toContain('| 总成本 | null |');
     expect(markdown).toContain('不具统计显著性');
+  });
+
+  it('renders requested sample count for a skipped layer', () => {
+    const markdown = renderMarkdown({ ...run, sampleCount: 0, requestedSampleCount: 24 });
+    expect(markdown).toContain('- 样本数：0（请求 24 条，跳过 24 条）');
   });
 });

@@ -4,6 +4,7 @@ import { parseArgs } from 'node:util';
 import dotenv from 'dotenv';
 import { prisma } from '@/lib/prisma';
 import { loadSamplesForCli } from './load';
+import { resolveExitCode } from './exit-code';
 import type { EvalSample } from './sample';
 import { runOfflineSample } from './offline';
 import { runE2eSample } from './e2e';
@@ -19,18 +20,15 @@ function fail(message: string): never {
 }
 
 /**
- * 退出码约定：0 正常完成；1 配置/执行错误（参数非法、--live 前置条件缺失、
- * 未捕获的 harness 异常）；2 样本集加载/校验失败（目录不可读、JSON 解析、
- * zod 校验、重复 id、空样本集）。
- *
- * 样本级执行抛错会被 errorOutcome 记录为评测数据，批次继续跑完且退出码为 0；
- * 只有 harness 自身失败才映射为 1。
+ * 退出码约定由 `resolveExitCode` 统一裁定：
+ * 0 正常完成（含测得的 error 决策）；1 样本执行抛错/配置或 harness 失败；
+ * 2 样本集加载/校验失败。
  */
 function loadSamplesOrExit(dir: string): EvalSample[] | null {
   const result = loadSamplesForCli(dir);
   if (result.kind === 'error') {
     console.error(result.message);
-    process.exitCode = 2;
+    process.exitCode = resolveExitCode({ loadFailed: true, thrownSampleError: false });
     return null;
   }
   return result.samples;
@@ -107,6 +105,8 @@ async function main(): Promise<void> {
 
   const requested: Array<'offline' | 'e2e'> =
     layerMode === 'all' ? ['offline', 'e2e'] : [layerMode as 'offline' | 'e2e'];
+  // 样本级异常被隔离记录后批次继续跑完；但发生执行抛错时整批以退出码 1 结束。
+  let thrownSampleError = false;
 
   for (const layer of requested) {
     const outcomes: SampleOutcome[] = [];
@@ -119,6 +119,7 @@ async function main(): Promise<void> {
         try {
           outcomes.push(await runOfflineSample(sample));
         } catch (error) {
+          thrownSampleError = true;
           outcomes.push(errorOutcome(sample, error, started));
         }
       }
@@ -141,6 +142,7 @@ async function main(): Promise<void> {
         try {
           outcomes.push(await runE2eSample(sample, evalMode, modelDir));
         } catch (error) {
+          thrownSampleError = true;
           outcomes.push(errorOutcome(sample, error, started));
         }
       }
@@ -156,6 +158,7 @@ async function main(): Promise<void> {
   }
 
   console.log(`eval results written to ${outDir}`);
+  process.exitCode = resolveExitCode({ loadFailed: false, thrownSampleError });
 }
 
 function buildRun(

@@ -13,7 +13,11 @@ export interface EvalMetrics {
   clarificationRecall: number | null;
   contractAccuracy: number | null;
   riskAccuracy: number | null;
+  /** riskAccuracy 的分母：expect.risk 有标注且 actual risk 非 null 的样本数。 */
+  riskEvaluatedCount: number;
   codeAccuracy: number | null;
+  /** codeAccuracy 的分母：标注了 expect.code 的样本数。 */
+  codeEvaluatedCount: number;
   slotF1: number | null;
   latencyP50: number | null;
   latencyP95: number | null;
@@ -123,7 +127,9 @@ export function computeMetrics(
     clarificationRecall: ratio(clarifyHits, clarifySamples.length),
     contractAccuracy: ratio(contractHits, contractSamples.length),
     riskAccuracy: ratio(riskHits, riskSamples.length),
+    riskEvaluatedCount: riskSamples.length,
     codeAccuracy: ratio(codeHits, codeSamples.length),
+    codeEvaluatedCount: codeSamples.length,
     slotF1: options.slotScoring === false ? null : computeSlotF1(evaluated),
     latencyP50: percentile(evaluated.map((item) => item.latencyMs), 50),
     latencyP95: percentile(evaluated.map((item) => item.latencyMs), 95),

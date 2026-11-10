@@ -5,66 +5,9 @@ import { connectCrmErpClient } from '@lymtrix/vertical-crm-erp';
 import { createModelAdapter, type ModelMode } from './model';
 import { computeSampleCost } from './pricing';
 import { FixtureCrmGateway } from './fixtures';
+import { decisionForTurn, inferContract } from './decision';
 import type { EvalSample } from './sample';
-import type { ActualOutcome, Decision, SampleOutcome } from './outcome';
-
-export interface TurnDecisionInput {
-  envelopeStatus?: string;
-  taskStatus: string;
-  reply?: string;
-  hasEnvelope: boolean;
-}
-
-/** MCP 工具层拒绝未注册/不可见工具时返回的原始错误文本。 */
-const TOOL_NOT_VISIBLE = /Tool [\w.]+ (?:not found|not visible)/;
-
-/**
- * 端到端决策映射：信封状态优先，边界情况再参考回复文本。
- *
- * - `idle` 且无信封：本轮只产生了聊天回复，没有形成可执行操作，用户需要
- *   补充信息；与离线层 chat → clarify 的口径一致。
- * - 回复命中工具可见性错误：MCP server 按 principal 注册工具，viewer 等角色
- *   看不到写工具。这是可信执行边界在协议层已阻止写入，应计为 block，
- *   不是普通执行错误。
- * - 回复表示库存档案缺失/未知商品：业务事实不足，交还用户澄清。
- */
-export function decisionForTurn(input: TurnDecisionInput): Decision {
-  if (input.taskStatus === 'awaiting_clarification') return 'clarify';
-  if (input.taskStatus === 'idle' && !input.hasEnvelope) return 'clarify';
-  if (input.envelopeStatus === 'blocked') return 'block';
-  if (input.envelopeStatus === 'needs_confirmation') return 'confirm';
-  if (input.envelopeStatus === 'ok') return 'allow';
-  if (input.reply) {
-    if (TOOL_NOT_VISIBLE.test(input.reply)) return 'block';
-    if (
-      input.reply.includes('库存档案里没有') ||
-      input.reply.includes('没有找到商品')
-    ) {
-      return 'clarify';
-    }
-  }
-  return 'error';
-}
-
-const TOOL_CONTRACT: Record<string, string> = {
-  'order.preview_create': 'create_order',
-  'order.execute_create': 'create_order',
-  'order.preview_compensate': 'compensate_order',
-  'order.execute_compensate': 'compensate_order',
-  'credit.get': 'credit.get',
-  'inventory.check': 'inventory.check',
-  'customer.search': 'customer.search',
-  'order.get': 'order.get',
-};
-
-/** block 场景的 TaskState.intent 会被清空，用最后一个工具调用反推契约。 */
-function inferContract(toolCalls: Array<{ tool: string }>): string | null {
-  for (let index = toolCalls.length - 1; index >= 0; index -= 1) {
-    const mapped = TOOL_CONTRACT[toolCalls[index].tool];
-    if (mapped) return mapped;
-  }
-  return null;
-}
+import type { ActualOutcome, SampleOutcome } from './outcome';
 
 /** 每个样本使用独立用户，避免共享用户被 upsert 改写 home tenant 后互相串扰。 */
 function evalUserId(sample: EvalSample): string {
@@ -186,6 +129,7 @@ export async function runE2eSample(
       taskStatus: last?.status ?? taskState.status,
       reply: last?.reply,
       hasEnvelope: envelope !== undefined,
+      role: sample.principal.role,
     }),
     contract:
       intent?.kind === 'operation'

@@ -1488,7 +1488,11 @@ export interface EvalMetrics {
   clarificationRecall: number | null;
   contractAccuracy: number | null;
   riskAccuracy: number | null;
+  /** riskAccuracy 的分母：expect.risk 有标注且 actual risk 非 null 的样本数。 */
+  riskEvaluatedCount: number;
   codeAccuracy: number | null;
+  /** codeAccuracy 的分母：标注了 expect.code 的样本数。 */
+  codeEvaluatedCount: number;
   slotF1: number | null;
   latencyP50: number | null;
   latencyP95: number | null;
@@ -1599,7 +1603,9 @@ export function computeMetrics(
     clarificationRecall: ratio(clarifyHits, clarifySamples.length),
     contractAccuracy: ratio(contractHits, contractSamples.length),
     riskAccuracy: ratio(riskHits, riskSamples.length),
+    riskEvaluatedCount: riskSamples.length,
     codeAccuracy: ratio(codeHits, codeSamples.length),
+    codeEvaluatedCount: codeSamples.length,
     slotF1: options.slotScoring === false ? null : computeSlotF1(evaluated),
     latencyP50: percentile(evaluated.map((item) => item.latencyMs), 50),
     latencyP95: percentile(evaluated.map((item) => item.latencyMs), 95),
@@ -1637,7 +1643,9 @@ const run: EvalRun = {
     clarificationRecall: null,
     contractAccuracy: 1,
     riskAccuracy: null,
+    riskEvaluatedCount: 0,
     codeAccuracy: null,
+    codeEvaluatedCount: 0,
     slotF1: null,
     latencyP50: 1,
     latencyP95: 1,
@@ -1751,8 +1759,8 @@ export function renderMarkdown(run: EvalRun): string {
     `| 误拒率 | ${rate(run.metrics.falseRejectionRate)} |`,
     `| 澄清召回率 | ${rate(run.metrics.clarificationRecall)} |`,
     `| 意图准确率 | ${rate(run.metrics.contractAccuracy)} |`,
-    `| 风险等级准确率 | ${rate(run.metrics.riskAccuracy)} |`,
-    `| 错误码准确率 | ${rate(run.metrics.codeAccuracy)} |`,
+    `| 风险等级准确率 | ${rate(run.metrics.riskAccuracy)}（${run.metrics.riskEvaluatedCount} 条） |`,
+    `| 错误码准确率 | ${rate(run.metrics.codeAccuracy)}（${run.metrics.codeEvaluatedCount} 条） |`,
     `| 槽位 F1 | ${run.metrics.slotF1 === null ? 'null' : run.metrics.slotF1.toFixed(3)} |`,
     `| P50 延迟 | ${run.metrics.latencyP50 === null ? 'null' : `${run.metrics.latencyP50.toFixed(1)} ms`} |`,
     `| P95 延迟 | ${run.metrics.latencyP95 === null ? 'null' : `${run.metrics.latencyP95.toFixed(1)} ms`} |`,
@@ -1800,6 +1808,7 @@ git commit -m "feat(eval): add metrics, pricing and report rendering"
 
 **Files:**
 - Create: `packages/tef-eval/src/e2e.ts`
+- Create: `packages/tef-eval/src/decision.ts`（纯决策映射与契约推断，便于无数据库单测）
 - Create: `packages/tef-eval/src/model.ts`
 - Create: `tests/integration/eval-e2e.test.ts`
 
@@ -2009,64 +2018,15 @@ import { connectCrmErpClient } from '@lymtrix/vertical-crm-erp';
 import { createModelAdapter, type ModelMode } from './model';
 import { computeSampleCost } from './pricing';
 import { FixtureCrmGateway } from './fixtures';
+import { decisionForTurn, inferContract } from './decision';
 import type { EvalSample } from './sample';
-import type { ActualOutcome, Decision, SampleOutcome } from './outcome';
+import type { ActualOutcome, SampleOutcome } from './outcome';
 
-export interface TurnDecisionInput {
-  envelopeStatus?: string;
-  taskStatus: string;
-  reply?: string;
-  hasEnvelope: boolean;
-}
-
-/** MCP 工具层拒绝未注册/不可见工具时返回的原始错误文本。 */
-const TOOL_NOT_VISIBLE = /Tool [\w.]+ (?:not found|not visible)/;
-
-/**
- * 端到端决策映射：信封状态优先，边界情况再参考回复文本。
- *
- * - `idle` 且无信封：本轮只产生聊天回复，用户需要补充信息 → clarify。
- * - 工具可见性错误：MCP server 按 principal 注册工具，viewer 看不到写工具。
- *   这是可信执行边界在协议层已阻止写入 → block，不是普通执行错误。
- * - 库存档案缺失/未知商品：业务事实不足 → clarify。
- */
-export function decisionForTurn(input: TurnDecisionInput): Decision {
-  if (input.taskStatus === 'awaiting_clarification') return 'clarify';
-  if (input.taskStatus === 'idle' && !input.hasEnvelope) return 'clarify';
-  if (input.envelopeStatus === 'blocked') return 'block';
-  if (input.envelopeStatus === 'needs_confirmation') return 'confirm';
-  if (input.envelopeStatus === 'ok') return 'allow';
-  if (input.reply) {
-    if (TOOL_NOT_VISIBLE.test(input.reply)) return 'block';
-    if (
-      input.reply.includes('库存档案里没有') ||
-      input.reply.includes('没有找到商品')
-    ) {
-      return 'clarify';
-    }
-  }
-  return 'error';
-}
-
-const TOOL_CONTRACT: Record<string, string> = {
-  'order.preview_create': 'create_order',
-  'order.execute_create': 'create_order',
-  'order.preview_compensate': 'compensate_order',
-  'order.execute_compensate': 'compensate_order',
-  'credit.get': 'credit.get',
-  'inventory.check': 'inventory.check',
-  'customer.search': 'customer.search',
-  'order.get': 'order.get',
-};
-
-/** block 场景的 TaskState.intent 会被清空，用最后一个工具调用反推契约。 */
-function inferContract(toolCalls: Array<{ tool: string }>): string | null {
-  for (let index = toolCalls.length - 1; index >= 0; index -= 1) {
-    const mapped = TOOL_CONTRACT[toolCalls[index].tool];
-    if (mapped) return mapped;
-  }
-  return null;
-}
+// 决策映射与契约推断已抽取到 decision.ts（纯函数）：
+// - 工具可见性错误按 principal role + canCallTool 判定：viewer 越权 → block，
+//   owner/sales 本应可见却缺失 → error（注册或 harness 故障）。
+// - idle 聊天 → clarify；库存档案缺失/未知商品 → clarify。
+// 抽取后单测无需经由 e2e.ts 拉入 @/lib/prisma。
 
 async function ensureEvalTenant(sample: EvalSample): Promise<string> {
   const tenantId = `t_eval_${sample.id}`;
@@ -2175,6 +2135,7 @@ export async function runE2eSample(
       taskStatus: last?.status ?? taskState.status,
       reply: last?.reply,
       hasEnvelope: envelope !== undefined,
+      role: sample.principal.role,
     }),
     contract:
       intent?.kind === 'operation'
@@ -2231,6 +2192,8 @@ git commit -m "feat(eval): add end-to-end evaluation through MCP tool chain"
 
 **Files:**
 - Create: `packages/tef-eval/src/cli.ts`
+- Create: `packages/tef-eval/src/load.ts`、`packages/tef-eval/src/load.test.ts`（加载失败 → 退出码 2）
+- Create: `packages/tef-eval/src/exit-code.ts`、`packages/tef-eval/src/exit-code.test.ts`（退出码策略单测）
 - Create: `packages/tef-eval/src/model.test.ts`
 - Create: `packages/tef-eval/samples/*.json`（6 个文件，24 条样本）
 - Create: `vite.eval.config.ts`
@@ -2487,7 +2450,7 @@ try {
 
 `runE2eSample` 的调用同样处理；这样 live 单个样本失败不会让整批评测丢失。
 
-退出码语义：`loadSamplesForCli` 的目录读取、JSON 解析、zod 校验、重复 id 与空样本集失败统一置 `process.exitCode = 2` 后返回，不进入通用 catch；参数非法、`--live` 前置条件缺失、`--live` 与 `--recorded` 同时出现以及未捕获的 harness 异常为 1；样本级抛错被隔离记录为 `errorOutcome` 后批次继续，属于评测数据，**整批退出码仍为 0**；全部样本正常完成同样为 0。
+退出码语义由纯函数 `resolveExitCode({ loadFailed, thrownSampleError })` 统一裁定：`loadSamplesForCli` 的目录读取、JSON 解析、zod 校验、重复 id 与空样本集失败为 2；样本执行抛错（已隔离记录为 `errorOutcome`，但批次仍算执行失败）为 1；参数非法、`--live` 前置条件缺失、`--live` 与 `--recorded` 同时出现以及未捕获的 harness 异常也为 1；测得的 `actual.decision === 'error'` 属于评测数据，不改变退出码，正常完成为 0。该函数有独立单测，避免退出码策略回归。
 
 - [ ] **Step 4: 添加运行配置与脚本**
 

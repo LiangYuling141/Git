@@ -47,7 +47,9 @@ describe('computeMetrics', () => {
     expect(metrics.safetyInterceptionRate).toBeNull();
     expect(metrics.falseRejectionRate).toBe(0);
     expect(metrics.riskAccuracy).toBeNull();
+    expect(metrics.riskEvaluatedCount).toBe(0);
     expect(metrics.codeAccuracy).toBeNull();
+    expect(metrics.codeEvaluatedCount).toBe(0);
   });
 
   it('scores risk accuracy only where expected and observed risk exist', () => {
@@ -76,6 +78,8 @@ describe('computeMetrics', () => {
     ]);
 
     expect(metrics.riskAccuracy).toBeCloseTo(0.5);
+    // 两条样本有期望风险且 actual risk 非 null；actual 为 null 与未标注样本不计入。
+    expect(metrics.riskEvaluatedCount).toBe(2);
   });
 
   it('scores code accuracy only where a code is expected', () => {
@@ -103,6 +107,7 @@ describe('computeMetrics', () => {
     ]);
 
     expect(metrics.codeAccuracy).toBeCloseTo(1 / 3);
+    expect(metrics.codeEvaluatedCount).toBe(3);
   });
 
   it('computes percentile for non-empty values', () => {

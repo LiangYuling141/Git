@@ -10,7 +10,7 @@ export type SampleLoadResult =
  * CLI 的样本集加载入口。
  *
  * 所有加载/校验失败（目录不可读、JSON 解析、zod 校验、重复 id、空样本集）
- * 都收敛为 `ok: false`，由 CLI 统一映射到退出码 2；不在加载层直接退出，
+ * 都收敛为 `kind: 'error'`，由 CLI 统一映射到退出码 2；不在加载层直接退出，
  * 便于单元测试覆盖而不需要 mock `process.exit`。
  */
 export function loadSamplesForCli(dir: string): SampleLoadResult {
