@@ -36,5 +36,32 @@ describe('seed sample set', () => {
     expect(
       outcomes.every((outcome) => Array.isArray(outcome.actual.clarifySlots)),
     ).toBe(true);
+
+    // 未知契约说明样本或契约注册与实现脱节，必须作为测试失败暴露。
+    expect(
+      outcomes
+        .filter((outcome) => outcome.actual.code === 'UNKNOWN_CONTRACT')
+        .map((outcome) => outcome.sampleId),
+    ).toEqual([]);
+
+    // 种子集是回归基线：离线层每条计分样本的决策与契约都必须与期望一致。
+    // 跳过样本不计分，不参与比较。
+    const mismatches = outcomes
+      .filter((outcome) => !outcome.skipped)
+      .filter(
+        (outcome) =>
+          outcome.actual.decision !== outcome.expected.decision ||
+          (outcome.expected.contract !== undefined &&
+            outcome.actual.contract !== outcome.expected.contract),
+      )
+      .map((outcome) => ({
+        sampleId: outcome.sampleId,
+        expectedDecision: outcome.expected.decision,
+        actualDecision: outcome.actual.decision,
+        expectedContract: outcome.expected.contract ?? null,
+        actualContract: outcome.actual.contract,
+        reasons: outcome.actual.reasons,
+      }));
+    expect(mismatches).toEqual([]);
   });
 });

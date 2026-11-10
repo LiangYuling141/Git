@@ -1,6 +1,6 @@
 # Phase C：P1 收尾——执行状态机、故障注入与并发实施计划
 
-> **状态：已完成（2026-11-10）。** 五个任务全部落地；验收时基线（含最终评审修复）`TEF_DB_TESTS=1 npm test` 共 414 项测试通过（339 单元 + 75 真实数据库），typecheck、lint、boundaries:check、secrets:check、build 全部通过；Phase D 后当前全量 564 项（488 单元 + 76 真实数据库）。已知限制与后续项见文末“完成状态与已知限制”。
+> **状态：已完成（2026-11-10）。** 五个任务全部落地；验收时基线（含最终评审修复）`TEF_DB_TESTS=1 npm test` 共 414 项测试通过（339 单元 + 75 真实数据库），typecheck、lint、boundaries:check、secrets:check、build 全部通过；Phase D 后当前全量 578 项（502 单元 + 76 真实数据库）。已知限制与后续项见文末“完成状态与已知限制”。
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 
@@ -408,7 +408,7 @@ Expected: 全部通过；文档计数与实际一致。
 
 ### 验证记录（2026-11-10）
 
-- `TEF_DB_TESTS=1 npm test`：验收时 414 项通过（339 单元 + 75 真实数据库），其中 19 项为最终评审修复新增；Phase D 后当前全量 564 项（488 单元 + 76 真实数据库）。
+- `TEF_DB_TESTS=1 npm test`：验收时 414 项通过（339 单元 + 75 真实数据库），其中 19 项为最终评审修复新增；Phase D 后当前全量 578 项（502 单元 + 76 真实数据库）。
 - `npm run typecheck`、`npm run lint`、`npm run boundaries:check`、`npm run secrets:check`、`npm run build`：全部通过。
 - Phase C 新增/改写测试：执行状态机与结算、进程内执行器幂等与并发、对账故障注入（`tests/integration/execution-recovery.test.ts` 12 项）、执行结算（2 项）、执行器单测（4 + 5 项）；最终评审修复新增 Runtime 执行结果映射（6 项）、确认结果映射（5 项）、effects 路由未知映射（3 项）、HTTP 网关 unknown 映射（2 项）与同 key 重试集成测试（1 项）。
 

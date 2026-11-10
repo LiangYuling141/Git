@@ -4,6 +4,7 @@ import { runAgentTurn, taskStateStore, type TokenUsage } from '@lymtrix/tef-runt
 import { connectCrmErpClient } from '@lymtrix/vertical-crm-erp';
 import { createModelAdapter, type ModelMode } from './model';
 import { computeSampleCost } from './pricing';
+import { EvalRunError } from './errors';
 import { FixtureCrmGateway } from './fixtures';
 import {
   decisionForTurn,
@@ -122,8 +123,12 @@ export async function runE2eSample(
       // 只有在“本轮确实调用了模型”时才判定回落，避免误伤澄清恢复等跳过模型的轮次。
       const chatCalled = chatCallCount > chatCallsBefore;
       if (shouldFailOnFallback(modelMode, chatCalled, last.intentSource)) {
-        throw new Error(
+        // 抛出前已经发生的模型调用必须随异常带走；CLI 隔离为 errorOutcome 时
+        // 仍能计入 token 与成本，避免报告低估真实消耗。
+        throw new EvalRunError(
           `sample ${sample.id}: model mode ${modelMode} fell back to deterministic on turn ${index}`,
+          [...usages],
+          computeSampleCost(usages, modelMode),
         );
       }
       taskState = await taskStateStore.update(

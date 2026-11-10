@@ -806,7 +806,7 @@ sequenceDiagram
 | 评测 e2e 集成 | 3 条代表样本经真实 MCP 工具链与 fixture 网关跑通，断言 traceId 与 clarifySlots | `tests/integration/eval-e2e.test.ts` | 1（需 `TEF_DB_TESTS=1`） |
 | 执行器集成 | 进程内 effects 执行器幂等、并发与重放 | `verticals/crm-erp-mcp/src/gateway/effects-executor.test.ts` | 4（需 `TEF_DB_TESTS=1`） |
 
-> 另有遗留测试 `src/agents/SubAgent.validation.test.ts`（2 个）计入 488 个单元测试总数；它属于旧投票路径，不在 TEF 模块映射内。
+> 另有遗留测试 `src/agents/SubAgent.validation.test.ts`（2 个）计入 502 个单元测试总数；它属于旧投票路径，不在 TEF 模块映射内。
 >
 > `BusinessGateway` 是 Phase B2 CRM HTTP 网关的端口：核心只定义泛型 `query` + `executeEffects`，不含 CRM 字段；CRM DTO 与类型化读方法通过垂直包的 `CrmBusinessGateway extends BusinessGateway` 扩展。Phase B2 默认仍使用进程内 Prisma 实现（`PrismaCrmGateway`），仅显式设置 `TEF_CRM_GATEWAY=http` 时切换为 `HttpCrmGateway`；垂直查询工具与契约 `loadEvidence` 均经该端口读取业务数据。
 
@@ -834,10 +834,10 @@ sequenceDiagram
 
 | 层级 | 范围 | 数量 | 运行条件 |
 |------|------|------|----------|
-| 单元测试 | 契约引擎、风险、哈希、快照、令牌、审计链、意图、Runtime 执行结果映射、MCP、创建与补偿契约、Prisma/HTTP 业务网关、执行器重读语义、确认执行计划与结果映射、effects 路由未知映射、包边界检查、Phase D 评测 harness（`packages/tef-eval` 的 sample/offline/e2e/metrics/report/model/CLI 逻辑） | 488 | `npm test` 默认运行 |
+| 单元测试 | 契约引擎、风险、哈希、快照、令牌、审计链、意图、Runtime 执行结果映射、MCP、创建与补偿契约、Prisma/HTTP 业务网关、执行器重读语义、确认执行计划与结果映射、effects 路由未知映射、包边界检查、Phase D 评测 harness（`packages/tef-eval` 的 sample/offline/e2e/metrics/report/model/CLI 逻辑） | 502 | `npm test` 默认运行 |
 | 数据库集成测试 | Phase 0 闭环/攻击场景（19）+ Phase 1 补偿闭环（9）+ 内部 HTTP 网关（29）+ 执行结算（2）+ 执行状态机/对账/故障注入（12）+ 进程内执行器（4）+ Phase D 评测 e2e（1） | 76 | `TEF_DB_TESTS=1` 且 `DATABASE_URL` 可用 |
 
-本地实测（2026-11-10）：488 个单元测试通过；设置 `TEF_DB_TESTS=1` 后 564 个测试全部通过（488 单元 + 76 数据库）；typecheck、lint、boundaries:check、secrets:check 与 build 通过。
+本地实测（2026-11-10）：502 个单元测试通过；设置 `TEF_DB_TESTS=1` 后 578 个测试全部通过（502 单元 + 76 数据库）；typecheck、lint、boundaries:check、secrets:check 与 build 通过。
 
 ### 9.3 CI 流水线
 
@@ -910,7 +910,7 @@ npm run rls:verify
 
 | 阶段 | 目标 | 状态（2026-11-10） |
 |------|------|--------------------|
-| **Phase 0** | 跑通赊账订单闭环：租户、契约引擎、查询工具、预览/执行、令牌、快照、审计 | **已完成**。多租户、契约引擎、13 个 MCP 工具、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、TaskState、最小 Agent Runtime、确认 UI 全部可运行；当前全量 564 个测试（488 单元 + 76 真实数据库）在 CI 中持续验证 |
+| **Phase 0** | 跑通赊账订单闭环：租户、契约引擎、查询工具、预览/执行、令牌、快照、审计 | **已完成**。多租户、契约引擎、13 个 MCP 工具、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、TaskState、最小 Agent Runtime、确认 UI 全部可运行；当前全量 578 个测试（502 单元 + 76 真实数据库）在 CI 中持续验证 |
 | **Phase 1** | 完善写入协议：L1 自动执行、冲突恢复、补偿、澄清 | **已完成主要项**。L1 自动执行、澄清（上限 3 轮）、`CONFLICT` 检测与旧令牌作废、`compensate_order` 契约与完整补偿运行时（preview → L2 → 人工确认 → execute）均已实现并有测试 |
 | **Phase B2** | CRM 内部 HTTP 网关：`query`、`effects:execute`、`HttpCrmGateway` 与切换工厂 | **已完成**。内部端点使用服务令牌鉴权、租户绑定、effect 白名单与同事务幂等；默认仍为进程内 Prisma，HTTP 通道含 query 与默认关闭的 effects:execute，但契约执行仍走本地适配器并受已知限制约束（见 §11），跨服务 effects 接线留待 B3 |
 | **Phase C** | P1 收尾：执行状态机、`execution_attempts`、预审计 `pending`、UNKNOWN 对账、故障注入与并发 | **已完成**。两阶段执行 + 三阶段语义、进程内幂等执行器、对账补写结果审计、故障注入与并发测试全部落地；保证按幂等键计的副作用 at-most-once。已知限制见 §10.3 |

@@ -114,6 +114,23 @@ describe('offline eval layer', () => {
     expect(outcome.skipped).toBe('non_contract');
   });
 
+  // 查询工具白名单从 MCP 工具目录派生：agent 可见且 viewer 可调用的工具
+  // 都被视为查询工具，新增治理/审计查询时不能再靠手写列表同步。
+  it.each(['audit.trace', 'policy.get'])(
+    'treats %s as a known query tool instead of an unknown contract',
+    async (tool) => {
+      const outcome = await runOfflineSample(
+        sample({
+          intent: { contract: tool, slots: {} },
+          expect: { decision: 'allow', contract: tool },
+        }),
+      );
+      expect(outcome.skipped).toBe('non_contract');
+      expect(outcome.actual.code).toBe('NON_CONTRACT_OPERATION');
+      expect(outcome.actual.code).not.toBe('UNKNOWN_CONTRACT');
+    },
+  );
+
   it('skips deterministic chat/compound instead of scoring it as a contract decision', async () => {
     const outcome = await runOfflineSample(
       sample({

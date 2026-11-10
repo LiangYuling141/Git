@@ -142,7 +142,9 @@
 4. **风险覆盖不足**：10 条标注 `expect.risk` 的样本中只有 4 条进入风险判定，覆盖率 40.0%；其余 6 条因澄清未产生风险等级，按未命中计分。
 5. **澄清槽位未命中 1 条**：`ambiguous_same_name` 期望追问 `customer`，模型追问 `depositRate`、`termsDays`。这是模型过度澄清可选字段的实测表现，未修改样本或提示词来迎合指标。
 
-未修改任何 `expect`、未放宽指标。上述结果是本轮 live 录制响应的回放实测记录。
+未修改 decision/risk/contract/code 期望；仅新增 clarifySlots 标注；未放宽指标。上述结果是本轮 live 录制响应的回放实测记录。
+
+Phase 2 设计决定：保持严格的模型提示词不变（缺字段必须澄清，不得猜测）。需要进入契约校验的后续样本将显式给出 `depositRate` / `termsDays` 等可选字段；这是样本设计层面的修复，不修改运行时提示词，也不把模型澄清回退成放行。
 
 ## 4. 录制回放验证
 
@@ -218,7 +220,7 @@ npm run eval -- --mode offline
 
 - [Phase D 评测 Harness 设计](../superpowers/specs/2026-11-10-phase-d-eval-harness-design.md) — 双层 harness、样本 schema、指标口径与已知限制
 - [Phase D 评测 Harness 实施计划](../superpowers/plans/2026-11-10-phase-d-eval-harness.md) — 任务拆分、验收标准与验证记录
-- [持久证据：live 运行](evidence/phase-d-live/) — live e2e/offline 的 canonical `results.json`/`report.md`（P50/P95 与成本来源，原样复制）
+- [持久证据：live 运行](evidence/phase-d-live/) — live e2e/offline 的 canonical `results.json`/`report.md`（P50/P95 与成本来源，原样复制）；[README](evidence/phase-d-live/README.md) 说明这些产物早于指标修复，旧风险 100% 口径不得与基线 40% 混用
 - [持久证据：录制回放](evidence/phase-d-recorded-replay/) — 回放 e2e 与确定性重跑 offline 的 `results.json`/`report.md`，含每条样本 traceId
 - [项目框架总览](../00-framework.md) — 实施进度与已知边界
 - [挑战杯项目设计说明书 §8](../competition/挑战杯项目设计说明书.md) — 评测方案与当前进度

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SampleOutcome } from './outcome';
 import { estimateCost } from './pricing';
-import { renderJson, renderMarkdown, type EvalRun } from './report';
+import { renderJson, renderMarkdown, reportModel, type EvalRun } from './report';
 
 const OUTCOMES: SampleOutcome[] = [
   {
@@ -77,6 +77,61 @@ const run: EvalRun = {
   samples: OUTCOMES,
   notes: [],
 };
+
+describe('reportModel', () => {
+  function withUsage(model: string): SampleOutcome {
+    return {
+      ...OUTCOMES[0],
+      usage: [{ model, promptTokens: 1, completionTokens: 1, totalTokens: 2 }],
+    };
+  }
+
+  it('reports none/none for the offline layer even in live mode', () => {
+    expect(reportModel('live', 'offline', [withUsage('deepseek-flash')])).toEqual({
+      name: 'none',
+      provider: 'none',
+    });
+  });
+
+  it('reports the observed mode for non-live e2e layers', () => {
+    expect(reportModel('deterministic', 'e2e', [])).toEqual({
+      name: 'deterministic',
+      provider: 'none',
+    });
+    expect(reportModel('recorded', 'e2e', [withUsage('deepseek-flash')])).toEqual({
+      name: 'recorded',
+      provider: 'none',
+    });
+  });
+
+  it('derives deepseek provider from a single observed live model', () => {
+    expect(reportModel('live', 'e2e', [withUsage('deepseek-flash')])).toEqual({
+      name: 'deepseek-flash',
+      provider: 'deepseek',
+    });
+  });
+
+  it('does not hardcode DeepSeek for an unknown live provider', () => {
+    expect(reportModel('live', 'e2e', [withUsage('gpt-4o')])).toEqual({
+      name: 'gpt-4o',
+      provider: 'unknown',
+    });
+  });
+
+  it('reports unknown when live e2e produced no usage', () => {
+    expect(reportModel('live', 'e2e', [])).toEqual({ name: 'unknown', provider: 'unknown' });
+    expect(reportModel('live', 'e2e', [OUTCOMES[0]])).toEqual({
+      name: 'unknown',
+      provider: 'unknown',
+    });
+  });
+
+  it('reports mixed when live e2e observed more than one model', () => {
+    expect(
+      reportModel('live', 'e2e', [withUsage('deepseek-flash'), withUsage('deepseek-chat')]),
+    ).toEqual({ name: 'mixed', provider: 'unknown' });
+  });
+});
 
 describe('pricing and report', () => {
   it('returns null when usage is missing', () => {

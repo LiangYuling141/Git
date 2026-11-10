@@ -5,11 +5,12 @@ import { prisma } from '@/lib/prisma';
 import { parseEvalOptions } from './cli-options';
 import { loadSamplesForCli } from './load';
 import { resolveExitCode } from './exit-code';
+import { errorOutcome } from './errors';
 import type { EvalSample } from './sample';
 import { runOfflineSample } from './offline';
 import { runE2eSample } from './e2e';
 import { computeMetrics } from './metrics';
-import { renderJson, renderMarkdown, type EvalMode, type EvalRun } from './report';
+import { renderJson, renderMarkdown, reportModel, type EvalMode, type EvalRun } from './report';
 import type { SampleOutcome } from './outcome';
 
 dotenv.config({ path: '.env', quiet: true });
@@ -21,14 +22,19 @@ function fail(message: string): never {
 
 /**
  * 退出码约定由 `resolveExitCode` 统一裁定：
- * 0 正常完成（含测得的 error 决策）；1 样本执行抛错/配置或 harness 失败；
+ * 0 正常完成（含测得的 error 决策）；1 样本执行抛错/配置或 harness 失败
+ * （含样本引用了既非已注册契约、也非已知查询工具的 operation）；
  * 2 样本集加载/校验失败。
  */
 function loadSamplesOrExit(dir: string): EvalSample[] | null {
   const result = loadSamplesForCli(dir);
   if (result.kind === 'error') {
     console.error(result.message);
-    process.exitCode = resolveExitCode({ loadFailed: true, thrownSampleError: false });
+    process.exitCode = resolveExitCode({
+      loadFailed: true,
+      thrownSampleError: false,
+      unknownContract: false,
+    });
     return null;
   }
   return result.samples;
@@ -38,30 +44,6 @@ function runId(): string {
   return `eval_${new Date().toISOString().replace(/[-:.TZ]/g, '')}_${Math.random()
     .toString(36)
     .slice(2, 8)}`;
-}
-
-/** 单样本错误隔离：一条样本失败只记录 error outcome，不中止整批评测。 */
-function errorOutcome(sample: EvalSample, error: unknown, started: number): SampleOutcome {
-  const message = error instanceof Error ? error.message : String(error);
-  return {
-    sampleId: sample.id,
-    category: sample.category,
-    expected: sample.expect,
-    actual: {
-      decision: 'error',
-      contract: null,
-      slots: {},
-      risk: null,
-      clarifySlots: [],
-      code: 'EVAL_RUN_ERROR',
-      reasons: [message],
-    },
-    intentSource: 'none',
-    latencyMs: performance.now() - started,
-    // 执行异常时没有真实决策链，仍给出确定性 traceId，保证报告
-    // “每条样本都有 traceId”的陈述对 error outcome 同样成立。
-    traceId: `tr_eval_${sample.id}_error`,
-  };
 }
 
 async function main(): Promise<void> {
@@ -97,6 +79,8 @@ async function main(): Promise<void> {
   let thrownSampleError = false;
   // e2e 被显式请求却因数据库缺失跳过时，必须非零退出（除非 --allow-missing-db）。
   let e2eSkipped = false;
+  // 样本引用了未知契约属于配置/样本集错误，不能被当成“测得的 error 决策”静默通过。
+  let unknownContract = false;
   const allOutcomes: SampleOutcome[] = [];
 
   for (const layer of requested) {
@@ -141,6 +125,9 @@ async function main(): Promise<void> {
       notes.push('端到端层使用 fixture 业务证据，不等价于生产业务网关。');
     }
 
+    if (outcomes.some((outcome) => outcome.actual.code === 'UNKNOWN_CONTRACT')) {
+      unknownContract = true;
+    }
     notes.push('种子样本规模不足以支持统计显著性，比例指标与 P95 仅作工程趋势参考。');
     const run = buildRun(id, startedAt, evalMode, layer, samples, outcomes, notes);
     const layerDir = join(outDir, layer);
@@ -161,26 +148,10 @@ async function main(): Promise<void> {
   process.exitCode = resolveExitCode({
     loadFailed: false,
     thrownSampleError,
+    unknownContract,
     e2eSkipped,
     allowMissingDb: options.allowMissingDb,
   });
-}
-
-/**
- * 报告中的模型名来自实际观测到的 usage，而不是 CLI 的请求假设。
- * 修改 DEEPSEEK_MODEL 后仍能如实标注；没有 usage 记为 unknown，
- * 多个模型（或别名漂移）记为 mixed。
- */
-function reportModel(
-  evalMode: EvalMode,
-  outcomes: SampleOutcome[],
-): { name: string; provider: string } {
-  if (evalMode !== 'live') return { name: evalMode, provider: 'none' };
-  const models = new Set(
-    outcomes.flatMap((outcome) => (outcome.usage ?? []).map((usage) => usage.model)),
-  );
-  const name = models.size === 0 ? 'unknown' : models.size === 1 ? [...models][0] : 'mixed';
-  return { name, provider: 'deepseek' };
 }
 
 function buildRun(
@@ -198,7 +169,7 @@ function buildRun(
     startedAt,
     mode: evalMode,
     layer,
-    model: reportModel(evalMode, outcomes),
+    model: reportModel(evalMode, layer, outcomes),
     // sampleCount 表示实际产出的 outcome 数；被跳过的层为 0，
     // 请求规模由 requestedSampleCount 单独记录，避免“24 条样本 0 条指标”的误读。
     sampleCount: outcomes.length,

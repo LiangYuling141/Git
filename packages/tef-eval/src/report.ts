@@ -18,6 +18,32 @@ export interface EvalRun {
   notes: string[];
 }
 
+/**
+ * 报告中的模型名来自实际观测到的 usage，而不是 CLI 的请求假设。
+ *
+ * - 离线层不调用模型：`none/none`，不能用 deterministic 伪装成“用了模型”；
+ * - 端到端非 live 模式：记录模式名（deterministic/mock/recorded），provider 为 none；
+ * - 端到端 live：没有 usage 记为 unknown，多个模型（或别名漂移）记为 mixed；
+ *   provider 只在名称以 deepseek 开头时才标为 deepseek，其余一律 unknown，
+ *   不把未知服务商硬编码成 DeepSeek。
+ */
+export function reportModel(
+  evalMode: EvalMode,
+  layer: EvalRun['layer'],
+  outcomes: SampleOutcome[],
+): { name: string; provider: string } {
+  if (layer === 'offline') return { name: 'none', provider: 'none' };
+  if (evalMode !== 'live') return { name: evalMode, provider: 'none' };
+  const models = new Set(
+    outcomes.flatMap((outcome) => (outcome.usage ?? []).map((usage) => usage.model)),
+  );
+  const name = models.size === 0 ? 'unknown' : models.size === 1 ? [...models][0] : 'mixed';
+  return {
+    name,
+    provider: name.startsWith('deepseek') ? 'deepseek' : 'unknown',
+  };
+}
+
 export function renderJson(run: EvalRun): string {
   return `${JSON.stringify(run, null, 2)}\n`;
 }

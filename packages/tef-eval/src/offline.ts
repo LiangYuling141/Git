@@ -6,6 +6,7 @@ import {
   type RiskOutcome,
 } from '@lymtrix/tef-core';
 import { parseIntentDeterministic } from '@lymtrix/tef-runtime';
+import { canCallTool, toolsForClient } from '@lymtrix/tef-mcp-kit';
 import { ZodError } from 'zod';
 import { registerCreditOrderContracts } from '@lymtrix/vertical-crm-erp';
 import { FixtureCrmGateway } from './fixtures';
@@ -20,19 +21,18 @@ const DEFAULT_NOW = '2026-01-01T00:00:00.000Z';
 /**
  * 已知的查询工具白名单。
  *
+ * 不再手写列表：从 MCP 工具目录派生——agent 可见、且 viewer 角色可调用的工具
+ * 就是查询类工具（写工具和治理工具都会在 viewer 的 scope 校验中失败）。
+ * 这样目录新增 `audit.trace`、`policy.get` 一类查询工具时，离线层自动同步，
+ * 不会把真实查询工具误报为 `UNKNOWN_CONTRACT`。
+ *
  * 离线层只评测已注册契约；这些工具没有契约，属于设计内的非契约操作，
  * 标记跳过而不是错误。未知 operation 则说明样本或契约注册出了问题，
  * 必须作为 `UNKNOWN_CONTRACT` 错误暴露，不能静默跳过。
  */
-const KNOWN_QUERY_TOOLS = new Set([
-  'credit.get',
-  'inventory.check',
-  'customer.search',
-  'customer.get',
-  'order.get',
-  'whitelist.list',
-  'tenant.config.get',
-]);
+const KNOWN_QUERY_TOOLS = new Set(
+  toolsForClient('agent').filter((tool) => canCallTool('viewer', tool)),
+);
 
 function decisionFor(blocked: boolean, risk: RiskOutcome): Decision {
   if (blocked) return 'block';

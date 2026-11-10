@@ -6,7 +6,7 @@
 > - live：`TEF_MODEL_TESTS=1 TEF_DB_TESTS=1 npm run eval -- --mode all --live` → runId `eval_20261110064949674_8dlcta`；端到端层 24/24 执行
 > - 离线确定性重跑：`npm run eval -- --mode offline` → runId `eval_20261110075310224_g8zpzr`；21 条计分 + 3 条 `skipped_non_contract`
 > - 录制回放：`TEF_DB_TESTS=1 npm run eval -- --mode e2e --recorded packages/tef-eval/recordings` → runId `eval_20261110075310927_wf2zgg`，24/24 决策与 live 一致；持久证据 [docs/eval/evidence/phase-d-recorded-replay/](../../eval/evidence/phase-d-recorded-replay/)
-> - 全量验证：`npm run typecheck`、`npm run lint`、`npm run boundaries:check`、`npm run secrets:check`、`TEF_DB_TESTS=1 npm test`（564 passed：488 单元 + 76 数据库）、`npm run build` 全部通过
+> - 全量验证：`npm run typecheck`、`npm run lint`、`npm run boundaries:check`、`npm run secrets:check`、`TEF_DB_TESTS=1 npm test`（578 passed：502 单元 + 76 数据库）、`npm run build` 全部通过
 > - 首版报告：[../../eval/phase-d-baseline.md](../../eval/phase-d-baseline.md)
 >
 > **后续修正说明（最终评审）**：本计划中的代码片段保留任务实施时的形态；指标口径、`clarifySlots`、usage/成本覆盖、e2e 缺库退出码与录制路径安全以当前 `packages/tef-eval` 代码与 [Phase D 设计 spec](../specs/2026-11-10-phase-d-eval-harness-design.md) 为准。
@@ -2472,7 +2472,7 @@ try {
 
 `runE2eSample` 的调用同样处理；这样 live 单个样本失败不会让整批评测丢失。
 
-退出码语义由纯函数 `resolveExitCode({ loadFailed, thrownSampleError, e2eSkipped, allowMissingDb })` 统一裁定：`loadSamplesForCli` 的目录读取、JSON 解析、zod 校验、重复 id 与空样本集失败为 2；样本执行抛错（已隔离记录为 `errorOutcome`，但批次仍算执行失败）为 1；参数非法、`--live` 前置条件缺失、`--live` 与 `--recorded` 同时出现以及未捕获的 harness 异常也为 1；端到端层被请求却因数据库缺失跳过时同样为 1，只有显式 `--allow-missing-db` 才允许 0；测得的 `actual.decision === 'error'` 属于评测数据，不改变退出码，正常完成为 0。该函数有独立单测，避免退出码策略回归。
+退出码语义由纯函数 `resolveExitCode({ loadFailed, unknownContract, thrownSampleError, e2eSkipped, allowMissingDb })` 统一裁定：`loadSamplesForCli` 的目录读取、JSON 解析、zod 校验、重复 id 与空样本集失败为 2；样本引用既非已注册契约也非已知查询工具的 operation（`UNKNOWN_CONTRACT`）为 1（配置/样本集错误，不能当成测得的 `error` 决策）；样本执行抛错（已隔离记录为 `errorOutcome`，但批次仍算执行失败）为 1；参数非法、`--live` 前置条件缺失、`--live` 与 `--recorded` 同时出现以及未捕获的 harness 异常也为 1；端到端层被请求却因数据库缺失跳过时同样为 1，只有显式 `--allow-missing-db` 才允许 0；测得的 `actual.decision === 'error'` 属于评测数据，不改变退出码，正常完成为 0。该函数有独立单测，避免退出码策略回归。
 
 - [ ] **Step 4: 添加运行配置与脚本**
 
@@ -2817,7 +2817,7 @@ npm run secrets:check
 TEF_DB_TESTS=1 npm test
 npm run build
 ```
-Expected: 全部通过；当前全量基线 564 项（488 单元 + 76 数据库）。
+Expected: 全部通过；当前全量基线 578 项（502 单元 + 76 数据库）。
 
 - [ ] **Step 6: 同步文档**
 

@@ -264,14 +264,14 @@ npm run eval -- --mode all --live
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | `--mode` | `all` | `offline` / `e2e` / `all` |
-| `--samples` | `packages/tef-eval/samples/*.json` | 样本 glob |
+| `--samples` | `packages/tef-eval/samples` | 样本目录（loader 读取目录内全部 `*.json`） |
 | `--live` | 关闭 | 启用真实模型，需 `TEF_MODEL_TESTS=1` 与 Key |
 | `--recorded` | 无 | 指定录制目录后使用 recorded 模式；与 `--live` 互斥 |
 | `--allow-missing-db` | 关闭 | 端到端层因数据库缺失跳过时仍以退出码 0 结束 |
 | `--out` | `eval-results/<runId>` | 输出目录 |
 | `--verbose` | 关闭 | 输出每条样本执行日志 |
 
-退出码：0 正常完成（不要求指标达标，样本级 `errorOutcome` 属于评测数据，不改变退出码）、1 配置或执行错误（含 `--live` 与 `--recorded` 同时出现、端到端层被请求却因数据库缺失跳过且未传 `--allow-missing-db`）、2 样本集加载/校验失败。端到端层在缺少数据库时明确输出 `skipped: DATABASE_URL/TEF_DB_TESTS`，并写入带 `skipped` 说明的 `results.json`；默认以退出码 1 结束，避免 CI 把“未执行”当成通过。仅需离线结果时应使用 `--mode offline`。
+退出码：0 正常完成（不要求指标达标，样本级 `errorOutcome` 属于评测数据，不改变退出码）、1 配置或执行错误（含 `--live` 与 `--recorded` 同时出现、样本引用既非已注册契约也非已知查询工具的 operation（`UNKNOWN_CONTRACT`）、端到端层被请求却因数据库缺失跳过且未传 `--allow-missing-db`）、2 样本集加载/校验失败。未知契约按配置失败处理，不得被当成普通 `error` 决策静默通过。端到端层在缺少数据库时明确输出 `skipped: DATABASE_URL/TEF_DB_TESTS`，并写入带 `skipped` 说明的 `results.json`；默认以退出码 1 结束，避免 CI 把“未执行”当成通过。仅需离线结果时应使用 `--mode offline`。
 
 运行结束后 CLI 打印评测租户前缀 `t_eval_` 与本次全部 `traceId`，便于按租户前缀清理治理数据、按 traceId 定位决策链。
 
@@ -342,7 +342,7 @@ eval-results/<runId>/
 - `samples.test.ts`：真实种子集回归——24 条、六类各 4 条、id 唯一、消息非空、全部可离线执行且不抛错。
 - `report.test.ts`：JSON 与 Markdown 渲染、`null` 成本、覆盖率、skipped 状态/原因列、表格管道符与换行转义、`traceId` 持久化/渲染。
 - `tests/integration/eval-e2e.test.ts`：3 条代表样本（normal L1、L2 confirm、adversarial block）在真实数据库与 fixture 网关下端到端跑通，并断言每条 outcome 持久化 `traceId` 与 `clarifySlots`。
-- 全量测试基线 564 项（488 单元 + 76 数据库）全部保持通过；`packages/tef-eval` 已纳入测试范围，数据库计数包含 eval e2e 集成测试。
+- 全量测试基线 578 项（502 单元 + 76 数据库）全部保持通过；`packages/tef-eval` 已纳入测试范围，数据库计数包含 eval e2e 集成测试。
 
 ### 10.2 验收
 
