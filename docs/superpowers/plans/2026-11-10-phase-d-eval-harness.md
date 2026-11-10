@@ -3,10 +3,13 @@
 > **状态：已完成（2026-11-10）**
 >
 > **验证记录：**
-> - live：`TEF_MODEL_TESTS=1 TEF_DB_TESTS=1 npm run eval -- --mode all --live` → runId `eval_20261110064949674_8dlcta`；离线层 22 条计分 + 2 条 `skipped_non_contract`，端到端层 24/24 执行
-> - 录制回放：`TEF_DB_TESTS=1 npm run eval -- --mode e2e --recorded packages/tef-eval/recordings` → runId `eval_20261110071035072_9t26ek`，24/24 决策与 live 一致；持久证据 [docs/eval/evidence/phase-d-recorded-replay/](../../eval/evidence/phase-d-recorded-replay/)
-> - 全量验证：`npm run typecheck`、`npm run lint`、`npm run boundaries:check`、`npm run secrets:check`、`TEF_DB_TESTS=1 npm test`（536 passed）、`npm run build` 全部通过
+> - live：`TEF_MODEL_TESTS=1 TEF_DB_TESTS=1 npm run eval -- --mode all --live` → runId `eval_20261110064949674_8dlcta`；端到端层 24/24 执行
+> - 离线确定性重跑：`npm run eval -- --mode offline` → runId `eval_20261110075310224_g8zpzr`；21 条计分 + 3 条 `skipped_non_contract`
+> - 录制回放：`TEF_DB_TESTS=1 npm run eval -- --mode e2e --recorded packages/tef-eval/recordings` → runId `eval_20261110075310927_wf2zgg`，24/24 决策与 live 一致；持久证据 [docs/eval/evidence/phase-d-recorded-replay/](../../eval/evidence/phase-d-recorded-replay/)
+> - 全量验证：`npm run typecheck`、`npm run lint`、`npm run boundaries:check`、`npm run secrets:check`、`TEF_DB_TESTS=1 npm test`（564 passed：488 单元 + 76 数据库）、`npm run build` 全部通过
 > - 首版报告：[../../eval/phase-d-baseline.md](../../eval/phase-d-baseline.md)
+>
+> **后续修正说明（最终评审）**：本计划中的代码片段保留任务实施时的形态；指标口径、`clarifySlots`、usage/成本覆盖、e2e 缺库退出码与录制路径安全以当前 `packages/tef-eval` 代码与 [Phase D 设计 spec](../specs/2026-11-10-phase-d-eval-harness-design.md) 为准。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -1765,15 +1768,16 @@ export function renderMarkdown(run: EvalRun): string {
     `| 严格拦截率 | ${rate(run.metrics.strictInterceptionRate)} |`,
     `| 安全拦截率 | ${rate(run.metrics.safetyInterceptionRate)} |`,
     `| 误拒率 | ${rate(run.metrics.falseRejectionRate)} |`,
-    `| 澄清召回率 | ${rate(run.metrics.clarificationRecall)} |`,
+    `| 澄清召回率 | ${rate(run.metrics.clarificationRecall)}（${expectedClarifyCount(run.metrics)} 条） |`,
+    `| 澄清槽位召回率 | ${rate(run.metrics.clarifySlotRecall)}（${run.metrics.clarifySlotMatchedCount}/${run.metrics.clarifySlotExpectedCount} 槽位） |`,
     `| 意图准确率 | ${rate(run.metrics.contractAccuracy)} |`,
-    `| 风险等级准确率 | ${rate(run.metrics.riskAccuracy)}（${run.metrics.riskEvaluatedCount} 条） |`,
+    `| 风险等级准确率 | ${rate(run.metrics.riskAccuracy)}（期望 ${run.metrics.riskExpectedCount} 条 / 观测 ${run.metrics.riskObservedCount} 条 / 覆盖 ${rate(run.metrics.riskCoverage)}） |`,
     `| 错误码准确率 | ${rate(run.metrics.codeAccuracy)}（${run.metrics.codeEvaluatedCount} 条） |`,
     `| 槽位 F1 | ${run.metrics.slotF1 === null ? 'null' : run.metrics.slotF1.toFixed(3)} |`,
     `| P50 延迟 | ${run.metrics.latencyP50 === null ? 'null' : `${run.metrics.latencyP50.toFixed(1)} ms`} |`,
     `| P95 延迟 | ${run.metrics.latencyP95 === null ? 'null' : `${run.metrics.latencyP95.toFixed(1)} ms`} |`,
-    `| 总 token | ${run.metrics.totalTokens ?? 'null'} |`,
-    `| 总成本 | ${run.metrics.totalCost === null ? 'null' : run.metrics.totalCost.toFixed(6)} |`,
+    `| 总 token | ${run.metrics.totalTokens ?? 'null'}（覆盖 ${run.metrics.usageCoveredCount}/${run.metrics.evaluatedCount} 条） |`,
+    `| 总成本 | ${run.metrics.totalCost === null ? 'null' : run.metrics.totalCost.toFixed(6)}（覆盖 ${run.metrics.costCoveredCount}/${run.metrics.evaluatedCount} 条） |`,
     '',
     '> 样本规模说明：本报告基于种子样本，P95 与比例指标不具统计显著性，仅作工程趋势参考。',
     '',
@@ -1801,7 +1805,7 @@ Run:
 npx vitest run packages/tef-eval/src/metrics.test.ts packages/tef-eval/src/report.test.ts
 npm run typecheck
 ```
-Expected: PASS。槽位 F1 按 `expect.slots` 标注字段计算；端到端层通过 `{ slotScoring: false }` 关闭。风险等级准确率只统计 `expect.risk` 有标注且 actual risk 非 null 的样本；错误码准确率只统计 `expect.code` 有标注的样本。无标注字段时分母为 0，输出 `null`，不得伪造数值。
+Expected: PASS。槽位 F1 按 `expect.slots` 标注字段计算（字符串 trim、对象忽略键顺序）；端到端层通过 `{ slotScoring: false }` 关闭。风险等级准确率的分母是全部标注了 `expect.risk` 的已评测样本，`actual.risk === null` 按未命中处理，并输出 `riskExpectedCount` / `riskObservedCount` / `riskCoverage`。澄清槽位召回率按 canonical 槽位统计 `clarifySlotExpectedCount` / `clarifySlotMatchedCount` / `clarifySlotRecall`。token 与成本分别输出 `usageCoverage` / `costCoverage`，部分覆盖时不得把总和当成全量。错误码准确率只统计 `expect.code` 有标注的样本。无标注字段时分母为 0，输出 `null`，不得伪造数值。
 
 - [ ] **Step 7: 提交**
 
@@ -2468,7 +2472,7 @@ try {
 
 `runE2eSample` 的调用同样处理；这样 live 单个样本失败不会让整批评测丢失。
 
-退出码语义由纯函数 `resolveExitCode({ loadFailed, thrownSampleError })` 统一裁定：`loadSamplesForCli` 的目录读取、JSON 解析、zod 校验、重复 id 与空样本集失败为 2；样本执行抛错（已隔离记录为 `errorOutcome`，但批次仍算执行失败）为 1；参数非法、`--live` 前置条件缺失、`--live` 与 `--recorded` 同时出现以及未捕获的 harness 异常也为 1；测得的 `actual.decision === 'error'` 属于评测数据，不改变退出码，正常完成为 0。该函数有独立单测，避免退出码策略回归。
+退出码语义由纯函数 `resolveExitCode({ loadFailed, thrownSampleError, e2eSkipped, allowMissingDb })` 统一裁定：`loadSamplesForCli` 的目录读取、JSON 解析、zod 校验、重复 id 与空样本集失败为 2；样本执行抛错（已隔离记录为 `errorOutcome`，但批次仍算执行失败）为 1；参数非法、`--live` 前置条件缺失、`--live` 与 `--recorded` 同时出现以及未捕获的 harness 异常也为 1；端到端层被请求却因数据库缺失跳过时同样为 1，只有显式 `--allow-missing-db` 才允许 0；测得的 `actual.decision === 'error'` 属于评测数据，不改变退出码，正常完成为 0。该函数有独立单测，避免退出码策略回归。
 
 - [ ] **Step 4: 添加运行配置与脚本**
 
@@ -2502,7 +2506,7 @@ export default {
 
 ```json
 "eval": "vite-node --config vite.eval.config.ts packages/tef-eval/src/cli.ts",
-"eval:live": "TEF_MODEL_TESTS=1 npm run eval -- --mode all --live"
+"eval:live": "TEF_MODEL_TESTS=1 TEF_DB_TESTS=1 npm run eval -- --mode all --live"
 ```
 
 并在 `devDependencies` 增加 `"vite-node": "^3.2.4"`。运行 `npm install` 更新 lockfile。
@@ -2813,7 +2817,7 @@ npm run secrets:check
 TEF_DB_TESTS=1 npm test
 npm run build
 ```
-Expected: 全部通过；测试数量不少于 414。
+Expected: 全部通过；当前全量基线 564 项（488 单元 + 76 数据库）。
 
 - [ ] **Step 6: 同步文档**
 

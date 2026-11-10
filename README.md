@@ -5,7 +5,7 @@
 
 LyMtrix-TEF 是一个面向 AI Agent 的可信执行框架。它不试图让模型输出变得确定，而是让模型产生的**副作用**变得确定：任何写操作都必须经过契约校验、证据加载、风险定级、预览快照、一次性令牌确认和幂等执行，否则被阻断、拒绝或转人工。
 
-**当前状态（2026-11-10）**：Phase 0 闭环、Phase 1 补偿运行时、Phase B2 CRM 内部 HTTP 网关、Phase C 执行状态机与 Phase D 首版评测 harness 已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime、确认 UI 与补偿闭环全部可运行；B2 新增 `/api/internal/v1/query` 与 `/api/internal/v1/effects/execute` 内部端点及 `HttpCrmGateway`，默认仍走进程内 Prisma 网关；Phase C 新增 `execution_attempts` 两阶段执行状态机、`pending` 预审计、结果审计、UNKNOWN 对账与故障注入测试，保证副作用 at-most-once；Phase D 新增 `packages/tef-eval` 双层评测 harness、24 条六类种子样本、live 录制回放与首版报告，离线层 22 条计分、端到端层 24/24 执行。536 个测试通过（461 单元 + 75 个对真实 PostgreSQL 的闭环、攻击场景、补偿、状态机与对账集成测试）。尚未达到生产可用：正式 300–500 条评测集与消融实验（Phase 2/D 后续）、遗留代码清理、跨服务 HTTP effects 接线（Phase B3）与生产级压测仍未完成。首版指标见 [Phase D 首版评测报告](docs/eval/phase-d-baseline.md)，成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
+**当前状态（2026-11-10）**：Phase 0 闭环、Phase 1 补偿运行时、Phase B2 CRM 内部 HTTP 网关、Phase C 执行状态机与 Phase D 首版评测 harness 已落地并通过自动化验证——多租户、契约引擎、MCP 工具层、预览快照、一次性令牌、双层哈希、幂等执行、审计哈希链、最小 Agent Runtime、确认 UI 与补偿闭环全部可运行；B2 新增 `/api/internal/v1/query` 与 `/api/internal/v1/effects/execute` 内部端点及 `HttpCrmGateway`，默认仍走进程内 Prisma 网关；Phase C 新增 `execution_attempts` 两阶段执行状态机、`pending` 预审计、结果审计、UNKNOWN 对账与故障注入测试，保证副作用 at-most-once；Phase D 新增 `packages/tef-eval` 双层评测 harness、24 条六类种子样本、live 录制回放与首版报告，离线层 21 条计分、3 条跳过，端到端层 24/24 执行。564 个测试通过（488 单元 + 76 个对真实 PostgreSQL 的闭环、攻击场景、补偿、状态机、对账与 Phase D 评测 e2e 集成测试）。尚未达到生产可用：正式 300–500 条评测集与消融实验（Phase 2/D 后续）、遗留代码清理、跨服务 HTTP effects 接线（Phase B3）与生产级压测仍未完成。首版指标见 [Phase D 首版评测报告](docs/eval/phase-d-baseline.md)，成熟度口径见 [docs/00-positioning.md](docs/00-positioning.md)，逐项差距见 [挑战杯项目设计说明书 §7.4](docs/competition/挑战杯项目设计说明书.md)。
 
 ---
 
@@ -308,7 +308,7 @@ TEF_DB_TESTS=1 npm test         # 加上对真实数据库的闭环与攻击场�
 npm run dev                     # http://localhost:3000/login，账号 admin@example.com / demo123
 
 # 5. 评测（Phase D 首版 harness）
-npm run eval -- --mode all      # 离线/端到端确定性结果；e2e 需 TEF_DB_TESTS=1 与 DATABASE_URL
+npm run eval -- --mode all      # 离线/端到端确定性结果；e2e 需 TEF_DB_TESTS=1 与 DATABASE_URL，缺库跳过时退出码 1（--allow-missing-db 可允许 0）
 TEF_MODEL_TESTS=1 TEF_DB_TESTS=1 npm run eval -- --mode all --live   # 真实模型，自动录制响应
 TEF_DB_TESTS=1 npm run eval -- --mode e2e --recorded packages/tef-eval/recordings  # 断网回放
 ```
